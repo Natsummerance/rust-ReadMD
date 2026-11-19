@@ -31,6 +31,9 @@ fn number_format(format:&str)->String{
     }else{pattern}
 }
 fn n(v:&Value,default:f64,min:f64,max:f64)->f64{v.as_f64().filter(|n|n.is_finite()).unwrap_or(default).clamp(min,max)}
+fn tuple(values: &[String]) -> String {
+    if values.is_empty() { "()".into() } else { format!("({},)", values.join(",")) }
+}
 fn color(v:&Value,default:&str)->String{let s=v.as_str().unwrap_or(default);if s.len()==7&&s.starts_with('#')&&s[1..].bytes().all(|b|b.is_ascii_hexdigit()){format!("rgb({})",string(s))}else{format!("rgb({})",string(default))}}
 fn font_with_resources(name:&str,managed:bool)->&str{
     let selected=crate::publication_fonts::family(name);
@@ -191,7 +194,8 @@ fn safe_column_block(style:&Value,block:&Block)->bool{
         Block::Paragraph(values)|Block::Caption{inlines:values,..}=>safe_column_inlines(values),
         Block::Quote(blocks)=>blocks.iter().all(|block|safe_column_block(style,block)),
         Block::List{items,..}=>items.iter().all(|item|item.blocks.iter().all(|block|safe_column_block(style,block))),
-        Block::Table{header,rows,..}=>header.iter().chain(rows.iter().flatten()).all(|cell|safe_column_inlines(cell)),
+        Block::Table{header,rows,geometry,..}=>!geometry.has_track_sizes()
+            &&header.iter().chain(rows.iter().flatten()).all(|cell|safe_column_inlines(cell)),
         // Bibliography can contain nested layout contexts, counters and large
         // breakable grids. Preserve its native path until independently proven.
         Block::Bibliography(_)|Block::PageBreak|Block::FootnoteDef{..}|Block::SectionStart(_)=>false,
@@ -494,20 +498,84 @@ impl Writer<'_>{
                     let mut values=Vec::new();for item in items{let marker=match item.task{Some(true)=>text("☑ "),Some(false)=>text("☐ "),None=>String::new()};values.push(format!("[{marker}{}]",self.special_blocks(&item.blocks)?));}
                     format!("#{}({}{})\n",if *ordered{"enum"}else{"list"},if *ordered{format!("start:{start},")}else{String::new()},values.join(","))
                 },
-                Block::Table{header,rows,aligns}=>{
+                Block::Table{header,rows,aligns,geometry}=>{
                     let scholarly=crate::export_styles::three_line_table(self.style);
-                    let mut cells=Vec::new();for row in rows{for cell in row{cells.push(format!("[{}]",self.inlines(cell)?));}}
-                    let mut heads=Vec::new();for cell in header{heads.push(format!("[#text(fill:{},weight:{})[{}]]",color(if scholarly{&self.style["typography"]["color"]}else{&self.style["table"]["headerColor"]},if scholarly{"#111111"}else{"#ffffff"}),string(if self.style["table"]["headerBold"].as_bool().unwrap_or(true){"bold"}else{"regular"}),self.inlines(cell)?));}
-                    let column_count=header.len().max(1);let alignments=(0..column_count).map(|i|match aligns.get(i){Some(crate::md_ast::Align::Center)=>"center",Some(crate::md_ast::Align::Right)=>"right",_=>"left"}).collect::<Vec<_>>().join(",");
+                    let header_style = |body: String| format!("[#text(fill:{},weight:{})[{}]]",
+                        color(if scholarly { &self.style["typography"]["color"] } else { &self.style["table"]["headerColor"] }, if scholarly { "#111111" } else { "#ffffff" }),
+                        string(if self.style["table"]["headerBold"].as_bool().unwrap_or(true) { "bold" } else { "regular" }), body);
+                    let mut heads = Vec::new();
+                    let mut cells = Vec::new();
+                    let mut sized = None;
+                    if geometry.is_enhanced() {
+                        let layout = geometry.layout(header, rows, aligns).map_err(|error| error.code)?;
+                        if geometry.has_track_sizes() {
+                            let tracks = geometry.tracks(layout.columns, layout.rows.len());
+                            let points = |values: &[Option<usize>]| tuple(&values.iter().map(|value| value.map_or_else(
+                                || "none".into(),
+                                |px| format!("{}pt", px as f64 * crate::table_geometry::PT_PER_CSS_PX)
+                            )).collect::<Vec<_>>());
+                            let mut groups = Vec::new();
+                            let mut start = 0;
+                            while start < layout.rows.len() {
+                                let mut end = start + 1;
+                                let mut index = start;
+                                while index < end {
+                                    for slot in &layout.rows[index] {
+                                        end = end.max(slot.origin_row + slot.rowspan);
+                                    }
+                                    index += 1;
+                                }
+                                if tracks.row_heights[start..end].iter().any(Option::is_some) {
+                                    groups.push(format!("({start},{end})"));
+                                }
+                                start = end;
+                            }
+                            let guard = self.geometry.get_or_insert_with(GeometryContext::new).table_guard();
+                            sized = Some((points(&tracks.column_widths), points(&tracks.row_heights), tuple(&groups), guard));
+                        }
+                        for (r, row) in layout.rows.iter().enumerate() {
+                            for (c, slot) in row.iter().enumerate() {
+                                if (r, c) != (slot.origin_row, slot.origin_col) { continue; }
+                                let mut pieces = Vec::new();
+                                for segment in &slot.contents { pieces.push(self.inlines(segment)?); }
+                                let body = pieces.join("#linebreak()");
+                                let body = if r == 0 { header_style(body) } else { format!("[{body}]") };
+                                let horizontal = match slot.align { crate::md_ast::Align::Center => "center", crate::md_ast::Align::Right => "right", _ => "left" };
+                                let vertical = match slot.valign { Some(crate::table_geometry::VerticalAlign::Middle) => "horizon", Some(crate::table_geometry::VerticalAlign::Bottom) => "bottom", _ => "top" };
+                                let cell = format!("table.cell(x:{c},y:{r},colspan:{},rowspan:{},align:{horizontal}+{vertical},{body})", slot.colspan, slot.rowspan);
+                                if r == 0 { heads.push(cell); } else { cells.push(cell); }
+                            }
+                        }
+                    } else {
+                        for row in rows { for cell in row { cells.push(format!("[{}]", self.inlines(cell)?)); } }
+                        for cell in header { heads.push(header_style(self.inlines(cell)?)); }
+                    }
+                    let column_count=header.len().max(1);
+                    let alignments=(0..column_count).map(|i|match aligns.get(i){Some(crate::md_ast::Align::Center)=>"center",Some(crate::md_ast::Align::Right)=>"right",_=>"left"}).collect::<Vec<_>>().join(",");
                     let band=if self.style["table"]["banded"].as_bool().unwrap_or(true){color(&self.style["table"]["bandColor"],"#f3f5f9")}else{"none".into()};
+                    let inset=n(&self.style["table"]["cellPadding"],6.,0.,30.);
+                    let table_width=n(&self.style["table"]["widthPct"],100.,20.,100.);
+                    let text_size=n(&self.style["table"]["cellSize"],10.,6.,36.);
+                    let sizing=if sized.is_some(){"columns:columns,rows:rows".into()}else{format!("columns:{column_count}")};
+                    let header_cells=if sized.is_some(){"..heads".into()}else{heads.join(",")};
+                    let body_cells=if sized.is_some(){"..body".into()}else{cells.join(",")};
+                    let table_args;
                     if scholarly {
                         let width=n(&self.style["table"]["borderWidth"],0.75,0.25,3.);let border=color(&self.style["table"]["borderColor"],"#111111");
-                        let mut entries=vec![format!("table.header(table.hline(stroke:{}pt+{border}),{},table.hline(stroke:{width}pt+{border}))",width*2.,heads.join(","))];
-                        entries.extend(cells);entries.push(format!("table.hline(stroke:{}pt+{border})",width*2.));
-                        format!("#block(width:{}%)[#set text(size:{}pt)\n#table(columns:{column_count},align:({alignments},),inset:{}pt,stroke:none,fill:none,{})]\n",n(&self.style["table"]["widthPct"],100.,20.,100.),n(&self.style["table"]["cellSize"],10.,6.,36.),n(&self.style["table"]["cellPadding"],6.,0.,30.),entries.join(","))
+                        let rule=format!("table.hline(stroke:{}pt+{border})",width*2.);
+                        let header=format!("table.header({rule},{header_cells},table.hline(stroke:{width}pt+{border}))");
+                        let entries=if body_cells.is_empty(){format!("{header},{rule}")}else{format!("{header},{body_cells},{rule}")};
+                        table_args=format!("stroke:none,fill:none,{entries}");
                     } else {
-                    format!("#block(width:{}%)[#set text(size:{}pt)\n#table(columns:{column_count},align:({alignments},),inset:{}pt,stroke:{}pt+{},fill:(x,y)=>if y==0 {{{}}} else if calc.rem(y,2)==0 {{{band}}} else {{none}},table.header({}),{})]\n",n(&self.style["table"]["widthPct"],100.,20.,100.),n(&self.style["table"]["cellSize"],10.,6.,36.),n(&self.style["table"]["cellPadding"],6.,0.,30.),n(&self.style["table"]["borderWidth"],0.75,0.,3.),color(&self.style["table"]["borderColor"],"#c8cdd4"),color(&self.style["table"]["headerBg"],"#3b6ef5"),heads.join(","),cells.join(","))
+                        table_args=format!("stroke:{}pt+{},fill:(x,y)=>if y==0 {{{}}} else if calc.rem(y,2)==0 {{{band}}} else {{none}},table.header({header_cells}),{body_cells}",
+                            n(&self.style["table"]["borderWidth"],0.75,0.,3.),color(&self.style["table"]["borderColor"],"#c8cdd4"),color(&self.style["table"]["headerBg"],"#3b6ef5"));
                     }
+                    let call=format!("table({sizing},align:({alignments},),inset:{inset}pt,{table_args})");
+                    let table=match sized{
+                        Some((widths,heights,groups,guard))=>format!("readmd-table-tracks({widths},{heights},{groups},{},{},{inset}pt,{guard},(columns,rows,heads,body)=>{call})",tuple(&heads),tuple(&cells)),
+                        None=>call,
+                    };
+                    format!("#block(width:{table_width}%)[#set text(size:{text_size}pt)\n#{table}]\n")
                 },
                 Block::Bibliography(bibliography) => {
                     if bibliography.items.iter().any(|item|!item.first_field.is_empty()||item.layout().map(|flow|crate::publication_rich::layout_requires_flow(&flow)).unwrap_or(true)){
@@ -653,6 +721,9 @@ fn render_inner(doc:&Document,options:&Value,base:&str,dir:&Path,name:&str,nonce
     let mut source=format!("// ReadMD generated publication. No author code is executed.\n#set document(title:{},author:{})\n#set page(width:{width}mm,height:{height}mm,binding:left,margin:({margin}),header:{note_header},footer:none,foreground:{running})\n#set text(font:{},size:{size}pt,fill:{},lang:{},top-edge:0.8em,bottom-edge:-0.2em,costs:(widow:{}%,orphan:{}%))\n#set par(leading:{leading}pt,spacing:{}pt,first-line-indent:{}mm,justify:{},hanging-indent:0pt)\n#set align({})\n#show link: set text(fill:{})\n#show raw: set text(font:{})\n#set footnote(numbering:{})\n#set footnote.entry(separator:{note_separator},gap:0.6em)\n#show footnote.entry: set par(first-line-indent:0pt,leading:{}pt)\n#show footnote.entry: set text(size:{}pt,top-edge:\"ascender\",bottom-edge:\"descender\")\n#show heading: set block(sticky:false,breakable:true)\n#counter(page).update({})\n",
         string(&title),format!("({}{})",metadata.authors.iter().map(|person|string(&person.name)).collect::<Vec<_>>().join(","),if metadata.authors.is_empty(){""}else{","}),font_expression(style["typography"]["font"].as_str().unwrap_or("MicrosoftYaHei"),false,requires_core_text_fallback,&mut writer.warnings),color(&style["typography"]["color"],"#262626"),string(lang.split(['-','_']).next().unwrap_or("en")),if layout.widow_control{100}else{0},if layout.widow_control{100}else{0},leading+n(&style["typography"]["spacing"],6.,0.,60.),n(&style["typography"]["firstLineIndent"],0.,0.,30.),style["typography"]["align"]=="justify",align(&style["typography"]["align"]),color(&style["link"]["color"],"#2b6cb0"),font_expression(style["code"]["font"].as_str().unwrap_or("Consolas"),false,requires_core_text_fallback,&mut writer.warnings),number_format(&layout.note_format),(layout.note_line_height-1.)*layout.note_size,layout.note_size,layout.page_start);
     if writer.geometry.is_some(){source.push_str(include_str!("publication_typst_paragraph.typ"));source.push('\n');}
+    if writer.geometry.as_ref().is_some_and(|context|context.table_count>0){
+        source.push_str(include_str!("publication_typst_table_tracks.typ"));source.push('\n');
+    }
     if layout.note_start!=1 {source.push_str(&format!("#counter(footnote).update({})\n",layout.note_start-1));}
     if let Some(region)=region {source.push_str(&format!("#set text(region:{})\n",string(region)));}
     // Independent columns keep the marker beside the first content block,
@@ -901,3 +972,43 @@ mod heading_numbering_tests;
 #[cfg(test)]
 #[path="typst_writer_paragraphs_tests.rs"]
 mod paragraph_tests;
+
+#[cfg(test)]
+mod table_geometry_projection {
+    #[test]
+    fn typst_places_origin_with_editable_text_from_every_covered_cell() {
+        let md = "| H | I | J |\n|---|---|---|\n| **A** {colspan=2 rowspan=2 align=right valign=middle} | B | East |\n| C | D | West |\n";
+        let dir = tempfile::tempdir().unwrap();
+        let source = super::render(&crate::md_ast::parse(md), &serde_json::json!({}), "", dir.path(), "Grid").unwrap().text;
+        assert!(source.contains("table.cell(x:0,y:1,colspan:2,rowspan:2,align:right+horizon"));
+        assert!(!source.contains("table.cell(x:1,y:2,"));
+        assert_eq!(source.matches("#linebreak()").count(), 3);
+        assert!(!source.contains("{colspan"));
+    }
+
+    #[test]
+    fn typst_projects_native_tracks_from_source_slots_even_when_covered() {
+        let md = concat!(
+            "| Head {colspan=2 width=160 height=80} | Pair {width=320} |\n| --- | --- |\n",
+            "| **One** {colspan=2 rowspan=2} | Two |\n",
+            "| Three {height=112} | Four |\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let source = super::render(&crate::md_ast::parse(md), &serde_json::json!({}), "", dir.path(), "Grid").unwrap();
+        let warning = crate::api_codes::WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+        assert!(!source.warnings.iter().any(|value| value == warning));
+        assert!(source.text.contains("#readmd-table-tracks((120pt,240pt,),(60pt,none,84pt,),((0,1),(1,3),),"));
+        assert!(source.text.contains("table(columns:columns,rows:rows"));
+        assert!(source.text.contains("table.cell(x:0,y:1,colspan:2,rowspan:2"));
+        assert_eq!(source.text.matches("#linebreak()").count(), 4);
+        for text in ["One", "Two", "Three", "Four"] {
+            assert!(source.text.contains(text));
+        }
+        assert!(!source.text.contains("{width=") && !source.text.contains("{height="));
+        let context = source.geometry.unwrap();
+        let path = dir.path().join("document.typ");
+        let diagnostic = |index| format!("document.typ:3:7: error: panicked with: {}{{\"coordinateSpace\":\"pdfTableTracks\",\"tableIndex\":{index}}}", context.marker);
+        assert_eq!(context.diagnostic(&diagnostic(1), &path, dir.path()).as_deref(), Some(crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY));
+        assert_eq!(context.diagnostic(&diagnostic(2), &path, dir.path()), None);
+    }
+}

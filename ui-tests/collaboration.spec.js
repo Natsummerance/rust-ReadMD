@@ -45,12 +45,67 @@ test('real Yjs/Yrs clients sync offline edits, personal undo, roles and durable 
     const downloadPromise=viewer.waitForEvent('download');await viewer.locator('#attachments button').click();const download=await downloadPromise;expect(download.suggestedFilename()).toBe('专用图.svg');expect(require('node:fs').readFileSync(await download.path())).toEqual(attachment);
     const snapshot=await api('snapshot',{},owner);expect(snapshot.data.content).toContain('Offline edit');
     expect((await api('permission',{member:editor.member,role:null},owner)).status).toBe(200);
-    await guest.evaluate(()=>ReadMDCollaboration.sync());await expect(guest.locator('#editor')).toBeDisabled();
+    await guest.evaluate(()=>ReadMDCollaboration.sync());await expect(guest.locator('#editor')).toHaveJSProperty('readOnly',true);
+    await expect(guest.locator('#status')).toContainText('access revoked');
     expect((await api('snapshot',{},editor)).status).toBe(403);
     // The dedicated listener cannot read host files or use the desktop routes.
     expect((await viewer.request.get('http://127.0.0.1:'+created.data.port+'/api/file')).status()).toBe(404);
     expect((await viewer.request.get('http://127.0.0.1:'+created.data.port+'/../Cargo.toml')).status()).toBe(404);
   }finally{await api('close',{},owner);for(const c of contexts)await c.close();}
+});
+
+test('role downgrade retains a durable offline edit until the same member regains editor access',async({page,browser})=>{
+  await page.goto('/');await waitForPage(page,()=>window.__readmdAppReady);
+  const api=(operation,body,credential)=>page.evaluate(async({operation,body,credential})=>{
+    const r=await apiFetch(operation==='create'?'/api/collaboration/create':'/api/collaboration/session',{method:'POST',headers:{'Content-Type':'application/json',...(credential?{'X-ReadMD-Collaboration-Token':credential.token}:{})},body:JSON.stringify({...body,...(credential?{room:credential.room,operation}:{})})});
+    return {status:r.status,data:await r.json()};
+  },{operation,body,credential});
+  const created=await api('create',{title:'Permissions.md',content:'Original\n'});
+  expect(created.status).toBe(200);
+  const owner=created.data.credential,editor=(await api('invite',{role:'editor',name:'Editor'},owner)).data.credential;
+  const context=await browser.newContext(),guest=await context.newPage();
+  const local=guest.locator('#editor'),status=guest.locator('#status');
+  const sync=()=>guest.evaluate(()=>ReadMDCollaboration.sync());
+  const pending=()=>guest.evaluate(()=>ReadMDCollaboration.pending());
+  const stopRequests=()=>guest.route('**/sessions/**',route=>route.abort());
+  try{
+    await guest.goto('http://127.0.0.1:'+created.data.port+'/#'+new URLSearchParams({room:editor.room,token:editor.token,lang:'en'}));
+    await expect(local).toHaveValue('Original\n');
+    await expect(local).toBeEditable();
+    await stopRequests();
+    await local.fill('Original\nOffline draft\n');
+    await expect.poll(pending).toBeGreaterThan(0);
+    expect((await api('permission',{member:editor.member,role:'reviewer'},owner)).status).toBe(200);
+    await guest.unroute('**/sessions/**');await sync();
+    await expect(status).toContainText('Permission: Reviewer');
+    await expect(local).toHaveJSProperty('readOnly',true);
+    expect((await api('snapshot',{},owner)).data.content).toBe('Original\n');
+    await expect.poll(pending).toBeGreaterThan(0);
+    await guest.reload();
+    await expect(status).toContainText('Permission: Reviewer');
+    await expect(local).toHaveValue('Original\nOffline draft\n');
+    await expect.poll(pending).toBeGreaterThan(0);
+
+    expect((await api('permission',{member:editor.member,role:'editor'},owner)).status).toBe(200);
+    await expect.poll(async()=>{await sync();return pending();}).toBe(0);
+    await expect(local).toBeEditable();
+    expect((await api('snapshot',{},owner)).data.content).toBe('Original\nOffline draft\n');
+
+    await stopRequests();
+    await local.fill('Original\nOffline draft\nPrivate local copy\n');
+    await expect.poll(pending).toBeGreaterThan(0);
+    expect((await api('permission',{member:editor.member,role:null},owner)).status).toBe(200);
+    await guest.unroute('**/sessions/**');await sync();
+    await expect(status).toContainText('access revoked');
+    await expect(local).toHaveJSProperty('readOnly',true);
+    await expect(local).toBeEnabled();
+    expect((await api('permission',{member:editor.member,role:'editor'},owner)).status).toBe(404);
+    expect((await api('snapshot',{},owner)).data.content).toBe('Original\nOffline draft\n');
+    await guest.reload();
+    await expect(status).toContainText('access revoked');
+    await expect(local).toHaveValue('Original\nOffline draft\nPrivate local copy\n');
+    await expect.poll(pending).toBeGreaterThan(0);
+  }finally{await context.close();await api('close',{},owner);}
 });
 
 test('large offline input persists as bounded deltas and resumes after a browser reload',async({page,browser})=>{

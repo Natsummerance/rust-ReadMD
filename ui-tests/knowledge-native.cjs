@@ -95,7 +95,8 @@ async function until(fn,timeout=30000,label='Native operation'){const end=Date.n
    await until(()=>page.evaluate(()=>!isBatchRunning()),120000);
    const counts=await page.evaluate(()=>({...batchCount}));assert.equal(counts.ok,6,JSON.stringify(counts));assert.equal(counts.error,0);
    const converted=[];
-   for(const input of inputs){const output=input.replace(/\.[^.]+$/,'.md'),text=fs.readFileSync(output,'utf8');assert.ok(text.includes('认识与经验'),path.extname(input));assert.ok(text.includes('开放问题'),path.extname(input));converted.push({format:path.extname(input),characters:text.length});}
+   const batch=await page.evaluate(async()=> (await apiFetch('/api/convert/progress?job='+encodeURIComponent(batchJobId))).json());
+   for(const item of batch.items){const text=fs.readFileSync(item.out,'utf8');assert.ok(text.includes('认识与经验'),path.extname(item.src));assert.ok(text.includes('开放问题'),path.extname(item.src));assert.ok(!fs.existsSync(item.src.replace(/\.[^.]+$/,'.md')));converted.push({format:path.extname(item.src),characters:text.length});}
    await page.evaluate(()=>closeBatchModal());return{formats:converted,originalsPreserved:inputs.every(f=>fs.existsSync(f))};
   });
   if(process.env.READMD_RECORD_COMMUNITY==='1'){

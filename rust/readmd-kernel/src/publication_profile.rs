@@ -148,6 +148,7 @@ pub(crate) fn resolve(content: &str, options: &Value) -> Result<crate::publicati
 pub(crate) fn for_format(format:&str, content:&str, resolved:crate::publication_typography::ResolvedOptions)
     -> Result<crate::publication_typography::ResolvedOptions>
 {
+    let format = crate::image_export::layout_format(format);
     if format.eq_ignore_ascii_case("docx") { return Ok(resolved); }
     if resolved.values().get("footnotes").is_none_or(Value::is_null) && !content.contains("readmd-section") { return Ok(resolved); }
     let doc=crate::md_ast::parse(content);
@@ -165,13 +166,40 @@ pub(crate) fn for_format(format:&str, content:&str, resolved:crate::publication_
 pub(crate) fn resolve_for_format(format:&str, content:&str, options:&Value)->Result<crate::publication_typography::ResolvedOptions>{
     for_format(format,content,resolve(content,options)?)
 }
+pub(crate) fn validate_pdf_engine(options:&Value)->Result<()> {
+    if options.pointer("/pdf/engine").is_some_and(|value| !value.is_null() &&
+        !value.as_str().is_some_and(|engine|matches!(engine,"rust"|"typst"|"xelatex"|"pdflatex"))) {
+        return Err(error("latex_invalid_engine","options.pdf.engine"));
+    }
+    Ok(())
+}
 pub(crate) fn preflight(format: &str, content: &str, options: &Value) -> Result<()> {
+    let format = crate::image_export::layout_format(format);
+    let pdf = format.eq_ignore_ascii_case("pdf");
+    if pdf { validate_pdf_engine(options)?; }
+    let engine = options.pointer("/pdf/engine").and_then(Value::as_str);
+    let rust_pdf = pdf && matches!(engine, None | Some("rust"));
+    if crate::table_geometry::source_candidate(content) {
+        let document = crate::md_ast::parse(content);
+        let validation = if rust_pdf {
+            crate::table_geometry::validate_rust_pdf_document(&document)
+        } else {
+            let supported = matches!(format.to_ascii_lowercase().as_str(), "docx" | "pptx" | "epub" | "html" | "typst" | "presentation")
+                || (pdf && engine == Some("typst"));
+            crate::table_geometry::validate_document(&document, supported)
+        };
+        validation.map_err(|code| error(code, "source.table"))?;
+    }
+    if crate::md_ast::native_table_source_candidate(content) && (format.eq_ignore_ascii_case("docx") || rust_pdf) {
+        let document = crate::md_ast::parse(content);
+        crate::md_ast::native_table_document(&document).map_err(|code| error(code, "source.table"))?;
+    }
     if options.get("footnotes").is_some_and(|v| !v.is_null()) || content.contains("readmd-section") {
         let consumer = if format.eq_ignore_ascii_case("docx") { crate::publication_note_policies::Consumer::Docx }
             else if format.eq_ignore_ascii_case("html") { crate::publication_note_policies::Consumer::Html }
             else { crate::publication_note_policies::Consumer::Other };
         if matches!(format.to_ascii_lowercase().as_str(),"tex"|"latex")
-            || format.eq_ignore_ascii_case("pdf")&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),Some("xelatex"|"pdflatex")) {
+            || pdf && matches!(engine, Some("xelatex" | "pdflatex")) {
             crate::publication_note_policies::validate_default_section_numbering(&crate::md_ast::parse(content),options).map_err(|e|error(e.code,e.path))?;
         }
         crate::publication_note_policies::validate_consumer(consumer, &crate::md_ast::parse(content), options)

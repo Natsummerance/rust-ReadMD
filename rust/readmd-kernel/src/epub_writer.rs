@@ -231,6 +231,30 @@ pub fn cover_svg(title:&str,subtitle:&str,author:&str,date:&str,align:&str)->Str
     format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="3200" viewBox="0 0 2400 3200"><rect width="2400" height="3200" fill="#f4efe5"/><rect x="180" y="180" width="2040" height="2840" fill="none" stroke="#c8bba4" stroke-width="3"/><path d="M240 570H2160" stroke="#a9926f" stroke-width="4"/><g text-anchor="{anchor}" font-family="serif" fill="#202b32"><text x="{x}" y="450" font-size="44" letter-spacing="8">{}</text><text font-size="{size}" font-weight="600">{text}</text><text x="{x}" y="2380" font-size="58">{}</text><text x="{x}" y="2670" font-size="48">{}</text><text x="{x}" y="2820" font-size="34" fill="#6b6a64">{}</text></g></svg>"##,esc(subtitle),esc(author),esc(date),esc(title))
 }
 
+/// EPUB pages reflow as the reader changes viewport or type size. Use authored
+/// widths when they fit, with proportional columns as a fallback on older readers.
+fn table_open(tracks: &crate::table_geometry::TableTracks) -> String {
+    if !tracks.has_column_widths() { return "<table><thead>".into(); }
+    let fixed: usize = tracks.column_widths.iter().flatten().sum();
+    let automatic = tracks.column_widths.iter().filter(|w| w.is_none()).count();
+    let mut html = if automatic == 0 {
+        format!(r#"<table style="max-width:{fixed}px"><colgroup>"#)
+    } else {
+        String::from("<table><colgroup>")
+    };
+    let reference = fixed + automatic * crate::table_geometry::MIN_COLUMN_WIDTH;
+    for width in &tracks.column_widths {
+        if let Some(px) = width {
+            let percent = *px as f64 * 100.0 / reference as f64;
+            html.push_str(&format!(r#"<col style="width:{percent:.4}%;width:min({px}px,{percent:.4}%)"/>"#));
+        } else {
+            html.push_str("<col/>");
+        }
+    }
+    html.push_str("</colgroup><thead>");
+    html
+}
+
 /// Shared print/Word style parameters projected into a reflowable book. Page
 /// geometry stays with paged formats; the EPUB-specific type size is independent
 /// so a reader can still choose a comfortable reading size.
@@ -648,7 +672,43 @@ impl<'a, 'm> Writer<'a, 'm> {
             Block::Code { lang, text } => self.code(lang, text),
             Block::Math(m) => self.math(m, true),
             Block::OfficeMath {latex,omml} => self.office_math(latex,omml,true),
-            Block::Table { aligns, header, rows } => {
+            Block::Table { aligns, header, rows, geometry } => {
+                if geometry.is_enhanced() {
+                    let Ok(layout) = geometry.layout(header, rows, aligns) else {
+                        self.author_error.get_or_insert(crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED);
+                        return String::new();
+                    };
+                    let tracks = geometry.tracks(layout.columns, layout.rows.len());
+                    let mut html = table_open(&tracks);
+                    for (r, row) in layout.rows.iter().enumerate() {
+                        if r == 1 { html.push_str("</thead><tbody>"); }
+                        let tag = if r == 0 { "th" } else { "td" };
+                        if let Some(height) = tracks.row_heights[r] {
+                            html.push_str(&format!(r#"<tr style="height:{height}px">"#));
+                        } else {
+                            html.push_str("<tr>");
+                        }
+                        for (c, slot) in row.iter().enumerate() {
+                            if (r, c) != (slot.origin_row, slot.origin_col) { continue; }
+                            html.push_str(&format!("<{tag}"));
+                            if slot.colspan > 1 { html.push_str(&format!(" colspan=\"{}\"", slot.colspan)); }
+                            if slot.rowspan > 1 { html.push_str(&format!(" rowspan=\"{}\"", slot.rowspan)); }
+                            let mut style = String::new();
+                            if slot.align != Align::None { style.push_str(&format!("text-align:{};", slot.align.as_str())); }
+                            if let Some(vertical) = slot.valign { style.push_str(&format!("vertical-align:{};", vertical.as_str())); }
+                            if !style.is_empty() { html.push_str(&format!(" style=\"{style}\"")); }
+                            html.push('>');
+                            for (i, content) in slot.contents.iter().enumerate() {
+                                if i > 0 { html.push_str("<br/>"); }
+                                html.push_str(&self.inlines(content));
+                            }
+                            html.push_str(&format!("</{tag}>"));
+                        }
+                        html.push_str("</tr>");
+                    }
+                    html.push_str(if rows.is_empty() { "</thead></table>" } else { "</tbody></table>" });
+                    return html;
+                }
                 let style = |ci: usize| -> String {
                     match aligns.get(ci).copied().unwrap_or(Align::None) {
                         Align::None => String::new(),

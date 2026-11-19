@@ -1,18 +1,20 @@
-# ReadMD for VS Code · V0.0.6
+# ReadMD for VS Code · V0.0.7
 
-V0.0.5 新增原生“问题”面板链接诊断、可点击 Wiki 双链与工作区检索。使用命令面板中的“ReadMD: 检查文档链接与标题”和“ReadMD: 搜索本地 Markdown 工作区”；搜索可组合短语、`path:`、`title:`、`tag:` 和排除词。修改内容后检查会防抖更新，旧版本结果不会覆盖最新文档；不信任的工作区不调用本地内核。需配合 V0.0.5 桌面内核，单份文档上限 2 MiB，扫描范围及截断明确提示。
+配套 [ReadMD V0.0.7 桌面版](https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7)，下载 [readmd-vscode-0.0.7.vsix](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/readmd-vscode-0.0.7.vsix)。桌面、扩展与 MCP 配置包版本一致。
+
+本版提供 OpenAPI 文档审阅更新及默认关闭的行内 AI 补全。文档链接诊断显示在原生“问题”面板，Wiki 双链可以点击打开；工作区搜索可组合短语、`path:`、`title:`、`tag:` 和排除词。诊断按文档版本更新，扫描范围与截断明确提示；文档检查上限 2 MiB。
 
 在 VS Code、Cursor 等兼容编辑器中阅读、修复和转换 Markdown，使用 ReadMD 的 AI Skills，并导出文档与演讲。保留编辑器原生的保存、撤销和未保存提示。
 
 ## 安装和连接
 
-安装 ReadMD 桌面应用，再用 **Extensions: Install from VSIX…** 安装 `readmd-vscode-0.0.6.vsix`。打开 Markdown，执行 ReadMD 命令即可。
+安装 ReadMD 桌面应用，再用 **Extensions: Install from VSIX…** 安装 `readmd-vscode-0.0.7.vsix`。打开 Markdown，执行 ReadMD 命令即可。
 
 扩展按需启动一个持久的 `readmd --mcp` 子进程，通过标准输入输出通信；没有 HTTP 服务地址设置，不需要打开桌面窗口，也不需要 Python。探测顺序：`readmd.executablePath` → 随 VSIX 附带的内核 → 桌面应用默认安装目录 → PATH。Windows 包括用户的 `Applications/ReadMD`、`LocalAppData/Programs` 和 Program Files。
 
 安装在其他目录时，设置 `readmd.executablePath` 为可执行文件的完整路径。修改后连接会重建；进程异常退出时，下次操作重新连接。卸载扩展不删除源文档、桌面设置或凭据。
 
-## 工具箱与 22 个命令
+## 工具箱与 25 个命令
 
 标题栏保留预览入口，低频操作收进菜单和分组工具箱。所有命令均可在命令面板搜索。
 
@@ -40,6 +42,9 @@ V0.0.5 新增原生“问题”面板链接诊断、可点击 Wiki 双链与工�
 | `readmd.convertToLatex` | 将当前草稿转换为 LaTeX，在新文档中打开。 |
 | `readmd.parseBibtex` | 读取工作区或所选 BibTeX 数据库并报告条目数。 |
 | `readmd.setupMcpServer` | 写入选定工作区的 VS Code/Cursor MCP 配置，或复制 Claude Desktop 模板。保留其他服务及 JSONC 注释；无效配置不覆盖。 |
+| `readmd.inspectDocument` | 检查当前 Markdown 的本地链接、标题、脚注及 Wiki 双链，在原生“问题”面板显示诊断。 |
+| `readmd.searchWorkspace` | 搜索本地 Markdown 工作区，显示标题、路径和片段，选择后跳到命中位置。 |
+| `readmd.openApiDocument` | 选择 OpenAPI 3.0/3.1 JSON/YAML，审阅生成或更新差异；接受时复核源文件及依赖修订，作为一次可撤销编辑应用。 |
 
 ## 预览、样式与执行
 
@@ -51,15 +56,21 @@ Mermaid、WaveDrom、Bitfield、Graphviz、Vega/Vega-Lite、Chart.js、TikZ 使�
 
 演讲元数据支持 `theme`、`transition`、`title`、`author`、`slideNumber`、`width`、`height` 的简单标量；主题和转场也可放在 `presentation:` 下。主题使用随包资源和系统字体回退，不请求在线字体。这不是完整 YAML 配置解析器；文档内的任意 `custom_css` 不执行，预览样式通过上述本地设置管理。
 
-代码执行使用本机运行时，不能把它当作安全沙箱。Python/Matplotlib 等可选运行环境由用户自行提供；依赖不足会反馈错误。
+代码执行需要匹配语言的就绪运行时，可使用受支持的受管包或已配置的本机环境；Python/Matplotlib 等可选依赖需另行提供。依赖不足会反馈错误。代码执行具有当前用户的本机权限。
 
 ## AI 与文件保护
 
-先在桌面 ReadMD 配置连接；扩展读取连接和模型，模型为空时向该连接获取列表，也可刷新。只传凭据引用，不在扩展设置中保存 API Key。选中文本时仅发送选区；否则发送全文。只有主动运行 AI 操作才发送文档。
+先在桌面 ReadMD 配置连接；扩展读取连接和模型，模型为空时向该连接获取列表，也可刷新。只传凭据引用，不在扩展设置中保存 API Key。主动运行 AI 工作台时，选中文本仅发送选区，否则发送全文。行内补全遵循下文的独立开关和上下文范围。
 
 内核进度通知是状态，不能拼接为 AI 正文。结果以最终响应为准，默认等待用户选择应用方式。生成期间文件版本改变时，禁止直接替换，仍可另开结果或插入末尾。应用结果使用原生编辑事务，可撤销；不自动保存、不在源目录生成备份。
 
 取消会通知内核并停止应用结果。已发出的第三方网络请求可能仍在服务端执行；不承诺撤销已发生的远程费用或已提交的文件写入。扩展目前没有桌面聊天会话管理器或逐 token 输出界面。
+
+## 行内 AI 补全与 OpenAPI
+
+`readmd.aiAutocomplete` 默认关闭。启用后，受信任工作区内编辑本地 Markdown 会触发补全请求：只发送光标前最多 3000 个 Unicode 字符及光标后最多 750 个字符，不读取剪贴板或其他文件。可用 `readmd.aiAutocompleteModel` 指定模型，留空时由内核按当前连接选择。建议以原生灰字显示，按 Tab 接受，使用编辑器撤销；文档、光标、选区或配置变化会丢弃过期结果。启用的连接可能是远程服务，应按自己的文档需求选择。
+
+OpenAPI 命令先打开目标 Markdown，再选择本地 JSON/YAML。支持 3.0/3.1 及本地多文件引用，使用原生差异视图审阅，可切换可读摘要和原始文本。接受前重新验证规范、依赖和目标正文；来源已变化或生成区有手工修改时拒绝旧结果。接受修改后仍需使用编辑器的保存命令写入文件。
 
 ## 维护与离线打包
 
@@ -78,6 +89,8 @@ node scripts/package-vsix.mjs
 
 ## English
 
-ReadMD starts a persistent local `readmd --mcp` process on demand. Install the desktop app and this VSIX, or set `readmd.executablePath`. Preview/presentation assets are bundled for offline use. The toolbox groups editing, conversion, export, Skills and integrations; all 22 commands are available from the command palette.
+ReadMD starts a persistent local `readmd --mcp` process on demand. Install the desktop app and this VSIX, or set `readmd.executablePath`. Preview/presentation assets are bundled for offline use. The toolbox groups editing, conversion, export, Skills and integrations; all 25 commands are available from the command palette.
 
-Conversion and generated results open as unsaved documents. Repairs and AI replacements use undoable editor transactions and guard against intervening edits. AI sends only selected text when there is a selection; otherwise the document. Network operations occur only when invoked. Code execution requires workspace trust and explicit confirmation. Cancellation discards late results but cannot reverse a remote operation already submitted. Local preview CSS is optional; document scripts and remote images stay blocked.
+Conversion and generated results open as unsaved documents. Repairs and AI replacements use undoable editor transactions and guard against intervening edits. AI workbench requests send the selection or full document when invoked. Inline completion is off by default; enabling it sends bounded text around the cursor while editing trusted local Markdown files. Code execution requires workspace trust and explicit confirmation. Cancellation discards late results but cannot reverse a remote operation already submitted. Local preview CSS is optional; document scripts and remote images stay blocked.
+
+[完整 V0.0.7 发布说明](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/release/release_notes.md) · [桌面使用指南](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/README.md) · [SHA-256 清单](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/SHA256SUMS.txt)

@@ -8,6 +8,13 @@ test('unbound control is reported, bound and hooked ones are not', () => {
   assert.deepEqual(p.map(x => x.kind + ':' + x.id), ['unbound:dead']);
 });
 
+test('sidebar view attributes require their delegated selector and view handler', () => {
+  const html = '<button id="outline" data-side-view="toc">Outline</button>';
+  const handler = `for (const button of rail.querySelectorAll('[data-side-view]')) button.addEventListener('click', () => showSide(button.dataset.sideView));`;
+  assert.deepEqual(analyse(html, [handler]), []);
+  assert.deepEqual(analyse(html, ["rail.querySelectorAll('[data-side-view]')"]).map(p => p.kind), ['unbound']);
+});
+
 test('icon-only buttons need an accessible name', () => {
   const html = '<button id="i1"><svg><path/></svg></button><button id="i2" aria-label="Close"><svg/></button><button id="i3" data-i18n-aria="k"><svg></svg></button>';
   const p = analyse(html, ["'i1' 'i2' 'i3'"]);

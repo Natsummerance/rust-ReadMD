@@ -89,8 +89,8 @@ async function until(fn, timeout = 30000) {
       await until(() => page.evaluate(() => Boolean(window.cmView)));
       assert.equal(await page.evaluate(() => hasUnsavedEditorChanges()), false);
       await page.evaluate(() => cmView.dispatch({ changes: { from: cmView.state.doc.length, insert: '\nREADMD_PRODUCTION_SAVE\n' } }));
-      await page.locator('#edit-save').click();
-      await until(() => fs.readFileSync(entry.copy, 'utf8').includes('READMD_PRODUCTION_SAVE'));
+      await page.keyboard.press('Control+s');
+      await until(async () => fs.readFileSync(entry.copy, 'utf8').includes('READMD_PRODUCTION_SAVE') && await page.evaluate(() => state.editing && !getActiveTab().isDirty));
       await page.evaluate(() => cmUndo());
       assert.equal(await page.evaluate(() => hasUnsavedEditorChanges()), true);
       assert.equal(await page.evaluate(() => saveEdit()), true);

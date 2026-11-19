@@ -6,7 +6,67 @@
 /* ---------------- 批量转换（转 MD） ---------------- */
 
 const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-let convertLastDir = null;
+
+// Optional extraction receipts are read-only. Older converters/jobs omit them.
+window.ReadMDConversionReport = (() => {
+  const codes = new Set(['original_layout', 'floating_objects', 'embedded_objects', 'presentation_effects', 'spreadsheet_formulas', 'formula_cache_missing', 'charts', 'native_math', 'review_markup', 'sheet_layout', 'hidden_content', 'header_footer', 'inspection_incomplete']);
+  const statuses = new Set(['preserved', 'extracted', 'review', 'not_preserved', 'not_checked']);
+  let modal;
+  function translated(node, key) { node.dataset.i18n = key; node.textContent = _t(key); return node; }
+  function entries(report) {
+    if (report?.schema !== 1 || report.scope !== 'structural' || !Array.isArray(report.findings)) return null;
+    return report.findings.slice(0, 128).filter(item => item && typeof item === 'object').map(item => ({
+      code: codes.has(item.code) ? item.code : 'inspection_incomplete',
+      status: codes.has(item.code) && statuses.has(item.status) ? item.status : 'not_checked',
+      count: Number.isSafeInteger(item.count) && item.count > 0 && item.count <= 1000000000 ? item.count : null,
+      warning: item.severity === 'warning',
+    }));
+  }
+  function content(items) {
+    const body = document.createElement('div'); body.className = 'conversion-fidelity-body';
+    const hint = translated(document.createElement('p'), 'convert.fidelity.scope'); body.appendChild(hint);
+    const list = document.createElement('ul');
+    for (const item of items) {
+      const row = document.createElement('li'); if (item.warning) row.className = 'conversion-fidelity-warning';
+      const name = translated(document.createElement('span'), 'convert.fidelity.code.' + item.code);
+      const state = translated(document.createElement('span'), 'convert.fidelity.status.' + item.status); state.className = 'conversion-fidelity-state';
+      row.append(name, state);
+      if (item.count !== null) { const count = document.createElement('span'); count.className = 'conversion-fidelity-count'; count.textContent = String(item.count); row.appendChild(count); }
+      list.appendChild(row);
+    }
+    if (items.length) body.appendChild(list);
+    else body.appendChild(translated(document.createElement('p'), 'convert.fidelity.status.not_checked'));
+    return body;
+  }
+  function attach(row, report) {
+    const items = entries(report); if (!items || row.querySelector('.conversion-fidelity')) return;
+    const details = document.createElement('details'); details.className = 'conversion-fidelity';
+    details.append(translated(document.createElement('summary'), 'convert.fidelity.title'), content(items));
+    // Expanding a report must not open its output file or activate the row.
+    details.addEventListener('click', event => event.stopPropagation());
+    details.addEventListener('keydown', event => event.stopPropagation());
+    row.appendChild(details);
+    if (row.dataset.out) {
+      row.setAttribute('role', 'group'); row.removeAttribute('tabindex');
+      const name = row.querySelector('.batch-name'); if (name) { name.tabIndex = 0; name.setAttribute('role', 'button'); }
+    }
+  }
+  function show(report, source) {
+    const items = entries(report); if (!items) return false;
+    if (!modal) {
+      modal = document.createElement('div'); modal.id = 'conversion-fidelity-modal'; modal.className = 'modal hidden'; modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-labelledby', 'conversion-fidelity-title');
+      const box = document.createElement('section'); box.className = 'modal-dialog conversion-fidelity-box';
+      const header = document.createElement('header'); header.className = 'modal-header';
+      const title = translated(document.createElement('h3'), 'convert.fidelity.title'); title.id = 'conversion-fidelity-title';
+      const close = translated(document.createElement('button'), 'toolbar.close'); close.type = 'button'; close.className = 'tb-btn'; close.dataset.modalClose = ''; close.onclick = () => window.ReadMDModal.close(modal); header.append(title, close);
+      const name = document.createElement('p'); name.id = 'conversion-fidelity-source';
+      const body = document.createElement('div'); body.id = 'conversion-fidelity-content'; box.append(header, name, body); modal.appendChild(box); document.body.appendChild(modal);
+    }
+    modal.querySelector('#conversion-fidelity-source').textContent = typeof source === 'string' ? source.split(/[\\/]/).pop().slice(0, 256) : '';
+    modal.querySelector('#conversion-fidelity-content').replaceChildren(content(items)); window.ReadMDModal.open(modal); return true;
+  }
+  return { show, attach };
+})();
 
 function currentSpeechLanguage() {
   try { return localStorage.getItem('readmd.transcribe.language') || 'auto'; }
@@ -21,15 +81,9 @@ function initSpeechLanguage() {
 }
 
 async function openConvertModal() {
-  const note = $('convert-note');
-  if (note) note.textContent = state.win7 ? (_t('convert.noteWin7') || 'Win7 版仅支持 docx / pdf 转 Markdown；转换结果自动保存为源文件同目录同名 .md。') : (_t('convert.note') || '转换结果自动保存为源文件同目录同名 .md（如 report.docx → report.md）。docx 公式、PDF 表格走专用解析，其余格式自动回退通用转换；输出经过严格校验（表格 / 代码围栏 / 公式 / 图片引用）。');
-  $('convert-modal').classList.remove('hidden');
-  initSpeechLanguage();
-  if (typeof batchFinished !== 'undefined' && !batchFinished && (batchJobId || Object.keys(batchRowsBySrc).length || (!batchOcrDone && $('convert-list').children.length))) return;
-  $('convert-list').innerHTML = '';
-  $('convert-status').textContent = '';
-  $('batch-cancel')?.classList.add('hidden');
-  $('convert-open-dir').classList.add('hidden');
+  openBatchModal();
+  await restoreBatchWorkbench();
+  void refreshBatchHistory();
 }
 
 function closeConvertModal() {
@@ -64,14 +118,12 @@ async function pickConvertFolder() {
   try { dir = await py.choose_folder(state.folder || state.dir || ''); } catch (e) { dir = null; }
   if (!dir) return;
   try {
-    const r = await apiFetch('/api/convert/collect?dir=' + encodeURIComponent(dir));
+    const r = await apiFetch('/api/convert/collect?workbench=1&dir=' + encodeURIComponent(dir));
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || (_t('convert.statusError') || '收集失败'));
+    if (!r.ok) throw new Error(apiMessage(d, 'convert.statusError'));
     const files = d.files || [];
     if (!files.length) { showToast(_t('convert.noConvertibleFiles') || '该目录下没有可转换的文件'); return; }
-    convertLastDir = dir;
     await startBatchConvert(files, $('convert-overwrite').checked);
-    batchFolderRoot = dir;
   } catch (e) { showToast((_t('toast.collectFilesFail') || '收集文件失败：') + e.message); }
 }
 
@@ -116,8 +168,9 @@ async function ocrFileOnce(path) {
     }
     if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return false; }
     if (!r.ok) { showToast(apiMessage(d, 'toast.ocrFail') || 'OCR 失败'); return false; }
-    if (!d.content || d.empty) { showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return false; }
+    if (!d.content || d.empty) { window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path); showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return false; }
     await renderVirtual('ocr', d.name, d.dir, d.content, d.fixes);
+    window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
     return true;
   } catch (e) { showToast((_t('toast.ocrFailPrefix') || 'OCR 失败：') + e.message); return false; }
   finally { busy(false); }
@@ -234,9 +287,8 @@ async function openPluginModal() {
   const modal = $('plugin-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
-  window.refreshOfflineCapabilityPack?.();
   setPluginListStatus(_t('plugin.loading'));
-  await refreshPluginList();
+  await Promise.all([window.refreshOfflineCapabilityPack?.(), refreshPluginList()]);
 }
 
 function closePluginModal() {
@@ -496,11 +548,10 @@ function renderPluginCards(plugins) {
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
-    metaParts.push(p.requires_model && isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
+    if (p.requires_model && isCached) metaParts.push(_t('plugin.cacheReady'));
 
     const capBadge = capName ? `
       <span class="plugin-capability-badge">
-        ${p.enabled ? '<span class="plugin-pulse-pip"></span>' : ''}
         ${escapeHtml(capName)}${isExclusive ? ' · ' + escapeHtml(_t('plugin.exclusiveNotice')) : ''}
       </span>
     ` : '';
@@ -583,13 +634,11 @@ function renderPluginCards(plugins) {
             <h4 class="plugin-card-title">${escapeHtml(title)}</h4>
             ${capBadge}
           </div>
-          <div class="plugin-card-submeta">
-            ${escapeHtml(metaParts.join(' · '))}
-          </div>
+          ${metaParts.length ? `<div class="plugin-card-submeta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+          <p class="plugin-card-desc">${escapeHtml(desc)}</p>
+          ${progressHtml}
         </div>
       </div>
-      <p class="plugin-card-desc">${escapeHtml(desc)}</p>
-      ${progressHtml}
       <div class="plugin-card-foot">
         <div class="plugin-foot-left">${footLeft}</div>
         <div class="plugin-foot-right">${footRight}</div>

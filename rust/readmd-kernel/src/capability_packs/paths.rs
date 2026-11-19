@@ -2,6 +2,7 @@
 //! Unix keeps the original per-lookup checks until native equivalents are tested.
 use super::*;
 
+#[derive(Debug)]
 pub(super) struct Tree {
     root: PathBuf,
     #[cfg(windows)]
@@ -13,6 +14,18 @@ pub(super) struct Tree {
 }
 
 impl Tree {
+    #[cfg(windows)]
+    pub(super) fn capacity_anchor(&self) -> ApiResult<(PathBuf,u64)> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{Foundation::HANDLE,Storage::FileSystem::{FileIdInfo,GetFileInformationByHandleEx,FILE_ID_INFO}};
+        for file in self._ancestors.iter().chain(self.directories.values()){directory(file).map_err(native_error)?;}
+        let canonical=self.canonical.as_ref().ok_or_else(error)?;
+        if &self.root.canonicalize().map_err(|_|error())?!=canonical{return Err(error());}
+        let file=self.directories.get("").ok_or_else(error)?;let mut id=FILE_ID_INFO::default();
+        unsafe{GetFileInformationByHandleEx(HANDLE(file.as_raw_handle()),FileIdInfo,(&mut id as *mut FILE_ID_INFO).cast(),std::mem::size_of::<FILE_ID_INFO>() as u32).map_err(|_|error())?;}
+        if id.FileId.Identifier==[0;16]{return Err(error());}
+        Ok((canonical.clone(),id.VolumeSerialNumber))
+    }
     pub(super) fn new(root: &Path) -> ApiResult<Self> {
         #[cfg(windows)]
         {

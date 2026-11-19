@@ -48,7 +48,10 @@ function saveEditorPrefs() {
 }
 
 let cmCompartments = null;
-let cmPointerDown = false;
+let cmSelectionGesture = null;
+let cmSelectionTimer = 0;
+const CM_SELECTION_SETTLE_MS = 140;
+const CM_SELECTION_SLOP_SQUARED = 16;
 let cmReusedState = false;
 let cmLayoutCleanup = null;
 
@@ -166,7 +169,7 @@ function createEditor(doc) {
         }
         slashOnUpdate(u);
         if (u.selectionSet && !u.docChanged) scheduleDocStatistics();
-        if (u.selectionSet || u.docChanged) updateCmSelectionToolbar();
+        if (u.selectionSet || u.docChanged) scheduleCmSelectionToolbar();
         if (u.geometryChanged && !slash.open) repositionCmSelectionToolbar();
       }),
     ],
@@ -179,8 +182,20 @@ function createEditor(doc) {
   window.ReadMDReview?.mount(cmView, tab, doc);
   syncSearchMode();
   applyEditorViewClasses();
-  cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
-  cmView.dom.addEventListener('keyup', () => setTimeout(updateCmSelectionToolbar, 10));
+  const view = cmView;
+  view.dom.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || !event.isPrimary || !event.target.closest('.cm-content')) return;
+    cmSelectionGesture = {
+      view, id: event.pointerId, type: event.pointerType, x: event.clientX, y: event.clientY,
+      dragPending: false, recenter: false,
+    };
+    hideCmSelectionToolbar();
+  }, true);
+  view.dom.addEventListener('mousedown', event => {
+    const gesture = cmMouseSelectionGesture(view);
+    if (!gesture || event.button !== 0) return;
+    gesture.dragPending = event.detail === 1 && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+  }, true);
   cmView.scrollDOM.addEventListener('scroll', () => {
     if (slash.open) positionSlashMenu();
     repositionCmSelectionToolbar();
@@ -192,11 +207,36 @@ function createEditor(doc) {
 
 }
 
-document.addEventListener('pointerup', () => {
-  if (!cmPointerDown) return;
-  cmPointerDown = false;
-  setTimeout(updateCmSelectionToolbar, 10);
-});
+function cmMouseSelectionGesture(view) {
+  const gesture = cmSelectionGesture;
+  return gesture?.type === 'mouse' && gesture.view === view ? gesture : null;
+}
+
+// CodeMirror tracks a drag on document mousemove. Let the initial click place
+// the caret, then wait for intentional movement before extending the range.
+window.addEventListener('mousemove', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture?.dragPending || !(event.buttons & 1) || gesture.view.compositionStarted) return;
+  const distanceSquared = (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2;
+  if (distanceSquared < CM_SELECTION_SLOP_SQUARED) event.stopPropagation();
+  else gesture.dragPending = false;
+}, true);
+document.addEventListener('pointerup', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  cmSelectionGesture = null;
+  if (gesture.recenter) scheduleCmTypewriterCenter(gesture.view);
+  // CodeMirror may finish the selection in mouseup, after pointerup.
+  requestAnimationFrame(() => {
+    if (cmView === gesture.view && !cmSelectionGesture) scheduleCmSelectionToolbar();
+  });
+}, true);
+document.addEventListener('pointercancel', event => {
+  if (cmSelectionGesture?.id !== event.pointerId) return;
+  cmSelectionGesture = null;
+  hideCmSelectionToolbar();
+}, true);
+window.addEventListener('blur', () => { cmSelectionGesture = null; hideCmSelectionToolbar(); });
 
 /* vendor 包只导出 historyKeymap，不直接导出 undo / redo：从键位表里取命令 */
 function cmHistoryCommand(key) {
@@ -225,8 +265,27 @@ function cmRedo() {
 }
 
 function hideCmSelectionToolbar() {
+  clearTimeout(cmSelectionTimer);
+  cmSelectionTimer = 0;
   const toolbar = $('cm-selection-toolbar');
   if (toolbar) toolbar.classList.add('hidden');
+}
+
+function selectionToolbarRange() {
+  if (!state.editing || !cmView || cmSelectionGesture?.view === cmView || cmView.composing || slash.open) return null;
+  const selection = cmView.state.selection.main;
+  return selection.empty ? null : selection;
+}
+
+function scheduleCmSelectionToolbar() {
+  hideCmSelectionToolbar();
+  const selection = selectionToolbarRange(), view = cmView;
+  if (!selection) return;
+  cmSelectionTimer = setTimeout(() => {
+    cmSelectionTimer = 0;
+    const current = selectionToolbarRange();
+    if (cmView === view && current?.from === selection.from && current.to === selection.to) updateCmSelectionToolbar();
+  }, CM_SELECTION_SETTLE_MS);
 }
 
 /* Selection toolbar buttons -> toolbar command (same code path as #md-tool). */
@@ -251,12 +310,8 @@ function cmSelectionMarks(view, from, to) {
 function updateCmSelectionToolbar() {
   const toolbar = $('cm-selection-toolbar');
   if (!toolbar) return;
-  if (!state.editing || !cmView || cmPointerDown || slash.open) {
-    toolbar.classList.add('hidden');
-    return;
-  }
-  const sel = cmView.state.selection.main;
-  if (!sel || sel.empty || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
+  const sel = selectionToolbarRange();
+  if (!sel || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
     toolbar.classList.add('hidden');
     return;
   }
@@ -413,6 +468,7 @@ document.addEventListener('pointerdown', e => {
 
 function destroyEditor() {
 
+  cmSelectionGesture = null;
   if (cmLayoutCleanup) { cmLayoutCleanup(); cmLayoutCleanup = null; }
   hideCmSelectionToolbar();
   closeSlashMenu();
@@ -686,21 +742,32 @@ function cmFocusExtension() {
 }
 
 /* Typewriter mode: the cursor line stays at the vertical centre. */
+function scheduleCmTypewriterCenter(view) {
+  const gesture = cmMouseSelectionGesture(view);
+  if (gesture) {
+    gesture.recenter = true;
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (cmView !== view || !view.hasFocus || !editorPrefs.typewriter || cmMouseSelectionGesture(view)) return;
+    const head = view.state.selection.main.head;
+    view.dispatch({ effects: window.ReadMDCodeMirror.EditorView.scrollIntoView(head, { y: 'center' }) });
+  });
+}
+
 function cmTypewriterExtension() {
   const CM = window.ReadMDCodeMirror;
   return [
     CM.EditorView.scrollMargins.of(view => {
+      // Drag autoscroll uses these margins to detect the edge of the editor.
+      if (cmMouseSelectionGesture(view)) return null;
       const h = view.scrollDOM.clientHeight;
       return { top: h * 0.45, bottom: h * 0.45 };
     }),
     CM.EditorView.updateListener.of(u => {
       if (!u.selectionSet || !u.view.hasFocus) return;
       if (!u.transactions.some(tr => tr.isUserEvent('input') || tr.isUserEvent('delete') || tr.isUserEvent('select') || tr.isUserEvent('move'))) return;
-      const head = u.state.selection.main.head;
-      requestAnimationFrame(() => {
-        if (!cmView || cmView !== u.view) return;
-        u.view.dispatch({ effects: CM.EditorView.scrollIntoView(head, { y: 'center' }) });
-      });
+      scheduleCmTypewriterCenter(u.view);
     }),
   ];
 }
@@ -856,6 +923,10 @@ function cmInsertSyntax(kind) {
   if (!cmView) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   switch (kind) {
+    case 'ink': return window.ReadMDInk.open();
+    case 'chapter-select': return ReadMDManuscript.select();
+    case 'chapter-up': return ReadMDManuscript.move('up');
+    case 'chapter-down': return ReadMDManuscript.move('down');
     case 'codechunk': openCodeChunkModal(); return;
     case 'diagram': openDiagramModal(); return;
     case 'docimport': openDocImportModal(); return;
@@ -881,11 +952,6 @@ function cmInsertSyntax(kind) {
 }
 
 
-function closeMdPopups() {
-  document.querySelectorAll('.md-menu, .pv-menu').forEach(el => el.classList.add('hidden'));
-  const trigger = $('pv-trigger'); if (trigger) trigger.setAttribute('aria-expanded', 'false');
-  document.querySelectorAll('#edit-bar [data-menu]').forEach(b => b.setAttribute('aria-expanded', 'false'));
-}
 
 /* ============================================================
    Editor Studio PRO: Code Chunk / Diagram / Doc Import Modals
@@ -1417,6 +1483,9 @@ function updateDocStatistics() {
   const hiddenMetadata=[...(window.ReadMDFormula?.metadataRanges(docText)||[]),...(window.ReadMDPublication?.metadataRanges(docText)||[])].sort((a,b)=>a.from-b.from);
   let visibleText='',visibleAt=0;for(const hidden of hiddenMetadata){visibleText+=docText.slice(visibleAt,hidden.from);visibleAt=hidden.to;}visibleText+=docText.slice(visibleAt);
   const stats = T && T.textStats ? T.textStats(visibleText) : { words: 0, chars: visibleText.length, minutes: 0 };
+  if (state.editing && typeof updateSidebarStatistics === 'function') {
+    updateSidebarStatistics({ words: stats.words, minutes: Math.max(stats.minutes, stats.words ? 1 : 0) });
+  }
   const nf = n => { try { return Number(n).toLocaleString((window.i18n && window.i18n.currentLang) || undefined); } catch (e) { return String(n); } };
   let selWords = 0;
   if (cmView && T && T.textStats) {
@@ -1435,6 +1504,7 @@ function updateDocStatistics() {
     }
   }
   const params = { words: nf(stats.words), chars: nf(stats.chars), min: nf(Math.max(stats.minutes, stats.words ? 1 : 0)), total: nf(stats.words) };
+  statsEl.classList.toggle('has-selection', selWords > 0);
   statsEl.textContent = selWords
     ? _t('editor.statsSelection', { words: nf(selWords), total: params.total })
     : _t('editor.statsLine', params);
@@ -1500,9 +1570,24 @@ function clipboardTableRows(text, delimiter) {
 function clipboardTableCell(text) {
   // Office cells are text, not Markdown/HTML. Entities also avoid GFM's
   // backslash/pipe parity trap and survive subsequent table Tab/Enter edits.
-  return text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
+  const escaped = text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
     .replace(/\n/g, '<br>')
     .replace(/^ +| +$/g, spaces => '&#32;'.repeat(spaces.length));
+  if (!window.ReadMDTableAttributes?.parseCell(escaped.trim())) return escaped;
+  const brace = escaped.lastIndexOf('{');
+  return escaped.slice(0, brace) + '&#123;' + escaped.slice(brace + 1);
+}
+
+// Freeze the destination before any file picker, image decode or clipboard I/O.
+// A cursor change may leave the document intact, so carry the original range.
+function imageEditTarget() {
+  const view = cmView, tab = getActiveTab();
+  if (!state.editing || !view || !tab || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false) return null;
+  const doc = view.state.doc, generation = tab.editGeneration || 0, path = tab.path, revision = tab.revision;
+  const { from, to } = view.state.selection.main;
+  return { tab, from, to, current: () => cmView === view && getActiveTab() === tab && state.editing &&
+    !view.state.readOnly && view.state.doc === doc && tab.path === path && tab.revision === revision &&
+    (tab.editGeneration || 0) === generation && window.ReadMDCollaborationShare?.canEdit() !== false };
 }
 
 /* 智能 Excel / CSV 粘贴转 Markdown 表格 */
@@ -1530,9 +1615,12 @@ function handleSmartExcelPaste(e) {
     }
   }
   if (imageFile) {
+    const target = imageEditTarget();
+    if (!target) return;
     e.preventDefault();
-    const pasteTab = getActiveTab(), pasteView = cmView, pasteContent = getEditContent();
-    const pasteTargetCurrent = () => getActiveTab() === pasteTab && cmView === pasteView && state.editing && getEditContent() === pasteContent;
+    const format = { 'image/png':'png', 'image/jpeg':'jpg', 'image/gif':'gif', 'image/webp':'webp',
+      'image/bmp':'bmp', 'image/tiff':'tiff', 'image/svg+xml':'svg', 'image/jp2':'jp2' }[imageFile.type.toLowerCase()];
+    if (!format) { showToast(window.i18n.t('error.unsupported_format')); return; }
     const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
     showToast(_t('toast.savingImage') || '正在保存剪贴板图片…', 1500);
     const reader = new FileReader();
@@ -1545,17 +1633,17 @@ function handleSmartExcelPaste(e) {
           body: JSON.stringify({
             stage: true,
             data: b64,
-            format: 'png',
+            format,
             name: 'clipboard'
           })
         });
         const d = await resp.json();
-        if (resp.ok && d && d.ok && pasteTargetCurrent()) {
+        if (resp.ok && d && d.ok && target.current()) {
           const insertRel = d.rel || d.relPath || d.path;
-          registerStagedImage(d.asset, pasteTab);
-          cmInsertImage(insertRel);
+          registerStagedImage(d.asset, target.tab);
+          cmInsertImage(insertRel, target);
           showToast(_t('toast.imgInsertedRel', { rel: insertRel }) || ('图片已插入（' + insertRel + '）'));
-        } else if (pasteTargetCurrent()) {
+        } else if (target.current()) {
           showToast(apiMessage(d, 'toast.imgSaveFailed') || '图片保存失败');
         }
       } catch (err) {
@@ -1570,6 +1658,7 @@ function handleSmartExcelPaste(e) {
   if (cmView) {
     const ranges = cmView.state.selection.ranges;
     if (ranges.length !== 1 || cmInCode(cmView.state, ranges[0].from) || cmInCode(cmView.state, ranges[0].to)) return;
+    if (cmPasteTableClipboard(e, cmView)) return;
   } else if (!$('edit-area') || e.target !== $('edit-area')) return;
 
   const csv = e.clipboardData.getData('text/csv');
@@ -1668,6 +1757,429 @@ function cmAlignTableColumn(view, alignment) {
   return true;
 }
 
+/* READMD_LITERAL_TABLE_CELL_HELPERS_BEGIN */
+// This first visual edit handles literal, single-line cells. Rich/unknown
+// cell source is retained and read-only rather than flattened to display text.
+function cmTableCellLiteral(raw) {
+  if (raw.length > 4096 || /[`*_~$<>\[\]\r\n\u0000]/.test(raw)) return null;
+  for (let i = 0; i < raw.length; i++) if (raw[i] === '\\' && !['\\', '|'].includes(raw[++i])) return null;
+  let unknown = false;
+  const text = raw.replace(/\\([\\|])/g, '$1').replace(/&([^;\s]+);/g, (whole, entity) => {
+    if (Object.hasOwn({ amp: 1, lt: 1, gt: 1, quot: 1, apos: 1 }, entity)) return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[entity];
+    const n = /^#\d+$/.test(entity) ? Number(entity.slice(1)) : /^#x[0-9a-f]+$/i.test(entity) ? parseInt(entity.slice(2), 16) : -1;
+    if (n <= 0 || n > 0x10ffff || n >= 0xd800 && n <= 0xdfff) { unknown = true; return whole; }
+    return String.fromCodePoint(n);
+  });
+  return unknown ? null : text;
+}
+function cmTableCellReplacement(value) {
+  if (typeof value !== 'string' || value.length > 4096 || /[\r\n\u0000\u2028\u2029]/.test(value)) return null;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value.charCodeAt(i);
+    if (ch >= 0xd800 && ch <= 0xdbff) { const next = value.charCodeAt(++i); if (!(next >= 0xdc00 && next <= 0xdfff)) return null; }
+    else if (ch >= 0xdc00 && ch <= 0xdfff) return null;
+  }
+  return clipboardTableCell(value);
+}
+function cmTableCellContext(view, protectRange = false) {
+  const CM = window.ReadMDCodeMirror, hit = view && cmSingleCursorLine(view), attributes = window.ReadMDTableAttributes;
+  if (!view || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
+  const tree = CM.syntaxTree(view.state);
+  if (!hit) {
+    if (!protectRange) return null;
+    const { from, to } = view.state.selection.main;
+    let touchesTable = false;
+    tree.iterate({ from, to, enter(node) {
+      if (node.name === 'Table' && node.from < to && from < node.to) { touchesTable = true; return false; }
+    } });
+    return touchesTable ? { unsupported: true } : null;
+  }
+  let node = tree.resolveInner(hit.range.head, -1);
+  while (node && node.name !== 'Table') {
+    if (node.name === 'HTMLBlock' && /^\s*<table\b/i.test(view.state.doc.sliceString(node.from, node.to))) return { unsupported: true };
+    node = node.parent;
+  }
+  if (!node && protectRange) {
+    node = tree.resolveInner(hit.range.head, 1);
+    while (node && node.name !== 'Table') node = node.parent;
+  }
+  if (!node) return null;
+  const doc = view.state.doc, header = doc.lineAt(node.from), last = doc.lineAt(node.to);
+  const unsupported = () => ({ unsupported: true });
+  if (!attributes || node.parent?.name !== 'Document' || node.to - node.from > 65536 || last.number - header.number > attributes.maxRows + 1 ||
+      !/^ {0,3}$/.test(header.text.slice(0, node.from - header.from)) || /<(?:table|tr|td|th|col|caption)\b/i.test(doc.sliceString(node.from, node.to))) return unsupported();
+  const lines = [];
+  for (let number = header.number; number <= last.number; number++) {
+    const line = doc.line(number), segments = cmTableRowSegments(line.text);
+    if (!segments || !segments.length || segments.length > attributes.maxColumns || lines.length && segments.length !== lines[0].segments.length) return unsupported();
+    lines.push({ line, segments });
+  }
+  if (lines.length < 2 || (lines.length - 1) * lines[0].segments.length > 256 ||
+      !lines[1].segments.every(cell => /^\s*:?-+:?\s*$/.test(lines[1].line.text.slice(cell.from, cell.to)))) return unsupported();
+  const rows = lines.filter((_, index) => index !== 1).map(({ line, segments }, row) => segments.map((segment, column) => {
+    const raw = line.text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
+    const body = raw.slice(leading).replace(/[ \t]*$/, ''), from = line.from + segment.from + leading;
+    return { row, column, from, to: from + body.length, original: body, line: line.number,
+      segmentFrom: line.from + segment.from, segmentTo: line.from + segment.to };
+  }));
+  const parsedRows = [];
+  for (let child = node.firstChild; child; child = child.nextSibling) if (child.name === 'TableHeader' || child.name === 'TableRow') parsedRows.push(child);
+  if (parsedRows.length !== rows.length || rows.some((cells, row) => {
+    const parsedCells = parsedRows[row].getChildren('TableCell');
+    return cells.some(cell => cell.from !== cell.to && !parsedCells.some(parsed => parsed.from === cell.from && parsed.to === cell.to));
+  })) return unsupported();
+  const layout = attributes.layout(rows.map(row => row.map(cell => cell.original)));
+  if (!layout) return unsupported();
+  for (const cell of rows.flat()) {
+    const attrs = layout.cells[cell.row][cell.column];
+    cell.content = attrs?.text ?? cell.original;
+    cell.contentTo = cell.from + cell.content.length + (attrs?.from > 0 ? 1 : 0);
+    cell.value = cmTableCellLiteral(cell.content);
+  }
+  const selected = rows.flat().find(cell => cell.line === hit.line.number && hit.range.from >= cell.segmentFrom && hit.range.to <= cell.segmentTo);
+  return selected ? { from: node.from, to: node.to, rows, lines, layout, selected, editorDoc: doc } : unsupported();
+}
+
+async function cmCommitTableClipboard(edit, tab, doc, current) {
+  const review = window.ReadMDReview;
+  const options = { edits: edit.edits, preserveSelection: true, userEvent: 'input.paste.table' };
+  const stamp = await review.captureManualRange(edit.from, edit.to, tab, { allowDraft: true });
+  if (!current() || stamp.editorDoc !== doc || stamp.original !== doc.sliceString(edit.from, edit.to)) throw Error('review_stale_generation');
+  if (review.snapshot(tab).changes.some(change => change.decision !== 'withdrawn' && edit.edits.some(({ from, to }) =>
+    change.from === change.to ? from <= change.from && change.from <= to : change.from < to && from < change.to))) {
+    throw Error('review_conflict');
+  }
+  await review.applyManualRange(edit.insert, stamp, tab, current, options);
+}
+
+function cmPasteTableClipboard(event, view) {
+  const clipboard = window.ReadMDTableClipboard;
+  const payload = clipboard?.read(event.clipboardData);
+  if (payload == null) return false;
+  const context = cmTableCellContext(view, true);
+  if (!context) return false;
+  event.preventDefault();
+  const edit = !context.unsupported && clipboard.plan(context, context.selected, payload, clipboardTableCell);
+  const toast = key => showToast(window.i18n?.t(key) || key);
+  if (!edit) { toast(clipboard.invalidRange); return true; }
+  if (!edit.edits.length) return true;
+  const tab = getActiveTab(), doc = view.state.doc, selection = view.state.selection;
+  const current = () => cmView === view && getActiveTab() === tab && state.editing && view.state.doc === doc &&
+    view.state.selection.eq(selection) && !view.state.readOnly && window.ReadMDCollaborationShare?.canEdit() !== false;
+  void cmCommitTableClipboard(edit, tab, doc, current).catch(() => {
+    if (cmView === view && getActiveTab() === tab) toast('review.conflict');
+  });
+  return true;
+}
+
+let tableCellSession = null;
+window.ReadMDModal?.setGuard?.('table-modal', () => !tableCellSession?.resize?.cancel());
+function tableCellControls(view, context, modal, picker) {
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key, root = document.createElement('div');
+  root.id = 'table-cell-controls'; root.className = 'table-cell-editor'; picker.before(root);
+  const status = document.createElement('p'); status.className = 'hint'; status.setAttribute('role', 'status');
+  if (context.unsupported || !window.ReadMDReview?.captureManualRange || !window.ReadMDReview?.applyManualRange) {
+    status.textContent = t(context.unsupported ? 'error.publication_table_unsupported' : 'review.persistenceFailed'); root.append(status); return;
+  }
+  const tab = getActiveTab(), session = { view, tab, context, root, serial: 0, stamp: null, busy: false };
+  tableCellSession = session;
+  root.style.setProperty('--table-cell-columns', String(context.rows[0].length));
+  const active = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
+    cmView === view && getActiveTab() === tab && !view.state.readOnly &&
+    window.ReadMDCollaborationShare?.canEdit() !== false;
+  const current = () => active() && view.state.doc === context.editorDoc;
+  const grid = document.createElement('table'); grid.className = 'table-cell-grid'; grid.style.width = '100%'; grid.style.tableLayout = 'fixed'; grid.setAttribute('aria-label', t('editor.table'));
+  const gridWrap = document.createElement('div'); gridWrap.className = 'table-cell-grid-scroll'; gridWrap.style.maxWidth = '100%'; gridWrap.style.overflowX = 'auto'; gridWrap.append(grid);
+  const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
+  const label = document.createElement('label'); label.setAttribute('for', input.id);
+  const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
+  const structureBar = document.createElement('div'); structureBar.className = 'table-structure-tools'; actions.append(structureBar);
+  const clipboard = window.ReadMDTableClipboard, csvButton = document.createElement('button');
+  const pasteCsvButton = document.createElement('button');
+  if (clipboard) {
+    const mod = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+    grid.title = t('editor.tableCellSelectRange') + ' · ' + mod + 'C / ' + mod + 'V';
+    csvButton.type = 'button'; csvButton.id = 'table-cell-copy-csv'; csvButton.className = 'tb-btn';
+    csvButton.textContent = t('editor.copy') + ' CSV';
+    pasteCsvButton.type = 'button'; pasteCsvButton.id = 'table-cell-paste-csv'; pasteCsvButton.className = 'tb-btn';
+    pasteCsvButton.textContent = t('editor.paste') + ' CSV'; actions.append(csvButton, pasteCsvButton);
+  }
+  const structureActions = [
+    ['up', 'pm.up', 'M12 19V5m-5 5 5-5 5 5'],
+    ['down', 'pm.down', 'M12 5v14m-5-5 5 5 5-5'],
+    ['insert', 'editor.insertRow', 'M3 5h18v4H3z M12 12v8m-4-4h8'],
+    ['delete', 'editor.deleteRow', 'M3 5h18v4H3z M8 16h8'],
+    ['insert-column', 'editor.insertColumn', 'M4 3h4v18H4z M12 12h8m-4-4v8'],
+    ['delete-column', 'editor.deleteColumn', 'M4 3h4v18H4z M12 12h8'],
+    ['sort-asc', 'editor.sortAscending', 'M4 6h12M4 11h8M4 16h4m8 3V9m-3 3 3-3 3 3'],
+    ['sort-desc', 'editor.sortDescending', 'M4 6h4M4 11h8M4 16h10m-6-2V4m-3 7 3 3 3-3'],
+  ].map(([action, key, icon]) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn icon';
+    button.dataset.tableMove = action; button.disabled = true;
+    button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
+    button.title = t(key); button.setAttribute('aria-label', t(key));
+    button.innerHTML = `<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg>`;
+    button.addEventListener('click', () => void applyStructure(action)); structureBar.append(button);
+    return { action, button };
+  });
+  const apply = document.createElement('button'), cancel = document.createElement('button');
+  for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
+  apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
+  const properties = document.createElement('details'), summary = document.createElement('summary');
+  properties.id = 'table-cell-properties';
+  properties.open = context.layout.cells.some(row => row.some(cell =>
+    cell && Object.keys(cell.attributes).some(key => key !== 'width' && key !== 'height')));
+  summary.dataset.i18n = 'editor.tableCellProperties'; summary.textContent = t(summary.dataset.i18n); properties.append(summary);
+  const propertyFields = document.createElement('div'); propertyFields.className = 'table-cell-property-fields'; properties.append(propertyFields);
+  function propertyField(tag, name, key) {
+    const field = document.createElement(tag), caption = document.createElement('label');
+    field.id = 'table-cell-' + name; field.className = 'modal-input';
+    caption.setAttribute('for', field.id);
+    const text = document.createElement('span'); text.dataset.i18n = key; text.textContent = t(key);
+    caption.append(text, field); propertyFields.append(caption);
+    field.addEventListener('input', updatePropertyControls);
+    return field;
+  }
+  function spanField(name, key) {
+    const field = propertyField('input', name, key);
+    field.type = 'number'; field.min = '1'; field.step = '1'; field.value = '1';
+    return field;
+  }
+  function alignmentField(name, key, choices) {
+    const field = propertyField('select', name, key);
+    for (const [value, optionKey] of [['', 'export.presetDefault'], ...choices]) {
+      const option = document.createElement('option'); option.value = value;
+      option.dataset.i18n = optionKey; option.textContent = t(optionKey); field.append(option);
+    }
+    return field;
+  }
+  const rowSpan = spanField('rowspan', 'editor.tableCellRowSpan'), columnSpan = spanField('colspan', 'editor.tableCellColumnSpan');
+  const horizontal = alignmentField('align', 'editor.tableCellHorizontal', [
+    ['left', 'export.alignLeft'], ['center', 'export.alignCenter'], ['right', 'export.alignRight'],
+  ]);
+  const vertical = alignmentField('valign', 'editor.tableCellVertical', [
+    ['top', 'formula.ommlEnum.VerticalAlignmentValues.Top'], ['middle', 'editor.tableCellMiddle'], ['bottom', 'formula.ommlEnum.VerticalAlignmentValues.Bottom'],
+  ]);
+  const rangeFeedback = document.createElement('p'); rangeFeedback.className = 'table-cell-range-feedback';
+  rangeFeedback.setAttribute('aria-live', 'polite');
+  const propertyActions = document.createElement('div'); propertyActions.className = 'panel-feedback-row table-cell-property-actions';
+  properties.append(propertyActions, rangeFeedback);
+  function propertyAction(id, key, action) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn';
+    button.id = 'table-cell-' + id; button.dataset.i18n = key; button.textContent = t(key); button.disabled = true;
+    button.addEventListener('click', () => commitStructure(propertyEdit(action))); propertyActions.append(button);
+    return button;
+  }
+  const merge = propertyAction('merge', 'editor.tableCellMerge', 'merge');
+  const split = propertyAction('split', 'editor.tableCellSplit', 'split');
+  const applyProperties = propertyAction('properties-apply', 'editor.tableCellApplyProperties', 'align');
+  const rangeHelp = document.createElement('p'); rangeHelp.className = 'table-cell-range-feedback';
+  rangeHelp.dataset.i18n = 'editor.tableCellSelectRange'; rangeHelp.textContent = t(rangeHelp.dataset.i18n);
+  properties.append(rangeHelp);
+  const buttons = [];
+  const structureCache = new Map();
+  const cellChanged = () => !input.disabled && input.value !== session.cell?.value;
+  const resize = grid.ownerDocument && window.ReadMDTableResize?.mount(grid, context,
+    () => current() && !session.busy && !cellChanged(), (axis, index, size) =>
+      commitStructure(ReadMDTableStructure.resizeTrack(context, axis, index, size), true), t);
+  session.resize = resize;
+  function structuralEdit(action) {
+    if (!session.cell || context.layout.hasSpans || cellChanged()) return null;
+    if (!structureCache.has(action)) structureCache.set(action, planStructure(action));
+    return structureCache.get(action);
+  }
+  function planStructure(action) {
+    const {rows, editorDoc} = context;
+    const {row, column} = session.cell;
+    if (action === 'insert-column' || action === 'delete-column') {
+      return ReadMDTableStructure.columnEdit(context, column, action === 'insert-column');
+    }
+    if (action === 'sort-asc' || action === 'sort-desc') {
+      return ReadMDTableStructure.sortRows(context, column, action === 'sort-asc', window.i18n?.currentLang);
+    }
+    const line = editorDoc.line(rows[row][0].line);
+    if (action === 'insert') {
+      const after = row === 0 ? editorDoc.line(line.number + 1) : line;
+      const indent = after.text.match(/^ {0,3}/)[0];
+      const insert = '\n' + indent + '|' + ' |'.repeat(rows[0].length);
+      if (rows.length >= ReadMDTableAttributes.maxRows + 1 || (rows.length + 1) * rows[0].length > 256 ||
+          context.to - context.from + insert.length > 65536) return null;
+      return { from: after.to, to: after.to, insert };
+    }
+    if (row === 0) return null;
+    if (action === 'delete') return { from: line.from - 1, to: line.to, insert: '' };
+    const adjacent = rows[row + (action === 'up' ? -1 : 1)];
+    if (!adjacent || adjacent === rows[0]) return null;
+    return window.ReadMDTransforms.tableRowSwap(line, editorDoc.line(adjacent[0].line));
+  }
+  function updateStructureButtons() {
+    for (const {button, action} of structureActions) button.disabled = session.busy || !structuralEdit(action);
+    csvButton.disabled = pasteCsvButton.disabled = session.busy || cellChanged();
+    resize?.update();
+  }
+  function propertyEdit(action) {
+    if (!session.cell || cellChanged()) return null;
+    const tools = window.ReadMDTableStructure, cell = session.cell;
+    if (action === 'merge') return tools.mergeCells(context, cell, Number(rowSpan.value), Number(columnSpan.value));
+    if (action === 'split') return tools.splitCell(context, cell);
+    return tools.alignCell(context, cell, horizontal.value, vertical.value);
+  }
+  function updatePropertyControls() {
+    if (!session.cell) return;
+    const { row, column } = session.cell, { owners } = context.layout;
+    const owner = owners[row][column];
+    const canMerge = propertyEdit('merge');
+    rowSpan.disabled = columnSpan.disabled = session.busy || Boolean(owner);
+    horizontal.disabled = vertical.disabled = session.busy;
+    merge.disabled = session.busy || !canMerge;
+    split.disabled = session.busy || !propertyEdit('split');
+    applyProperties.disabled = session.busy || !propertyEdit('align');
+    const hasRange = rowSpan.value !== '1' || columnSpan.value !== '1';
+    rangeFeedback.textContent = hasRange && !owner && !canMerge && !cellChanged() ? t('editor.tableCellInvalidRange') : '';
+    rangeFeedback.hidden = !rangeFeedback.textContent;
+    const clipRange = session.clipboardRange && clipboard?.rectangle(context, session.clipboardRange.anchor, session.clipboardRange.end);
+    for (const { button, cell } of buttons) {
+      const inRange = clipRange ? cell.row >= clipRange.row && cell.row < clipRange.row + clipRange.height &&
+        cell.column >= clipRange.column && cell.column < clipRange.column + clipRange.width : owner ? owners[cell.row][cell.column] === owner :
+        canMerge && cell.row >= row && cell.row < row + Number(rowSpan.value) &&
+          cell.column >= column && cell.column < column + Number(columnSpan.value);
+      if (inRange) button.dataset.tableInRange = '';
+      else delete button.dataset.tableInRange;
+    }
+  }
+  input.addEventListener('input', () => { updateStructureButtons(); updatePropertyControls(); });
+  function applyStructure(action) { return commitStructure(structuralEdit(action)); }
+  async function commitStructure(edit, keepSelection = false) {
+    if (!current() || session.busy || !edit) return;
+    let resizedCell = null;
+    session.busy = true; input.readOnly = true; apply.disabled = true;
+    updateStructureButtons(); updatePropertyControls();
+    status.textContent = t('review.busy');
+    try {
+      if (edit.edits) {
+        await cmCommitTableClipboard(edit, tab, context.editorDoc, current);
+        if (active()) closeTableModal();
+        return;
+      }
+      const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab, { allowDraft: keepSelection });
+      if (!current() || stamp.editorDoc !== context.editorDoc ||
+          stamp.original !== context.editorDoc.sliceString(edit.from, edit.to)) throw Error('review_stale_generation');
+      // A structural edit would invalidate these anchors. Keep any review
+      // touching the affected lines available for an explicit decision first.
+      const changes = ReadMDReview.snapshot(tab).changes;
+      if (changes.some(change => change.decision !== 'withdrawn' && (edit.affected || [edit]).some(({ from, to }) =>
+        change.from === change.to ? from <= change.from && change.from <= to : change.from < to && from < change.to))) {
+        status.textContent = t('review.conflict'); return;
+      }
+      const options = keepSelection ? { preserveSelection: true, userEvent: 'input.table.resize' } : undefined;
+      const saved = await ReadMDReview.applyManualRange(edit.insert, stamp, tab, current, options);
+      if (!active()) return;
+      if (!keepSelection) { closeTableModal(); return; }
+      const next = cmTableCellContext(view);
+      if (next?.from !== context.from || view.state.doc.toString() !== saved.content) throw Error('review_stale_generation');
+      const { row, column } = session.cell;
+      Object.assign(context, next);
+      for (const item of buttons) item.cell = context.rows[item.cell.row][item.cell.column];
+      structureCache.clear();
+      resizedCell = session.cell = context.rows[row][column];
+      session.stamp = null;
+    } catch (_) {
+      if (tableCellSession === session && getActiveTab() === tab) status.textContent = t('review.conflict');
+    } finally {
+      session.busy = false;
+      if (current()) {
+        input.readOnly = false; updateStructureButtons(); updatePropertyControls(); apply.disabled = !session.stamp;
+        if (resizedCell) void captureSelectedCell(resizedCell, false);
+      }
+    }
+  }
+  async function select(cell, focusInput = true) {
+    if (!current() || session.busy) return;
+    structureCache.clear();
+    session.stamp = null; session.cell = cell; input.value = cell.value ?? cell.content; input.disabled = cell.value === null; apply.disabled = true;
+    const owner = context.layout.owners[cell.row][cell.column], attrs = context.layout.cells[cell.row][cell.column]?.attributes;
+    rowSpan.max = String(cell.row === 0 ? 1 : context.rows.length - cell.row);
+    columnSpan.max = String(context.rows[0].length - cell.column);
+    rowSpan.value = String(owner?.rowspan ?? 1); columnSpan.value = String(owner?.colspan ?? 1);
+    horizontal.value = attrs?.align ?? ''; vertical.value = attrs?.valign ?? '';
+    updateStructureButtons(); updatePropertyControls();
+    label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
+    for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
+    await captureSelectedCell(cell, focusInput);
+  }
+  async function captureSelectedCell(cell, focusInput) {
+    const token = ++session.serial;
+    // Rich content stays visible while its plain-text replacement is disabled.
+    // Geometry actions have their own capture and can still operate on this cell.
+    if (cell.value === null || !tab?.path || tab.path.startsWith('draft:')) { status.textContent = ''; return; }
+    status.textContent = t('review.busy');
+    try {
+      const stamp = await ReadMDReview.captureManualRange(cell.from, cell.contentTo, tab);
+      if (!current() || token !== session.serial) return;
+      if (stamp.editorDoc !== context.editorDoc || stamp.original !== context.editorDoc.sliceString(cell.from, cell.contentTo)) throw Error('review_stale_generation');
+      session.stamp = stamp;
+      if (!session.busy) {
+        apply.disabled = false; status.textContent = '';
+        if (focusInput && !properties.contains?.(document.activeElement) && !grid.contains?.(document.activeElement)) input.focus();
+      }
+    } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
+  }
+  for (const row of context.rows) {
+    const tr = document.createElement('tr');
+    for (const cell of row) {
+      const td = document.createElement(cell.row === 0 ? 'th' : 'td'), button = document.createElement('button');
+      button.type = 'button'; button.className = 'tb-btn'; button.textContent = cell.value ?? cell.content; button.dataset.tableRow = cell.row; button.dataset.tableColumn = cell.column;
+      button.setAttribute('aria-label', t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1)); button.style.width = '100%'; button.style.overflow = 'hidden'; button.style.textOverflow = 'ellipsis';
+      button.addEventListener('click', event => {
+        if (!current() || session.busy) return;
+        const clicked = context.rows[cell.row][cell.column];
+        if (!event?.shiftKey || !session.cell) {
+          session.clipboardRange = null;
+          if (clipboard) button.focus();
+          void select(clicked, !clipboard);
+          return;
+        }
+        if (clipboard) { session.clipboardRange = { anchor: session.cell, end: clicked }; button.focus(); }
+        if (!rowSpan.disabled && cell.row >= session.cell.row && cell.column >= session.cell.column) {
+          properties.open = true;
+          rowSpan.value = String(cell.row - session.cell.row + 1);
+          columnSpan.value = String(cell.column - session.cell.column + 1);
+        }
+        updatePropertyControls();
+      });
+      buttons.push({ button, cell }); td.append(button); resize?.add(cell, td, tr); tr.append(td);
+    }
+    grid.append(tr);
+  }
+  cancel.addEventListener('click', closeTableModal);
+  apply.addEventListener('click', async () => {
+    if (!current() || session.busy || !session.stamp) return;
+    let replacement = cmTableCellReplacement(input.value);
+    if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
+    if (input.value === session.cell.value) { closeTableModal(); return; }
+    const cell = session.cell;
+    if (replacement && context.layout.cells[cell.row][cell.column]) replacement += ' ';
+    const stamp = session.stamp;
+    session.busy = true; apply.disabled = true; input.disabled = true; updateStructureButtons(); updatePropertyControls();
+    try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
+    catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
+    finally { session.busy = false; if (current()) { input.disabled = false; apply.disabled = false; updateStructureButtons(); updatePropertyControls(); } }
+  });
+  clipboard?.bindGrid({ grid, csvButton, pasteCsvButton, context, getCell: () => session.cell, getRange: () => session.clipboardRange,
+    ready: () => current() && !session.busy && !cellChanged(), encodeCell: clipboardTableCell,
+    report: key => { status.textContent = t(key); }, commit: commitStructure });
+  root.append(gridWrap, label, input, properties);
+  if (context.layout.hasSpans) {
+    const locked = document.createElement('p'); locked.className = 'table-cell-structure-status';
+    locked.dataset.i18n = 'editor.tableCellStructureLocked'; locked.textContent = t(locked.dataset.i18n);
+    root.append(locked);
+  }
+  root.append(actions, status);
+  resize?.refresh();
+  void select(context.selected);
+}
+
+/* READMD_LITERAL_TABLE_CELL_HELPERS_END */
 function openTableModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -1675,6 +2187,9 @@ function openTableModal() {
   if (!modal) return;
   const _t = key => window.i18n ? window.i18n.t(key) : key;
   const picker = $('table-grid-picker'), label = $('table-grid-label');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_END */
   $('table-align-controls')?.remove();
   const view = cmView, hit = cmTableAlignmentContext(view);
   if (hit && picker) {
@@ -1700,9 +2215,16 @@ function openTableModal() {
     initTableGridPicker();
   }
   modal.classList.remove('hidden');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_BEGIN */
+  const cell = cmTableCellContext(view);
+  if (cell && picker) { picker.classList.add('hidden'); tableCellControls(view, cell, modal, picker); }
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_END */
 }
 
 function closeTableModal() {
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_END */
   const modal = $('table-modal');
   if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();
@@ -2014,20 +2536,70 @@ function cmSingleCursorLine(view) {
   return { range: r, line };
 }
 
+function cmAttributedTableRows(view, position) {
+  const parseCell = window.ReadMDTableAttributes?.parseCell, syntaxTree = window.ReadMDCodeMirror?.syntaxTree;
+  if (!parseCell || !syntaxTree) return null;
+  const tree = syntaxTree(view.state), doc = view.state.doc;
+  let table;
+  for (const bias of [-1, 1]) {
+    table = tree.resolveInner(position, bias);
+    while (table && table.name !== 'Table') table = table.parent;
+    if (table) break;
+  }
+  if (!table || !doc.sliceString(table.from, table.to).includes('{')) return null;
+  const rows = [];
+  for (let row = table.firstChild; row; row = row.nextSibling) {
+    if (row.name === 'TableHeader' || row.name === 'TableRow') rows.push(row);
+  }
+  return rows.some(row => row.getChildren('TableCell').some(cell => parseCell(doc.sliceString(cell.from, cell.to)))) ? rows : null;
+}
+
+function cmNavigateAttributedTable(view, rows, position, dir) {
+  const doc = view.state.doc, cells = [];
+  for (const row of rows) {
+    const text = doc.sliceString(row.from, row.to), segments = cmTableRowSegments(text);
+    if (!segments) return true;
+    for (const segment of segments) {
+      const raw = text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
+      const content = raw.slice(leading).replace(/[ \t]*$/, '');
+      const attributes = ReadMDTableAttributes.parseCell(content);
+      const from = row.from + segment.from + leading;
+      const length = attributes?.text?.length ?? content.length;
+      cells.push({ from, to: from + length, start: row.from + segment.from, end: row.from + segment.to });
+    }
+  }
+  const current = cells.findIndex(cell => cell.start <= position && position <= cell.end);
+  const target = current >= 0 ? cells[current + dir] :
+    dir > 0 ? cells.find(cell => cell.start > position) : cells.findLast(cell => cell.end < position);
+  if (target) view.dispatch({ selection: { anchor: target.from, head: target.to }, scrollIntoView: true });
+  return true;
+}
+
 /* Tab / Shift+Tab inside a GFM table: realign pipes and jump between cells. */
 function cmTableTab(view, dir) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
-  if (!T || !hit || cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir), 'input.table');
+  if (!T || !hit) return false;
+  const rows = cmAttributedTableRows(view, hit.range.head);
+  if (rows) return cmNavigateAttributedTable(view, rows, hit.range.head, dir);
+  if (cmInCode(view.state, hit.range.head)) return false;
+  const edit = T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir);
+  return edit?.blocked || cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter inside a table adds a row; Enter on an empty last row leaves it. */
 function cmTableEnter(view) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
-  if (!T || !hit || !hit.range.empty || cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableEnterEdit(view.state.doc.toString(), hit.range.head), 'input.table');
+  if (!T || !hit || !hit.range.empty) return false;
+  const rows = cmAttributedTableRows(view, hit.range.head);
+  if (!rows && cmInCode(view.state, hit.range.head)) return false;
+  const edit = rows ? null : T.tableEnterEdit(view.state.doc.toString(), hit.range.head);
+  if (rows || edit?.blocked) {
+    showToast(window.i18n?.t('editor.tableCellStructureLocked') || 'editor.tableCellStructureLocked');
+    return true;
+  }
+  return cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter at the end of an unclosed opening fence (```js) closes the block
@@ -2708,153 +3280,3 @@ function slashOnUpdate(u) {
 }
 
 window.addEventListener('resize', () => { if (slash.open) positionSlashMenu(); });
-
-/* ============================================================
-   Edit bar: view menu (line numbers / focus / typewriter), slash button,
-   keyboard navigation inside the edit-bar menus.
-   ============================================================ */
-
-function editMenuArrowNav(e) {
-  const items = [...e.currentTarget.querySelectorAll('button')].filter(b => b.offsetParent !== null && !b.disabled);
-  if (!items.length) return;
-  const i = items.indexOf(document.activeElement);
-  let next = null;
-  if (e.key === 'ArrowDown') next = items[(i + 1) % items.length];
-  else if (e.key === 'ArrowUp') next = items[(i - 1 + items.length) % items.length];
-  else if (e.key === 'Home') next = items[0];
-  else if (e.key === 'End') next = items[items.length - 1];
-  if (next) { e.preventDefault(); next.focus(); }
-}
-
-// Move the original controls, including their bound handlers, into a single
-// overflow menu. Measure translated labels instead of assuming English widths.
-function bindEditorToolbarOverflow() {
-  const bar = $('edit-bar'), menu = $('edit-overflow-menu'), more = $('edit-overflow-wrap'), trigger = $('edit-overflow-trigger');
-  if (!bar || !menu || !more || !trigger || bar.dataset.overflowBound) return;
-  bar.dataset.overflowBound = '1';
-  menu.addEventListener('click', event => { if (event.target.closest('button')) closeMdPopups(); });
-  const candidates = [
-    ['[data-menu="md-text-menu"]', 'editor.text'],
-    ['#formula-open'], ['#edit-slash-btn'],
-    ['#edit-view-trigger', 'editor.view'],
-    ['.md-fmt-group [data-md="strike"]'], ['.md-fmt-group [data-md="code"]'],
-    ['[data-menu="md-structure-menu"]', 'editor.structure'],
-    ['[data-menu="md-insert-menu"]', 'editor.insert'],
-    ['#edit-redo'], ['#edit-undo'], ['.md-fmt-group [data-md="link"]'],
-    ['.md-fmt-group [data-md="italic"]']
-  ].map(([selector, heading]) => {
-    const button = bar.querySelector(selector);
-    if (!button) return null;
-    const popup = heading ? $(button.dataset.menu || 'edit-view-menu') : null;
-    const original = popup ? button.closest('.md-menu-wrap') : button;
-    const anchor = document.createComment('editor toolbar position');
-    original.before(anchor);
-    const section = document.createElement('div');
-    section.className = 'editor-overflow-group';
-    const nodes = popup ? [...popup.childNodes] : [button];
-    if (popup) {
-      const caption = document.createElement('span');
-      caption.className = 'editor-overflow-heading';
-      caption.dataset.i18n = heading;
-      caption.textContent = window.i18n ? i18n.t(heading) : button.textContent;
-      section.append(caption);
-    } else if (button.classList.contains('icon') || button.id === 'edit-slash-btn') {
-      const label = document.createElement('span');
-      label.className = 'editor-overflow-label';
-      label.dataset.i18n = button.dataset.i18nAria;
-      label.textContent = button.getAttribute('aria-label');
-      button.append(label);
-    }
-    return { button, popup, original, anchor, section, nodes, moved:false };
-  }).filter(Boolean);
-  const restore = candidate => {
-    if (!candidate.moved) return;
-    if (candidate.popup) {
-      candidate.popup.append(...candidate.nodes);
-      candidate.original.classList.remove('editor-overflowed');
-    } else candidate.anchor.after(candidate.original);
-    candidate.section.remove(); candidate.moved = false;
-  };
-  const move = candidate => {
-    if (candidate.popup) candidate.original.classList.add('editor-overflowed');
-    candidate.section.append(...candidate.nodes);
-    menu.append(candidate.section); candidate.moved = true;
-  };
-  const required = () => {
-    const style = getComputedStyle(bar);
-    const children = [...bar.children].filter(el => getComputedStyle(el).display !== 'none');
-    return children.reduce((sum, el) => sum + el.getBoundingClientRect().width, 0)
-      + Math.max(0, children.length - 1) * (parseFloat(style.columnGap) || 0)
-      + (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-  };
-  let frame = 0;
-  const schedule = () => {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      if (!bar.getBoundingClientRect().width) return;
-      const focused = document.activeElement;
-      closeMdPopups(); candidates.forEach(restore);
-      more.classList.add('hidden');
-      const width = bar.clientWidth;
-      if (required() > width + .5) {
-        more.classList.remove('hidden');
-        for (const candidate of candidates) {
-          move(candidate);
-          if (required() <= width + .5) break;
-        }
-      }
-      // Floating menus open inward when their anchor is close to the edge.
-      const r = more.getBoundingClientRect();
-      more.classList.toggle('editor-menu-end', r.left > window.innerWidth / 2);
-      if (focused && focused !== document.activeElement && focused.getClientRects().length) focused.focus({ preventScroll:true });
-    });
-  };
-  new ResizeObserver(schedule).observe(bar);
-  window.addEventListener('readmd:language-changed', schedule);
-  document.fonts?.ready.then(schedule);
-  schedule();
-}
-
-function bindEditBarExtras() {
-  const trig = $('edit-view-trigger');
-  const menu = $('edit-view-menu');
-  if (trig && menu && !trig.dataset.bound) {
-    trig.dataset.bound = '1';
-    trig.addEventListener('click', e => {
-      e.stopPropagation();
-      const show = menu.classList.contains('hidden');
-      closeMdPopups();
-      menu.classList.toggle('hidden', !show);
-      trig.setAttribute('aria-expanded', show ? 'true' : 'false');
-      if (show && e.detail === 0) { const first = menu.querySelector('button'); if (first) first.focus(); }
-    });
-    [['edit-view-lines', 'lineNumbers'], ['edit-view-focus', 'focus'], ['edit-view-typewriter', 'typewriter'], ['edit-view-ai-completion', 'aiCompletion']].forEach(([id, key]) => {
-      const b = $(id);
-      if (b) b.addEventListener('click', e => { e.stopPropagation(); setEditorPref(key); });
-    });
-  }
-  const slashBtn = $('edit-slash-btn');
-  if (slashBtn && !slashBtn.dataset.bound) {
-    slashBtn.dataset.bound = '1';
-    slashBtn.addEventListener('mousedown', e => e.preventDefault());
-    slashBtn.addEventListener('click', e => { e.stopPropagation(); closeMdPopups(); if (cmView) openSlashAtCursor(cmView); });
-  }
-  document.querySelectorAll('#edit-bar .md-menu').forEach(m => {
-    if (m.dataset.navBound) return;
-    m.dataset.navBound = '1';
-    m.addEventListener('keydown', editMenuArrowNav);
-  });
-  document.querySelectorAll('#md-tool [data-menu]').forEach(b => {
-    if (b.dataset.ariaBound) return;
-    b.dataset.ariaBound = '1';
-    b.addEventListener('click', e => requestAnimationFrame(() => {
-      const m = $(b.dataset.menu);
-      const open = !!(m && !m.classList.contains('hidden'));
-      b.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open && e.detail === 0) { const first = m.querySelector('button'); if (first) first.focus(); }
-    }));
-  });
-  applyEditorViewClasses();
-  bindEditorToolbarOverflow();
-}

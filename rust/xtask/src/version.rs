@@ -3,9 +3,7 @@
 //! Every text file is edited with LF line endings internally and written
 //! back with the line ending it had, so a Windows CRLF checkout stays CRLF.
 
-use base64::Engine;
 use regex::Regex;
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -227,12 +225,35 @@ fn json_version(plan: &mut Plan, path: &Path, v: &str) {
     plan.push_if_changed(&t, out);
 }
 
+/// npm lockfiles repeat the package's own version at the root and in
+/// `packages[""]`; dependency versions must keep their independently locked values.
+fn json_lockfile_version(plan: &mut Plan, path: &Path, v: &str) {
+    let Some(t) = read_text(path) else { return };
+    let Ok(mut data) = serde_json::from_str::<serde_json::Value>(&t.original) else { return };
+    let root_matches = data.get("version").and_then(|x| x.as_str()) == Some(v);
+    let package_matches = data.get("packages").and_then(|x| x.get(""))
+        .and_then(|x| x.get("version")).and_then(|x| x.as_str()) == Some(v);
+    if root_matches && package_matches { return; }
+    data["version"] = serde_json::Value::String(v.into());
+    if let Some(package) = data.get_mut("packages").and_then(|x| x.get_mut("")) {
+        package["version"] = serde_json::Value::String(v.into());
+    }
+    let out = serde_json::to_string_pretty(&data).unwrap_or_default() + "\n";
+    plan.push_if_changed(&t, out);
+}
+
 fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
     let sv = parse_semver(v)?;
     let triplet = sv.triplet();
     let ll = sv.linglong();
     let hc = sv.harmony_code();
     let mut plan = Plan::default();
+    // Candidate manifests and installed-app labels follow VERSION. Public
+    // download instructions must keep pointing at the independently published release.
+    let published = fs::read_to_string(root.join("website/release.json")).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|j| j["stable"].as_str().map(str::to_owned));
+    let published = published.as_deref().unwrap_or(v);
 
     // Workspace package metadata must match the executable's VERSION too.
     if let Some(t) = read_text(&root.join("rust/Cargo.toml")) {
@@ -278,9 +299,14 @@ fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
         let new = sub(&t.original, r"(pkgver=)[^\n]+", &format!("${{1}}{triplet}"));
         plan.push_if_changed(&t, new);
     }
+    if let Some(t) = read_text(&root.join("ReadMD.nsi")) {
+        let new = sub(&t.original, r#"(!define APP_VERSION ")[^"]+""#, &format!("${{1}}{v}\""));
+        plan.push_if_changed(&t, new);
+    }
 
     // VS Code extension, HarmonyOS app, UI tests
     json_version(&mut plan, &root.join("packages/vscode-extension/package.json"), v);
+    json_lockfile_version(&mut plan, &root.join("packages/vscode-extension/package-lock.json"), v);
     if let Some(t) = read_text(&root.join("packages/vscode-extension/README.md")) {
         let new = sub(&t.original, r"(# ReadMD for VS Code · V)[0-9a-zA-Z.-]+(?: [^\n]+)?", &format!("${{1}}{v}"));
         let new = sub(&new, r"(readmd-vscode-)[0-9a-zA-Z.-]+(?:\.vsix)", &format!("${{1}}{v}.vsix"));
@@ -295,6 +321,7 @@ fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
         }
     }
     json_version(&mut plan, &root.join("ui-tests/package.json"), v);
+    json_lockfile_version(&mut plan, &root.join("ui-tests/package-lock.json"), v);
     if let Some(t) = read_text(&root.join("packages/harmonyos-app/AppScope/app.json5")) {
         let new = sub(&t.original, r#""versionCode":\s*\d+"#, &format!("\"versionCode\": {hc}"));
         let new = sub(&new, r#""versionName":\s*"[^"]+""#, &format!("\"versionName\": \"{v}\""));
@@ -312,10 +339,10 @@ fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
         let mut s = t.original.clone();
         let anchors: [(&str, String, &str); 5] = [
             (r#"<html([^>]*\bdata-version=")[^"]+""#, format!("<html${{1}}{v}\""), "assets/index.html :: data-version"),
-            (r#"(<link[^>]*href="/assets/(?:css/[a-z-]+|style|workspace-ui|skill-workbench)\.css\?v=)[^"]+(")"#, format!("${{1}}{v}${{2}}"), "assets/index.html :: stylesheet ?v="),
+            (r#"(<link[^>]*href="/assets/(?:css/[a-z-]+|style|workspace-ui|skill-workbench)\.css\?v=)[^"&]+([^"]*")"#, format!("${{1}}{v}${{2}}"), "assets/index.html :: stylesheet ?v="),
             (r#"(<span id="status-version"[^>]*>)v[^<]+(</span>)"#, format!("${{1}}v{v}${{2}}"), "assets/index.html :: #status-version"),
-            (r#"(id="menu-version-label">)当前版本 v[^<]+(</em>)"#, format!("${{1}}当前版本 v{v}${{2}}"), "assets/index.html :: #menu-version-label"),
-            (r#"(<script[^>]*src="/assets/readmd\.boot\.js\?v=)[^"]+(")"#, format!("${{1}}{v}${{2}}"), "assets/index.html :: readmd.boot.js ?v="),
+            (r#"(id="menu-version-label">)(?:当前版本 )?v[^<]+(</em>)"#, format!("${{1}}v{v}${{2}}"), "assets/index.html :: #menu-version-label"),
+            (r#"(<script[^>]*src="/assets/readmd\.boot\.js\?v=)[^"&]+([^"]*")"#, format!("${{1}}{v}${{2}}"), "assets/index.html :: readmd.boot.js ?v="),
         ];
         for (pat, rep, label) in anchors {
             let (next, hits) = sub_counted(&s, pat, &rep);
@@ -330,71 +357,32 @@ fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
         let new = sub(&t.original, r"(typeof VERSION !== 'undefined' \? VERSION : ')[^']+'\)", &format!("${{1}}{v}')"));
         plan.push_if_changed(&t, new);
     }
+    if let Some(t) = read_text(&root.join("assets/js/platform/harmony.js")) {
+        let new = sub(&t.original, r"(get_app_info:async\(\)=>\(\{version:')[^']+'", &format!("${{1}}{v}'"));
+        plan.push_if_changed(&t, new);
+    }
 
     // READMEs and release notes
     for name in ["README.md", "README.en.md", "README.ja.md", "README.zh-TW.md"] {
         if let Some(t) = read_text(&root.join(name)) {
-            let s = sub(&t.original, r"badge/version-v[0-9a-zA-Z.-]+-3b6ef5", &format!("badge/version-v{v}-3b6ef5"));
-            let s = sub(&s, r"(releases/download/v)[0-9a-zA-Z.-]+", &format!("${{1}}{v}"));
-            let s = sub(&s, r"(releases/tag/v)[0-9a-zA-Z.-]+", &format!("${{1}}{v}"));
-            let s = artifact_names(&s, v);
+            let s = sub(&t.original, r"badge/version-v[0-9a-zA-Z.-]+-3b6ef5", &format!("badge/version-v{published}-3b6ef5"));
+            let s = sub(&s, r"(releases/download/[vV])[0-9a-zA-Z.-]+", &format!("${{1}}{published}"));
+            let s = sub(&s, r"(releases/tag/[vV])[0-9a-zA-Z.-]+", &format!("${{1}}{published}"));
+            let s = artifact_names(&s, published);
             plan.push_if_changed(&t, s);
         }
     }
-    if let Some(t) = read_text(&root.join("release/release_notes.md")) {
-        let s = sub(&t.original, r"(# ReadMD v)[0-9a-zA-Z.-]+", &format!("${{1}}{v}"));
-        plan.push_if_changed(&t, artifact_names(&s, v));
+    for name in ["release/release_notes.md", "release/release_notes_macos.md"] {
+        if let Some(t) = read_text(&root.join(name)) {
+            let s = sub(&t.original, r"(# ReadMD [vV])[0-9a-zA-Z.-]+", &format!("${{1}}{v}"));
+            plan.push_if_changed(&t, artifact_names(&s, v));
+        }
     }
 
-    // Website
-    let site = root.join("website/public");
-    if site.is_dir() {
-        // Public links follow the published release, not the local candidate.
-        let published = fs::read_to_string(root.join("website/release.json")).ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-            .and_then(|j| j["stable"].as_str().map(str::to_owned));
-        let v = published.as_deref().unwrap_or(v);
-        let mut files: Vec<PathBuf> = walkdir::WalkDir::new(&site)
-            .sort_by_file_name()
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|e| e.file_type().is_file())
-            .map(|e| e.into_path())
-            .filter(|p| matches!(p.extension().and_then(|e| e.to_str()), Some("html" | "xml" | "txt" | "json")))
-            .collect();
-        files.sort();
-        for p in files {
-            let Some(t) = read_text(&p) else { continue };
-            let s = artifact_names(&t.original, v);
-            let s = sub(&s, r"releases/tag/[vV][0-9a-zA-Z.-]+", &format!("releases/tag/V{v}"));
-            let s = sub(&s, r"releases/download/[vV][0-9a-zA-Z.-]+", &format!("releases/download/V{v}"));
-            let s = sub(&s, r#"("softwareVersion":\s*")[^"]+""#, &format!("${{1}}{v}\""));
-            let s = sub(&s, r#"("artifactSection":\s*"v)[^"]+""#, &format!("${{1}}{v}\""));
-            let s = sub(&s, r"2\.3\.7-beta\.\d+", v);
-            plan.push_if_changed(&t, s);
-        }
-        // CSP hash of the JSON-LD block in index.html.
-        let idx = site.join("index.html");
-        let headers = site.join("_headers");
-        if let (Some(it), Some(ht)) = (read_text(&idx), read_text(&headers)) {
-            let idx_content = plan
-                .changes
-                .iter()
-                .find(|c| c.path == idx)
-                .map(|c| c.content.clone())
-                .unwrap_or(it.original.clone());
-            // Hash the LF form: that is what the Linux deploy job checks out and serves.
-            let idx_bytes = idx_content;
-            let _ = it.crlf;
-            let re = Regex::new(r#"(?s)<script type="application/ld\+json">(.*?)</script>"#).unwrap();
-            if let Some(c) = re.captures(&idx_bytes) {
-                let digest = Sha256::digest(c[1].as_bytes());
-                let hash = format!("sha256-{}", base64::prelude::BASE64_STANDARD.encode(digest));
-                let new = sub(&ht.original, r"'sha256-[^']+'", &format!("'{hash}'"));
-                plan.push_if_changed(&ht, new);
-            }
-        }
-    }
+    // Public website output, historical pages and JSON-LD CSP hashes have
+    // their own published-release snapshot and semantic synchronization.
+    // Validate them with `node website/tools/sync-version.mjs --check`;
+    // an application candidate must never rewrite that publication state.
     Ok(plan)
 }
 
@@ -414,7 +402,7 @@ pub fn sync_all(root: &Path, ver: &str, check: bool) -> Result<bool, String> {
     if check {
         let stale_bundle = !crate::bundle::build(root).eq(&fs::read(root.join("assets/readmd.boot.js")).unwrap_or_default());
         if plan.changes.is_empty() && plan.misses.is_empty() && !stale_bundle {
-            println!("[OK] All platform files are synchronized with version {v}");
+            println!("[OK] All application platform files are synchronized with version {v}");
             return Ok(true);
         }
         if !plan.changes.is_empty() {
@@ -474,5 +462,49 @@ mod tests {
     fn artifact_rewrites() {
         let s = artifact_names("ReadMD-v1.2.3.exe readmd_1.2.3_amd64.deb readmd-vscode-1.2.3.vsix", "9.9.9");
         assert_eq!(s, "ReadMD-v9.9.9.exe readmd_9.9.9_amd64.deb readmd-vscode-9.9.9.vsix");
+    }
+
+    #[test]
+    fn candidate_plan_preserves_published_downloads_dependency_locks_and_cache_revisions() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let write = |rel: &str, text: &str| {
+            let path = root.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        };
+        write("website/release.json", r#"{"stable":"0.0.6"}"#);
+        let published = "[VSIX](https://example.test/releases/download/V0.0.6/readmd-vscode-0.0.6.vsix)\n";
+        write("README.md", published);
+        write("website/public/index.html", published);
+        write("website/public/release-notes/index.html", r#"<script type="application/ld+json">{"artifactSection":"v0.0.5"}</script><a href="https://example.test/releases/tag/V0.0.5">History</a>"#);
+        write("website/public/_headers", "/*\n  Content-Security-Policy: script-src 'self' 'sha256-english' 'sha256-chinese'\n");
+        write("assets/index.html", concat!(
+            "<html data-version=\"0.0.6\">\n",
+            "<link href=\"/assets/style.css?v=0.0.6&amp;rev=owned-css\">\n",
+            "<em id=\"menu-version-label\">v0.0.6</em>\n",
+            "<span id=\"status-version\">v0.0.6</span>\n",
+            "<script src=\"/assets/readmd.boot.js?v=0.0.6&amp;rev=owned-boot\"></script>\n",
+        ));
+        write("packages/vscode-extension/package-lock.json", r#"{"version":"0.0.4","packages":{"":{"version":"0.0.4"},"node_modules/tunnel":{"version":"0.0.6"}}}"#);
+        write("ReadMD.nsi", "!define APP_VERSION \"0.0.5\"\n");
+        write("assets/js/platform/harmony.js", "get_app_info:async()=>({version:'0.0.5',platform:'harmonyos'}),\n");
+        let plan = build_plan(root, "0.0.7").unwrap();
+        assert!(plan.misses.is_empty(), "{:?}", plan.misses);
+        let planned = |rel: &str| plan.changes.iter().find(|change| change.path == root.join(rel)).map(|change| change.content.as_str());
+        assert!(planned("README.md").is_none());
+        assert!(planned("website/public/index.html").is_none());
+        assert!(!plan.changes.iter().any(|change| change.path.starts_with(root.join("website/public"))),
+            "An application candidate must not rewrite published website output or CSP");
+        let index = planned("assets/index.html").unwrap();
+        assert!(index.contains("style.css?v=0.0.7&amp;rev=owned-css"));
+        assert!(index.contains("readmd.boot.js?v=0.0.7&amp;rev=owned-boot"));
+        assert!(index.contains("id=\"menu-version-label\">v0.0.7</em>"));
+        let lock: serde_json::Value = serde_json::from_str(planned("packages/vscode-extension/package-lock.json").unwrap()).unwrap();
+        assert_eq!(lock["version"], "0.0.7");
+        assert_eq!(lock["packages"][""]["version"], "0.0.7");
+        assert_eq!(lock["packages"]["node_modules/tunnel"]["version"], "0.0.6");
+        assert!(planned("ReadMD.nsi").unwrap().contains("APP_VERSION \"0.0.7\""));
+        assert!(planned("assets/js/platform/harmony.js").unwrap().contains("version:'0.0.7'"));
     }
 }

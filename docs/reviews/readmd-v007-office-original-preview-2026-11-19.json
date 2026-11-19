@@ -1,0 +1,78 @@
+{
+  "date": "2026-11-19",
+  "scope": "DOCX and PPTX read-only original-layout tabs",
+  "platform": "macOS arm64",
+  "upstreamSourceCommit": "96e218055a41261c3c12c0ea1b07f143424f368d",
+  "officeWorkerSha256": "70ec2385b462a792c75143d9b0185bf36e3865ba43a612d3eeefd3407a223e66",
+  "packFiles": 823,
+  "native": {
+    "host": "Cocoa / WKWebView",
+    "kernel": "879a6e05b572eb87f7cdabb593e804d1cb462ae9c14349b32a09a41139560f58",
+    "boot": "58f1d52a293bd93fa641303016a199d50bca11e01329cc9fcc349aa3bc0411a6",
+    "checks": [
+      "opened_folder",
+      "source_row_0",
+      "reader_tab_0",
+      "pager_start_0",
+      "pager_end_0",
+      "page_fits_0",
+      "closed_0",
+      "source_row_1",
+      "reader_tab_1",
+      "pager_start_1",
+      "pager_end_1",
+      "page_fits_1",
+      "closed_1"
+    ],
+    "frames": [
+      "b17fc39a9545998cb44b564929051dceeba0cb615f40fa084449901412ea3d09",
+      "1a1d7351bf28d0effd3a94dfc6d245451d9fff395ce6054cf2ed43069ff855a6"
+    ]
+  },
+  "browser": {
+    "kernel": "de9009e2bd7512f46c8fb873053019859d1e5860fd6f9db76ee05c24d15f8236",
+    "boot": "58f1d52a293bd93fa641303016a199d50bca11e01329cc9fcc349aa3bc0411a6",
+    "platform": "darwin",
+    "arch": "arm64",
+    "results": [
+      {
+        "format": "docx",
+        "source": "2ffa3641c07ce08c0bc48f92b83a117826bcaeb82a023e55436738afdd3a92da",
+        "pdf": "b1ab5668e309486499aa38674d5c82f09180d44fafcdb428be9b72721f178b7f",
+        "pagePixelSha256": [
+          "c0a7bc238fb7ff40d282a9b809f4a82c282e2fcc46d919ed137ff66b438db933",
+          "1934f3064193a7b835ecb6c764b38bd396710e4da504d66314722ff0be659c6e"
+        ],
+        "referencePdfByteIdentical": true
+      },
+      {
+        "format": "pptx",
+        "source": "409d71e01939d1d0eae6af26fc6b116b4b56d1151291382d75a64fa554493a87",
+        "pdf": "2618d3832f67cbbc08a3be8499f6eeaece7a90b118561364ed7b869d3b51d0e2",
+        "pagePixelSha256": [
+          "84d5d295a92484b090688d17810610f817073998c7f0c91b6fc5f76762248624",
+          "ef348fee63c8f6d1d1fcd65c63dd0aead8255762001703b75b1410f8843fff7a"
+        ],
+        "referencePdfByteIdentical": true
+      }
+    ]
+  },
+  "exercised": [
+    "Open the source from the actual folder sidebar",
+    "Turn from the first page to the second using the shared reader pager",
+    "Close and verify the released view returns 410",
+    "Strict application-token denial without credentials",
+    "Install PDFium from the bundled offline pack in a fresh profile",
+    "Preserve source bytes, literal %20 filenames, and an existing same-stem Markdown file"
+  ],
+  "firstFailuresFixed": [
+    "Package-root-relative chart relationships were rejected",
+    "The macOS worker could not start with RLIMIT_DATA set",
+    "The browser probe had to reopen the collapsed sidebar and compare rendered pixels under the production CSP"
+  ],
+  "unverified": [
+    "Windows, Linux and Intel Mac native rendering",
+    "Complex-document compatibility beyond the fixtures"
+  ],
+  "release": false
+}

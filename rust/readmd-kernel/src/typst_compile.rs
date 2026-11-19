@@ -95,7 +95,7 @@ fn apply_publication_language(document:lopdf::Document,bytes:Vec<u8>,language:&s
 }
 pub(crate) fn probe_directory(directory:&Path,data:&Path)->Result<(),String>{
     let dir=crate::task_workspace::Workspace::create(data,"typst-probe").map_err(|_|"typst_workspace_failed")?;
-    dir.scope(||{
+    dir.run_to_completion(||{
     // Never execute a staged installation in place: on Windows the image
     // loader/scanner can still pin its directory when the atomic commit runs.
     // Probe identical reviewed bytes from the owned worker directory instead.
@@ -103,7 +103,7 @@ pub(crate) fn probe_directory(directory:&Path,data:&Path)->Result<(),String>{
     let program=dir.path().join(name);
     crate::task_workspace::copy(&directory.join("bin").join(name),&program).map_err(|_|"typst_engine_unavailable")?;
     compile_source(&program,"#set document(title:\"ReadMD engine probe\")\nReadMD offline typesetting.",dir.path(),Duration::from_secs(8)).map(|_|())
-    })
+    }).map_err(|_|"typst_workspace_failed")?
 }
 struct RawArtifact {
     bytes:Vec<u8>, warnings:Vec<String>,
@@ -163,7 +163,7 @@ fn raw_document_bytes(content:&str,base:&str,options:&Value,name:&str,data:&Path
     let _fonts=crate::publication_fonts::scope_checked(data,assets,&checked).map_err(|e|e.code)?;
     crate::publication_fonts::require_for_export("pdf",content,options)?;
     let dir=crate::task_workspace::Workspace::create(data,"typst-export").map_err(|_|"typst_workspace_failed")?;
-    dir.scope(||{
+    dir.run_to_completion(||{
     let (doc,citation_warnings)=crate::mdexport::publication_document(content,base,options)?;let source=if let Some(nonce)=nonce{crate::typst_writer::render_mapped(&doc,options,base,dir.path(),name,nonce)?}else{crate::typst_writer::render(&doc,options,base,dir.path(),name)?};
     // A raw nonzero artifact may only be produced for the mapped pipeline.
     // That caller must verify actual MCID/glyph/path paint and protected
@@ -185,7 +185,7 @@ fn raw_document_bytes(content:&str,base:&str,options:&Value,name:&str,data:&Path
     let requested=options.pointer("/typography/font").and_then(Value::as_str).unwrap_or("MicrosoftYaHei");
     if requested!=crate::publication_fonts::family(requested){warnings.push("publication_font_substituted".into());}
     Ok(RawArtifact{bytes,warnings,baseline_links:source.baseline_links,baseline_protected:source.baseline_protected})
-    })
+    }).map_err(|_|"typst_workspace_failed")?
 }
 pub fn export_pdf(content:&str,base:&str,target:&str,options:&Value,name:&str,data:&Path,assets:&Path)->Result<crate::mdexport::ExportResult,String>{
     let (bytes,warnings)=document_bytes(content,base,options,name,data,assets,None)?;

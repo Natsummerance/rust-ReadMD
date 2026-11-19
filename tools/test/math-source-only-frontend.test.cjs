@@ -1,6 +1,7 @@
 'use strict';
 // Production-function DOM controls only; no browser geometry/native acceptance.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
+const {editorOutsideLayout,previewOutsideLayout,panelsBeforeDeliveryChanges,editorBaseline,previewBaseline}=require('./editor-source-boundaries.cjs');
 const root=path.resolve(__dirname,'../..');
 const read=name=>fs.readFileSync(path.join(root,name),'utf8');
 const readerSource=read('assets/js/reader/formula.js'),inlineSource=read('assets/js/editor/formula-inline.js'),studioSource=read('assets/js/editor/formula-studio.js');
@@ -104,7 +105,8 @@ function studio({response=unavailable(),fetch:pending,doc='😀 first :math[x] s
   let text=doc;const changes=[],requests=[],calls={mathjax:0,loader:0};const context=environment({state:{editing:true},getActiveTab:()=>({id:'owned-tab'}),closeMdPopups(){},ReadMDModal:{close(){}},renderMath(){calls.loader++;},queueMathOperation:fn=>fn(),fetch:async()=>({ok:true,json:async()=>({schema:1,symbols:[],templates:[]})}),apiFetch:async(route,options)=>{requests.push({route,body:JSON.parse(options.body)});return pending?pending():{ok:response.ok,json:async()=>response};}});
   const view={state:{doc:{toString:()=>text},selection:{main:{from:0,to:0}},sliceDoc:(from,to)=>text.slice(from,to)},dispatch(change){changes.push(change);text=text.slice(0,change.changes.from)+change.changes.insert+text.slice(change.changes.to);},focus(){}};context.cmView=view;
   context.renderMathDocument=(value,display)=>{assert.equal(value.preview_supported,false);const note=context.document.createElement('span');note.textContent=unsupported;note.dataset.readmdMathRenderer='source';return note;};
-  if(mathjax)context.MathJax={tex2svgPromise:async()=>{calls.mathjax++;return context.document.createElement('span');},mathml2svgPromise:async()=>{calls.mathjax++;return context.document.createElement('span');}};
+  if(mathjax)context.MathJax={typesetPromise:async()=>{},tex2svgPromise:async()=>{calls.mathjax++;return context.document.createElement('span');},mathml2svgPromise:async()=>{calls.mathjax++;return context.document.createElement('span');}};
+  vm.runInContext(readerSource.slice(readerSource.indexOf('function ensureMathRenderer()')),context);
   const marker='  return { open, close, picker, apply, insert, ranges, write, asDsl, metadataRanges, withoutMetadata, tokens, annotate, load };';assert.equal(studioSource.split(marker).length,2);
   vm.runInContext(studioSource.replace(marker,'  window.__studio={renderDraft,setDraft:value=>draft=value,getDraft:()=>draft};\n'+marker),context);
   context.document.getElementById('formula-mode').value='inline';context.document.getElementById('formula-search').value='';
@@ -147,32 +149,53 @@ test('studio does not treat a late source-only response as the replacement draft
   const replacement={tex:'replacement',valid:false};f.context.__studio.setDraft(replacement);resolve({ok:true,json:async()=>unavailable()});await task;
   assert.equal(f.context.__studio.getDraft(),replacement);assert.equal(replacement.valid,false);assert.equal(f.context.document.getElementById('formula-preview').children.length,0);assert.equal(f.calls.mathjax,0);assert.equal(f.changes.length,0);
 });
-test('approved review integration keeps frontend bytes fixed outside the formula context hook',()=>{
+test('approved review integration preserves source outside the formula and layout changes',()=>{
   // V006 batch 1 changes review/editor/save integration; batch 3 also fixes
-  // clipboard and column alignment tables. Advance only the reviewed editor
-  // baseline after real CSP editing, undo, save and reopen checks. Other guards stay unchanged.
+  // clipboard and column alignment tables. Literal cell editing owns four
+  // explicit new regions; project only those out and retain the legacy pin.
+  // Its exact source ranges, manual FIFO and cancellation have separate tests.
   // The two advanced baselines use canonical CRLF, independent of checkout
   // EOL. The preview baseline includes the rename/recovery fence validated by
   // the separate real-browser edit, undo/redo, save and restart regression.
   // Leave the three pre-existing exact-byte protection pins untouched.
   const protectedFiles=[
-    {path:'assets/js/editor/editor.js',sha256:'4eeb5bf5a071299820c692d46ca3ef01cff171be46f9bf6b37b41a5189a61fdf'},
-    {path:'assets/js/editor/preview.js',sha256:'c417cfc69977d7961d5f5745b25991fbf9636d68a9d512fcfdea158ddce34635'},
+    {path:'assets/js/editor/editor.js',sha256:editorBaseline},
+    {path:'assets/js/editor/preview.js',sha256:previewBaseline},
     {path:'assets/js/core/settings.js',sha256:'5a8939d0f721b0740565a1725a974fc3b6d46c6815e8b79166f40e757c725aae'},
     {path:'assets/css/panels.css',sha256:'bea3c2046704118937afc0eeddb13b68584ace5c79216cb5611b157ef619d146'},
     {path:'tests/frontend/toolbar.test.mjs',sha256:'218d6e854ea8368d3bc888515977297fd27fe4c65b61accea9b12141da08f0e2'},
   ];assert.equal(protectedFiles.length,5);
   for(const row of protectedFiles){
     let bytes=fs.readFileSync(path.join(root,row.path));
-    if(row.path==='assets/js/editor/preview.js'){
-      const text=bytes.toString('utf8'),begin='  // READMD_MATH_CONTEXT_BEGIN',end='  // READMD_MATH_CONTEXT_END';
-      if(text.includes(begin)){
-        assert.equal(text.split(begin).length,2);assert.equal(text.split(end).length,2);
-        bytes=Buffer.from(text.slice(0,text.indexOf(begin))+text.slice(text.indexOf(end)+end.length).replace(/^\r?\n/,''));
+    if(row.path==='assets/js/editor/editor.js'){
+      let text=bytes.toString('utf8').replace(/\r\n?/g,'\n');
+      const reset="  tableCellSession = null; $('table-cell-controls')?.remove();\n";
+      const hooks=[['HELPERS','',null],['OPEN_RESET','  ',reset],
+        ['OPEN_CONTROLS','  ',"  const cell = cmTableCellContext(view);\n  if (cell && picker) { picker.classList.add('hidden'); tableCellControls(view, cell, modal, picker); }\n"],
+        ['CLOSE_RESET','  ',reset]];
+      for(const [name,indent,expected] of hooks){
+        const begin=indent+'/* READMD_LITERAL_TABLE_CELL_'+name+'_BEGIN */\n',end=indent+'/* READMD_LITERAL_TABLE_CELL_'+name+'_END */\n';
+        assert.equal(text.split(begin).length,2,name);assert.equal(text.split(end).length,2,name);
+        const at=text.indexOf(begin),stop=text.indexOf(end,at+begin.length);assert(stop>at,name);
+        const body=text.slice(at+begin.length,stop);
+        if(expected!==null)assert.equal(body,expected,name);
+        else{
+          assert.deepEqual([...body.matchAll(/^(?:async )?function (\w+)\(/gm)].map(match=>match[1]),['cmTableCellLiteral','cmTableCellReplacement','cmTableCellContext','cmCommitTableClipboard','cmPasteTableClipboard','tableCellControls']);
+          assert.equal(body.split('let tableCellSession = null;').length,2);
+        }
+        text=text.slice(0,at)+text.slice(stop+end.length);
       }
+      const pasteGuard='    if (ranges.length !== 1 || cmInCode(cmView.state, ranges[0].from) || cmInCode(cmView.state, ranges[0].to)) return;\n';
+      const tablePaste='    if (cmPasteTableClipboard(e, cmView)) return;\n';
+      assert.equal(text.split(pasteGuard+tablePaste).length,2,'Dedicated table clipboard hook');
+      text=text.replace(pasteGuard+tablePaste,pasteGuard);
+      bytes=editorOutsideLayout(text);
+    }
+    if(row.path==='assets/js/editor/preview.js'){
+      bytes=previewOutsideLayout(bytes.toString('utf8'));
     }
     if(row.path==='assets/css/panels.css'){
-      let text=bytes.toString('utf8');
+      let text=panelsBeforeDeliveryChanges(bytes).toString('utf8');
       const refactor='\n/* READMD_DOCUMENT_REFACTOR_BEGIN */',refactorAt=text.indexOf(refactor);
       if(refactorAt>=0){
         assert.equal(text.split(refactor).length,2);const suffix=text.slice(refactorAt);
@@ -188,7 +211,6 @@ test('approved review integration keeps frontend bytes fixed outside the formula
         bytes=Buffer.from(text.slice(0,text.indexOf(begin)));
       }
     }
-    if(row.path==='assets/js/editor/editor.js'||row.path==='assets/js/editor/preview.js')bytes=Buffer.from(bytes.toString('utf8').replace(/\r\n?/g,'\n').replace(/\n/g,'\r\n'));
     assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),row.sha256,row.path);
   }
 });

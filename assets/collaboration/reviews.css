@@ -1,0 +1,13 @@
+.collaboration-reviews { text-align: start; min-width: 0; }
+.collaboration-reviews article { border-block-end: 1px solid var(--border2,var(--border)); padding-block: 12px; overflow-wrap: anywhere; }
+.collaboration-reviews article p { margin-block: 4px; white-space: pre-wrap; }
+.collaboration-reviews small,.collaboration-reviews label { display: block; }
+.collaboration-reviews pre,.collaboration-reviews del,.collaboration-reviews ins { display: block; margin-block: 4px; padding: 6px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font: inherit; }
+.collaboration-reviews del { background: color-mix(in srgb,var(--danger) 10%,transparent); }
+.collaboration-reviews ins { background: color-mix(in srgb,var(--color-success,var(--accent)) 10%,transparent); }
+.collaboration-reviews textarea { width: 100%; min-height: 80px; padding: 8px; color: var(--fg); background: var(--bg2); border: 1px solid var(--border2,var(--border)); border-radius: 5px; font: inherit; }
+.collaboration-reviews button { min-height: 44px; padding: 8px; color: inherit; background: transparent; border: 1px solid var(--border2,var(--border)); border-radius: 5px; cursor: pointer; margin: 2px; font: inherit; }
+.collaboration-reviews button:disabled { opacity: .5; cursor: default; }
+.collaboration-reviews :is(button,textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.collaboration-merge { border-inline-start: 3px solid var(--accent); padding-inline-start: 10px; margin-block: 12px; }
+.collaboration-merge-edit { margin-block: 12px; }

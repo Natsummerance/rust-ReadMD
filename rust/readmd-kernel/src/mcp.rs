@@ -105,7 +105,7 @@ fn pdf_document_schema()->Value{
 }
 fn review_document_schema()->Value {
     let mut value=schema(json!({
-        "action":{"type":"string","enum":["open","read","edit","propose","resolve","undo","redo","discard"]},
+        "action":{"type":"string","enum":["open","read","edit","propose","resolve","undo","redo","discard","code_target","code_output","code_batch_target","code_batch_run","code_batch_output"]},
         "path":{"type":"string","minLength":1},"content":{"type":"string"},"document_id":{"type":"string","minLength":1,"maxLength":256},
         "generation":{"type":"integer","minimum":0},"review_revision":{"type":"integer","minimum":0},
         "call_id":{"type":"string","minLength":1,"maxLength":256},"origin":{"type":"string","enum":["editor","ai"]},
@@ -113,14 +113,29 @@ fn review_document_schema()->Value {
             "from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"insert":{"type":"string"}}}},
         "ids":{"type":"array","minItems":1,"maxItems":4096,"uniqueItems":true,"items":{"type":"string","minLength":1}},"decision":{"type":"string","enum":["accept","withdraw"]},
         "resolution":{"type":"string","enum":["keep_current"]},
+        "source_line":{"type":"integer","minimum":1},"code":{"type":"string","maxLength":200000},"output":{"type":"string","maxLength":400000},
+        "target":{"type":"object","additionalProperties":false,"required":["document_id","generation","review_revision","content_revision","node_id","source_line","from","to","code"],"properties":{
+            "document_id":{"type":"string","minLength":1},"generation":{"type":"integer","minimum":0},"review_revision":{"type":"integer","minimum":0},
+            "content_revision":{"type":"string","minLength":64,"maxLength":64},"node_id":{"type":"string","minLength":64,"maxLength":64},
+            "source_line":{"type":"integer","minimum":1},"from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"code":{"type":"string","maxLength":200000}}},
         "task_id":{"type":"string","minLength":1,"maxLength":128},"confirm":confirm_prop()
     }), &["action","confirm"]);
+    let target=value["properties"]["target"].clone();
+    value["properties"]["batch"]=json!({"type":"object","additionalProperties":false,"required":["items"],"properties":{"items":{
+        "type":"array","minItems":1,"maxItems":32,"items":{"type":"object","additionalProperties":false,"required":["target","lang","output"],"properties":{
+            "target":target,"lang":{"type":"string","maxLength":128},"output":{"type":"boolean"}}}}}});
+    value["properties"]["outputs"]=json!({"type":"array","minItems":1,"maxItems":32,"items":{"type":"string","maxLength":400000}});
     // Validate each operation's required fields before it can authorize a file
     // or create the durable store. The outer schema owns all property types.
     value["oneOf"]=json!([
         {"type":"object","properties":{"action":{"const":"open"}},"required":["path"]},
         {"type":"object","properties":{"action":{"const":"read"}},"required":["document_id"]},
         {"type":"object","properties":{"action":{"enum":["edit","propose"]}},"required":["document_id","generation","review_revision","call_id","edits"]},
+        {"type":"object","properties":{"action":{"const":"code_target"}},"required":["document_id","generation","review_revision","source_line","code"]},
+        {"type":"object","properties":{"action":{"const":"code_output"}},"required":["document_id","generation","review_revision","call_id","target","output"]},
+        {"type":"object","properties":{"action":{"const":"code_batch_target"}},"required":["document_id","generation","review_revision"]},
+        {"type":"object","properties":{"action":{"const":"code_batch_run"}},"required":["document_id","generation","review_revision","batch"]},
+        {"type":"object","properties":{"action":{"const":"code_batch_output"}},"required":["document_id","generation","review_revision","call_id","batch","outputs"]},
         {"type":"object","properties":{"action":{"const":"resolve"}},"required":["document_id","generation","review_revision","call_id","ids","decision"]},
         {"type":"object","properties":{"action":{"enum":["undo","redo","discard"]}},"required":["document_id","generation","review_revision","call_id"]},
     ]);
@@ -180,7 +195,7 @@ pub fn tools() -> Value {
           "inputSchema": schema(json!({ "content": { "type": "string", "description": "Markdown to repair" } }), &["content"]) },
         { "name": "readmd_convert_to_markdown",
           "description": "Convert a local document (docx, doc, pdf, pptx, ppt, xlsx, xls, csv, epub, mobi, azw3, html, tex, txt, rtf, odt, ipynb, zip …) to Markdown.",
-          "inputSchema": schema(json!({ "file_path": { "type": "string", "description": "Absolute path of the source document" } }), &["file_path"]) },
+          "inputSchema": schema(json!({ "file_path": { "type": "string", "description": "Absolute path of the source document" }, "include_fidelity_report":{"type":"boolean","default":false,"description":"Include a structured extraction report alongside the Markdown."} }), &["file_path"]) },
         { "name": "readmd_web_to_markdown",
           "description": "Fetch an http(s) URL and extract its main content as clean Markdown.",
           "inputSchema": schema(json!({ "url": { "type": "string" }, "confirm": confirm_prop() }), &["url", "confirm"]) },
@@ -283,8 +298,8 @@ pub fn tools() -> Value {
           "description": "Resolve a local wiki note and optional heading to its real path and UTF-16 source location. Rejects ambiguous note names and paths outside the workspace. Never creates a missing note.",
           "inputSchema": schema(json!({"workspace_root":{"type":"string"},"file_path":{"type":"string"},"target":{"type":"string"}}), &["workspace_root","target"]) },
         { "name": "readmd_read_document",
-          "description": "Read at most 1000 lines of a local text document with its byte SHA-256 revision, encoding and EOL. Limited to 2 MiB; use the revision for conflict-protected edits.",
-          "inputSchema": schema(json!({"file_path":{"type":"string"},"start_line":{"type":"integer","default":1},"end_line":{"type":"integer","default":1000}}), &["file_path"]) },
+          "description": "Read up to 1000 lines of a local text document (2 MiB limit). With chapter_line, select the Markdown section containing that absolute line, including subsections. start_line/end_line then count from 1 within the section. Continue with next_start_line and expected_revision set to the returned revision (byte SHA-256).",
+          "inputSchema": schema(json!({"file_path":{"type":"string"},"chapter_line":{"type":"integer","minimum":1},"expected_revision":{"type":"string","description":"Byte revision. Required for a continuation within the same chapter."},"start_line":{"type":"integer","default":1},"end_line":{"type":"integer"}}), &["file_path"]) },
         { "name": "readmd_edit_document",
           "description": "Preview a literal replacement by default. Commit only with dry_run:false, confirm:true and a matching byte revision. Ambiguous matches require replace_all. Preserves encoding/EOL; records recoverable history outside the document folder.",
           "inputSchema": schema(json!({"file_path":{"type":"string"},"expected_revision":{"type":"string"},
@@ -637,7 +652,8 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
         "readmd_academic_document" => Ok(json_result(&api(app,"POST","/api/academic/document",Some(args))?)),
         "readmd_openapi_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/developer/openapi",Some(args))?))),
         "readmd_review_document" | "readmd_review_ai" => {
-            let mut body=args.clone();body.as_object_mut().unwrap().remove("confirm");
+            let mut body=args.clone();
+            if body["action"]!="code_batch_run" { body.as_object_mut().unwrap().remove("confirm"); }
             if name=="readmd_review_document" && body["action"]=="open" {
                 let path=arg_str(&body,"path","");
                 if !path.starts_with("draft:") {
@@ -686,10 +702,17 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
             Path::new(&arg_str(args,"workspace_root","")), &arg_str(args,"query",""),
             arg_i64(args,"limit",20).try_into().unwrap_or(0),cancel)
             .map(|v|json_result(&v)).map_err(|code|error_result(&code,None)),
+        "readmd_read_document" if args.get("chapter_line").is_some() => {
+            crate::document_intelligence::read_chapter_document(Path::new(&arg_str(args, "file_path", "")), args)
+                .map(|v| json_result(&v)).map_err(|code| error_result(&code, None))
+        },
         "readmd_read_document" => crate::document_intelligence::read_document(
             Path::new(&arg_str(args,"file_path","")),arg_i64(args,"start_line",1).try_into().unwrap_or(0),
             arg_i64(args,"end_line",1000).try_into().unwrap_or(0))
-            .map(|v|json_result(&v)).map_err(|code|error_result(&code,None)),
+            .and_then(|v| {
+                crate::document_intelligence::check_read_revision(args, v["revision"].as_str().unwrap_or(""))?;
+                Ok(v)
+            }).map(|v|json_result(&v)).map_err(|code|error_result(&code,None)),
         "readmd_edit_document" => crate::document_intelligence::edit_document(app,
             Path::new(&arg_str(args,"file_path","")), &arg_str(args,"expected_revision",""),
             &arg_str(args,"old_text",""),&arg_str(args,"new_text",""),arg_bool(args,"replace_all",false),
@@ -721,15 +744,29 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
         }
         "readmd_convert_to_markdown" => {
             let path = existing_file(&arg_str(args, "file_path", ""))?;
-            let t = crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::for_app(app), &path.to_string_lossy(), true, None);
+            let want_report = arg_bool(args, "include_fidelity_report", false);
+            let stamp = if want_report { crate::convert::fidelity_source::observe(&path) } else { None };
+            let t = crate::plugin_manager::convert_document_with_source(&crate::plugin_manager::Sandbox::for_app(app), &path.to_string_lossy(), true, None, stamp.as_ref().map(|file| file.bytes()));
             if let Some(err) = t.error {
                 let body = crate::conversion_errors::body(&err);
                 return Err(json!({"isError":true,"structuredContent":body,"content":[{"type":"text","text":body.to_string()}]}));
             }
             if t.text.trim().is_empty() {
-                return Err(error_result("convert_no_text", Some("未提取到文字；如果是扫描件，可使用 readmd_ocr_to_markdown")));
+                let mut error = error_result("convert_no_text", Some("未提取到文字；如果是扫描件，可使用 readmd_ocr_to_markdown"));
+                if want_report {
+                    error["structuredContent"]["fidelity_report"] = crate::convert::fidelity_source::report_if_current(&path, &t, stamp.as_ref());
+                    error["content"][0]["text"] = json!(error["structuredContent"].to_string());
+                }
+                return Err(error);
             }
-            Ok(text_result(t.text))
+            if want_report {
+                let report = crate::convert::fidelity_source::report_if_current(&path, &t, stamp.as_ref());
+                let mut response = text_result(t.text);
+                response["structuredContent"] = json!({"fidelity_report": report});
+                Ok(response)
+            } else {
+                Ok(text_result(t.text))
+            }
         }
         "readmd_web_to_markdown" => {
             let url = arg_str(args, "url", "").trim().to_string();
@@ -928,7 +965,7 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
                 "capture_plot": arg_bool(args, "capture_plot", true),
                 "confirm": true,
             });
-            Ok(json_result(&api(app, "POST", "/api/code/run", Some(&body))?))
+            crate::cancel::with_external(cancel, || Ok(json_result(&api(app, "POST", "/api/code/run", Some(&body))?)))
         }
         "readmd_pdf_audit" => {
             let path = existing_file(&arg_str(args, "pdf_path", ""))?;
@@ -1000,7 +1037,10 @@ fn export_document(app: &Arc<App>, args: &Value, cancel: Option<&AtomicBool>) ->
     let write_to = stage.as_ref().map(|dir| dir.path().join(out.file_name().unwrap())).unwrap_or_else(|| out.clone());
     let out_s = write_to.to_string_lossy().into_owned();
     let render = || crate::cancel::with_external(cancel,||crate::mdexport::export_document_with_resolved_options(&fmt, &content, &base, &out_s, &resolved, &title, &app.paths.assets_dir,&app.paths.data_dir));
-    let res = stage.as_ref().map_or_else(render, |stage| stage.scope(render))
+    let res = match &stage {
+        Some(stage) => stage.run_to_completion(render).map_err(|_| error_result("write_failed", None))?,
+        None => render(),
+    }
         .map_err(|e|crate::publication_metadata_formats::error_body(&content,&options,&title,&fmt,&e).map(metadata_error_result).unwrap_or_else(||export_error(Some(&e))))?;
     if !res.ok {
         return Err(export_error(res.error.as_deref()));
@@ -1008,7 +1048,6 @@ fn export_document(app: &Arc<App>, args: &Value, cancel: Option<&AtomicBool>) ->
     if stage.is_some() {
         let bytes = std::fs::read(&write_to).map_err(|_| error_result("export_failed", None))?;
         check_cancel(cancel)?;
-        stage.as_ref().unwrap().finish().map_err(|_|error_result("write_failed",None))?;
         write_output(&out, &bytes, overwrite).map_err(|code| error_result(code, None))?;
     }
     let warns = res.warns.unwrap_or_default();
@@ -1247,8 +1286,9 @@ pub fn handle_line(app: &Arc<App>, out: &Out, busy: &Arc<AtomicUsize>, cancelled
     }
 }
 
-/// Serve MCP on stdin/stdout until stdin closes; waits for running tools.
-pub fn run_stdio(app: Arc<App>) {
+/// EOF closes code admission and stops this process's code resources. Other
+/// tools retain their existing safe completion path, including committed I/O.
+pub fn run_stdio(app: Arc<App>) -> bool {
     let out = Out::new(Box::new(std::io::stdout()));
     let busy = Arc::new(AtomicUsize::new(0));
     let cancelled = Arc::new(Mutex::new(HashMap::new()));
@@ -1262,9 +1302,19 @@ pub fn run_stdio(app: Arc<App>) {
             Err(_) => break,
         }
     }
+    let closing = std::time::Instant::now();
+    // Give already finishing short calls a small bounded drain window. EOF is
+    // still shutdown, not permission to run the rest of a long code batch.
+    while busy.load(Ordering::SeqCst) > 0 && closing.elapsed() < std::time::Duration::from_millis(50) {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let code_stopped = crate::code_chunk_runner::stop_owned_executions(
+        std::time::Duration::from_secs(2).saturating_sub(closing.elapsed()),
+    );
     while busy.load(Ordering::SeqCst) > 0 {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    code_stopped
 }
 
 #[cfg(test)]
@@ -1550,6 +1600,30 @@ mod tests {
     }
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn chapter_read_mcp_pages_pin_file_revision_and_keep_original_encoding() {
+        let (_dir, _, app, file) = review_fixture();
+        let source = "Preface\r\n# First\r\nA\r\n# First\r\nB😀\r\n## Child\r\nC\r\n# Last";
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(source.encode_utf16().flat_map(u16::to_le_bytes));
+        std::fs::write(&file, &bytes).unwrap();
+        let mut args = json!({"file_path":file,"chapter_line":5,"end_line":2});
+        let call = |a:&Value| call_tool(&app,"readmd_read_document",a)["structuredContent"].clone();
+        let page = call(&args);
+        assert_eq!(page["content"], "# First\r\nB😀\r\n");
+        assert_eq!(page["title_line"], 4);
+        args["start_line"] = page["next_start_line"].clone();
+        args["end_line"] = json!(9);
+        assert_eq!(call(&args)["error_code"], "expected_revision_required");
+        args["expected_revision"] = page["revision"].clone();
+        let last = call(&args);
+        assert_eq!(last["content"], "## Child\r\nC\r\n");
+        assert!(last["next_start_line"].is_null());
+        assert_eq!(std::fs::read(&file).unwrap(), bytes);
+        std::fs::write(&file, source).unwrap();
+        assert_eq!(call(&args)["error_code"], "document_conflict");
+    }
 
     fn review_fixture() -> (tempfile::TempDir,crate::paths::AppPaths,Arc<App>,PathBuf) {
         let root=tempfile::tempdir().unwrap();

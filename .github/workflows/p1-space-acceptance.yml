@@ -1,0 +1,64 @@
+name: P1 native space consumers
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: p1-native-space-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  volume:
+    name: Owned small volume · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_BUILD_JOBS: 2
+      RUST_TEST_THREADS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Prepare locked dependencies
+        run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Canonical owned test temporary directory
+        run: node tools/ci-test-temp.mjs
+      - name: Prepare authenticated offline font input and real test consumer
+        run: node tools/test/platform-space-prepare.mjs
+      - name: Linux real ENOSPC, bind mount and inode consumers
+        if: runner.os == 'Linux'
+        run: node tools/test/platform-space-linux.mjs
+      - name: Windows real NTFS quota, ENOSPC and recovery consumers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/test/platform-space-windows.ps1
+      - name: Remove this invocation's verified offline input
+        if: always()
+        run: node tools/test/platform-space-prepare.mjs --clean-input
+      - name: Retain source-bound receipts and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-native-space-${{ matrix.os }}
+          if-no-files-found: warn
+          path: |
+            .cache/p1-platform-space/prepared.json
+            .cache/p1-platform-space/native-space.json
+            .cache/p1-platform-space/native-quota.json
+            .cache/p1-platform-space/linux-extra.json
+            .cache/p1-platform-space/first-failure.json
+            .cache/p1-platform-space/*.log

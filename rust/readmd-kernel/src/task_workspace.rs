@@ -696,6 +696,13 @@ impl Workspace {
         let _restore = Restore(CURRENT.with(|c| c.replace(Some(self.inner.clone()))));
         action()
     }
+    /// For synchronous work whose owned workers and files have been closed when
+    /// the action returns. A panic leaves the journal available for recovery.
+    pub fn run_to_completion<T>(&self, action: impl FnOnce() -> T) -> io::Result<T> {
+        let outcome = self.scope(action);
+        self.finish()?;
+        Ok(outcome)
+    }
     pub fn pin(&self, reference: &str) -> io::Result<u64> {
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let revision = state.record.revision.checked_add(1).ok_or_else(invalid)?;

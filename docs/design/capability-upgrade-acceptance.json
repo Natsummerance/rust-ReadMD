@@ -7165,7 +7165,27 @@
         "tools/test/v006-table-clipboard.test.cjs",
         "tools/test/v006-table-clipboard-browser.cjs",
         "tools/test/v006-table-align.test.cjs",
-        "tools/test/v006-table-align-browser.cjs"
+        "tools/test/v006-table-align-browser.cjs",
+        "assets/js/editor/table-attributes.js",
+        "assets/js/editor/table-structure.js",
+        "assets/js/reader/table-layout.js",
+        "rust/readmd-kernel/src/table_geometry.rs",
+        "rust/readmd-kernel/src/docx_writer.rs",
+        "rust/readmd-kernel/src/pptx_export/table.rs",
+        "ui-tests/table-geometry-browser.cjs",
+        "rust/readmd-kernel/src/pdf_render_table.rs",
+        "rust/readmd-kernel/src/export_snapshot.rs",
+        "tools/test/v007-pdf-geometry.cjs",
+        "tools/test/v007-pdf-geometry.py",
+        "tools/test/research-table-check.py",
+        "assets/js/editor/table-resize.js",
+        "assets/js/editor/table-clipboard.js",
+        "assets/js/editor/review.js",
+        "tools/test/v007-table-clipboard.test.cjs",
+        "ui-tests/table-tracks-browser.cjs",
+        "ui-tests/table-history-reopen.cjs",
+        "tools/test/table-track-export.cjs",
+        "tools/test/table-track-export.py"
       ],
       "evidence": [
         {
@@ -7187,10 +7207,40 @@
           "scope": "顶层 GFM 当前列左／中／右对齐，正式 CSP headless 保存、撤销及新进程重开；不等于完整可视表格。",
           "recordedAt": "2026-10-27T10:24:42.530Z",
           "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v007-table-geometry-2026-11-18.json",
+          "sha256": "6904483783007f9d10f983d1b02e6bd596c44eff86c538f02f82c778076be0f6",
+          "sourceDigest": "a01bdba2d3a5406f1775cf897a46ab5ac958f047985cce3cbe55960923170da5",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "矩形合并、拆分、双轴对齐、富文本保留、保存及新进程撤销重做。Mac 原生宿主和 ibisOffice 另存重开，Windows、Linux 为真实内核与浏览器。",
+          "recordedAt": "2026-11-18T11:48:58Z",
+          "platform": "macos-arm64/windows-x64/linux-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v007-pdf-table-geometry-2026-11-18.json",
+          "sha256": "701e274544bce842b8c81c53fdc4c0e7b0258cc8b899e60b11ba81d68347de5c",
+          "sourceDigest": "3fde589c16ef8935a25040b202eec6bda0a12f32ce631239aab100078440b085",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "三平台真实内核导出科研三线长表与二维合并网格，核查分页行高、实际墨迹边界、重复表头、脚注跳转和 PNG 像素。取消、冲突、非法跨度及图像预算错误均保护已有文件。",
+          "recordedAt": "2026-11-18T12:28:58.511Z",
+          "platform": "macos-arm64/windows-x64/linux-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v007-table-tracks-2026-11-18.json",
+          "sha256": "18824ce0b7fd1655db326e5796e65566cfebf468cd23013bbcb4f9e32d7765a2",
+          "sourceDigest": "70527dd7b7bc3b674e181e7c73a390e82d0b6b1579a3441a5ce51f7e8ed1f2e0",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "三端实测行列拖动、合并格结构与 CSV/TSV 粘贴、五步保存历史，以及同一文件跨页 PDF 和两种 PNG。Mac 原生窗口另测覆盖槽、菜单撤销和重做，ibisOffice 实际排版 DOCX。",
+          "recordedAt": "2026-11-18T13:24:21.997Z",
+          "platform": "macos-arm64/windows-x64/linux-x64"
         }
       ],
       "remaining": [
-        "可视单元格、行列、排序、CSV/TSV及扩展属性保存重开完整实测"
+        "Windows、Linux 原生桌面交互及外部 Office 应用往返"
       ]
     },
     {

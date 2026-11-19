@@ -5,6 +5,8 @@ const fs=require('node:fs'),path=require('node:path'),net=require('node:net'),cr
 const {spawn}=require('node:child_process');const {DatabaseSync}=require('node:sqlite');
 const args=process.argv.slice(2),arg=n=>{const i=args.indexOf(n);assert(i>=0&&args[i+1]);return path.resolve(args[i+1]);};
 const old=arg('--old-bin'),current=arg('--new-bin'),out=arg('--out'),assets=arg('--assets');
+const schema=(name,fallback)=>{const at=args.indexOf(name);const value=at<0?fallback:Number(args[at+1]);assert(Number.isSafeInteger(value)&&value>0);return value;};
+const oldSchema=schema('--old-schema',5),newSchema=schema('--new-schema',6);assert(newSchema>oldSchema);
 const repo=path.resolve(__dirname,'..'),workspace=path.dirname(repo),pause=ms=>new Promise(r=>setTimeout(r,ms)),sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 assert(out.startsWith(workspace+path.sep));fs.mkdirSync(out,{mode:0o700});
 const data=path.join(out,'profile'),docs=path.join(out,'documents'),tmp=path.join(out,'tmp'),home=path.join(out,'home');
@@ -24,15 +26,15 @@ async function start(binary){
   }catch{}await pause(50);
  }throw Error('backend readiness timeout');}catch(e){await stop();throw e;}
 }
-const checks=[],report={oldBinarySha256:sha(fs.readFileSync(old)),newBinarySha256:sha(fs.readFileSync(current)),productionCsp:true,strictAuth:true,modelsRequested:false,nativeHostEvidence:false,controlledHeadlessTermination:true,checks,passed:false};
+const checks=[],report={oldBinarySha256:sha(fs.readFileSync(old)),newBinarySha256:sha(fs.readFileSync(current)),oldSchema,newSchema,productionCsp:true,strictAuth:true,modelsRequested:false,nativeHostEvidence:false,controlledHeadlessTermination:true,checks,passed:false};
 let host;
 const openFile=async()=>{const r=await host.api('/api/file?p='+encodeURIComponent(source));assert.equal(r.status,200);};
 const cas=s=>({document_id:s.document_id,generation:s.generation,review_revision:s.review_revision,call_id:crypto.randomUUID()});
 (async()=>{try{
  host=await start(old);await openFile();let r=await host.api('/api/review',{action:'open',path:source});assert.equal(r.status,200);const first=r.body;
  r=await host.api('/api/review',{action:'propose',...cas(first),origin:'ai',edits:[{from:0,to:8,insert:'Updated'}]});assert.equal(r.status,200);const pending=r.body;
- assert.equal(version(),5);checks.push('actual_released_writer_created_version_five_pending_review');await host.stop();host=null;
- host=await start(current);await openFile();r=await host.api('/api/review',{action:'read',document_id:pending.document_id});assert.equal(r.status,200);assert.equal(version(),6);
+ assert.equal(version(),oldSchema);checks.push('actual_released_writer_created_version_'+oldSchema+'_pending_review');await host.stop();host=null;
+ host=await start(current);await openFile();r=await host.api('/api/review',{action:'read',document_id:pending.document_id});assert.equal(r.status,200);assert.equal(version(),newSchema);
  assert.equal(r.body.content,pending.content);assert.equal(r.body.changes[0].original,'Original');assert.equal(r.body.changes[0].decision,'pending');
  checks.push('actual_new_writer_migrates_without_losing_identity_original_or_decision');await host.stop();host=null;
  const before=sha(fs.readFileSync(path.join(data,'review.sqlite3')));
@@ -44,7 +46,7 @@ const cas=s=>({document_id:s.document_id,generation:s.generation,review_revision
   r=await host.api('/api/save',{path:source,content:'must never be written',encoding:'utf-8-sig',...(review?{review_session:review}:{})});
   assert(r.status>=400);assert.equal(r.body.error_code,'review_unsupported_schema');assert.deepEqual(fs.readFileSync(source),original);
  }
- await host.stop();host=null;assert.equal(sha(fs.readFileSync(path.join(data,'review.sqlite3'))),before);assert.equal(version(),6);
+ await host.stop();host=null;assert.equal(sha(fs.readFileSync(path.join(data,'review.sqlite3'))),before);assert.equal(version(),newSchema);
  checks.push('old_review_and_legacy_saves_refuse_without_mutating_document_or_database');
  host=await start(current);await openFile();r=await host.api('/api/review',{action:'read',document_id:pending.document_id});assert.equal(r.status,200);assert.equal(r.body.content,pending.content);
  r=await host.api('/api/save',{path:source,content:r.body.content.replace(/\n/g,'\r\n'),encoding:'utf-8-sig',review_session:cas(r.body)});assert.equal(r.status,200);assert.equal(r.body.ok,true);assert.equal(r.body.review.changes[0].decision,'pending');

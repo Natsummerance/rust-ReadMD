@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "date": "2026-11-04",
+  "task": "V7-05",
+  "scope": "source-bound code results, durable editor history, save and new-process recovery",
+  "implementationCommit": "d5641ec8a29bceaca9473ebdcb0b030eb7d1d579",
+  "ciSourceCommit": "15d234e36fdec2bf9ea1bc6a4c703fd8df19a662",
+  "ciRun": 41699987685,
+  "initialCiRun": 41695054513,
+  "allEightJobsPassed": true,
+  "artifactDigestsVerified": true,
+  "wholeTaskAccepted": false,
+  "nativeMacUiAccepted": false,
+  "releasePublished": false,
+  "dailyApplicationChanged": false,
+  "modelsLoadedOnUserMac": false,
+  "bootSha256": "54f0a03e98d1ff1654ac3e3a5dd946a34f904ea616dddcc0662d6ee1de7911d3",
+  "frozenMacAssetsTreeSha256": "e622bd76e45dbc62508e2d7bb6fd6c38fa0c6bd2ca58dca442178ea6e5b8207e",
+  "localSignedQaBinarySha256": "05efab96dee95042aa30b601a2e96e7fca80d7964dcb7ec2200f789b90f1da1e",
+  "platforms": [
+    {
+      "os": "linux",
+      "libraryPassed": 4268,
+      "actualOutputChecks": 3,
+      "actualOutputProcesses": 3,
+      "binarySha256": "f212302257ef5a4acef3a6a0305ee10a2a84ccee40421c2ea20a1b717773bb6d",
+      "artifactDigest": "sha256:2b154a034c46be463b3294d2fda65ce9e0ddaa474bd2a1628588e1eedcbba076"
+    },
+    {
+      "os": "macos",
+      "libraryPassed": 4279,
+      "actualOutputChecks": 3,
+      "actualOutputProcesses": 3,
+      "binarySha256": "a3bec3ef4cedf923b0a206d6219e0a03f9f58c9bd605879f8ebba5d70365a2da",
+      "artifactDigest": "sha256:2eefe53fb84f47c1a7d67f661fd4fb5c16b38a446258236836478503a98ff366"
+    },
+    {
+      "os": "windows",
+      "libraryPassed": 4352,
+      "actualOutputChecks": 3,
+      "actualOutputProcesses": 3,
+      "binarySha256": "ee95efe5b0a430aee1c3db1f9f1db0f9124f54ed592f3c31ec0e0155378e0028",
+      "artifactDigest": "sha256:d948252e11837a4ddaecc3fea0faa9804187679c1b8e0cd0db9c22da809f00e3"
+    }
+  ],
+  "actualLinuxBrowser": {
+    "checks": 7,
+    "headless": true,
+    "nativeUiCertified": false,
+    "keyboardPlatformSimulated": false,
+    "productionCsp": true,
+    "strictAuth": true,
+    "binarySha256": "d41b4a83511c491fb323f7aa039a74b965da49e3ded948ef19effc409c8b1eb9"
+  },
+  "localKeyboardSimulations": {
+    "windowsChecks": 7,
+    "linuxChecks": 7,
+    "certifiesNativePlatform": false
+  },
+  "remaining": [
+    "Mac Cocoa native slot",
+    "batch order and budgets",
+    "nested/source-generated fence provenance",
+    "managed runtime matrix",
+    "normal host-exit follow-up candidate",
+    "MCP EOF policy and Unix owner crash",
+    "task checkpoints and unknown effects"
+  ]
+}

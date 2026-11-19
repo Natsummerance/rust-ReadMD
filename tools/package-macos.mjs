@@ -46,11 +46,12 @@ function preparePet(input,destination,arch,temporary,env) {
   fs.writeFileSync(destination,zip(entries),{flag:'wx'});
   return {sourceArchiveSha256:hash(fs.readFileSync(input)),archiveSha256:hash(fs.readFileSync(destination)),artifacts:manifest.artifacts.length,signedExecutables:executable};
 }
-export function packageMacos({binary,pet,output,arch,format='all',env=process.env}) {
+export function packageMacos({binary,pet,output,arch,assets=path.join(root,'assets'),format='all',env=process.env}) {
   if(process.platform!=='darwin')throw Error('A native Mac is required');
   if(!['arm64','x64'].includes(arch))throw Error('Expected arm64 or x64');
   if(!['all','zip'].includes(format))throw Error('Expected all or zip package format');
   for(const file of [binary,pet])if(!file||!fs.lstatSync(file).isFile())throw Error('Expected a regular local input file');
+  if(!fs.lstatSync(assets).isDirectory()||!fs.lstatSync(path.join(assets,'index.html')).isFile())throw Error('Expected a prepared application assets tree');
   if(archOf(binary)!==(arch==='arm64'?'arm64':'x86_64'))throw Error('Main executable architecture mismatch');
   const version=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();
   if(!/^\d+\.\d+\.\d+$/.test(version))throw Error('Invalid version');
@@ -63,7 +64,7 @@ export function packageMacos({binary,pet,output,arch,format='all',env=process.en
     fs.mkdirSync(path.join(contents,'MacOS'),{recursive:true});fs.mkdirSync(path.join(contents,'Resources'));
     const executable=path.join(contents,'MacOS/ReadMD');
     fs.copyFileSync(binary,executable);fs.chmodSync(executable,0o755);
-    fs.cpSync(path.join(root,'assets'),path.join(contents,'Resources/assets'),{recursive:true});
+    fs.cpSync(assets,path.join(contents,'Resources/assets'),{recursive:true});
     const icon=['ReadMD-macos.icns','ReadMD.icns','readmd.icns'].map(n=>path.join(root,'assets',n)).find(n=>fs.existsSync(n));
     if(icon)fs.copyFileSync(icon,path.join(contents,'Resources/readmd.icns'));
     const petName='ReadMD-Pet-Rust-macos-'+(arch==='arm64'?'aarch64':'x86_64')+'.zip';
@@ -121,7 +122,7 @@ export function packageMacos({binary,pet,output,arch,format='all',env=process.en
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const args=process.argv.slice(2),value=name=>args[args.indexOf(name)+1];
-  const keys=args.filter((_,i)=>i%2===0),allowed=['--binary','--pet','--output','--arch','--format'];
-  if(![8,10].includes(args.length)||new Set(keys).size!==keys.length||keys.some(k=>!allowed.includes(k))||!allowed.slice(0,4).every(n=>keys.includes(n)))throw Error('Usage: package-macos.mjs --binary FILE --pet ZIP --output NEW_DIRECTORY --arch arm64|x64 [--format all|zip]');
-  console.log(JSON.stringify(packageMacos({binary:value('--binary'),pet:value('--pet'),output:value('--output'),arch:value('--arch'),format:keys.includes('--format')?value('--format'):'all'})));
+  const keys=args.filter((_,i)=>i%2===0),allowed=['--binary','--pet','--output','--arch','--format','--assets'];
+  if(![8,10,12].includes(args.length)||new Set(keys).size!==keys.length||keys.some(k=>!allowed.includes(k))||!allowed.slice(0,4).every(n=>keys.includes(n))||keys.some(k=>!value(k)||value(k).startsWith('--')))throw Error('Usage: package-macos.mjs --binary FILE --pet ZIP --output NEW_DIRECTORY --arch arm64|x64 [--format all|zip] [--assets DIRECTORY]');
+  console.log(JSON.stringify(packageMacos({binary:value('--binary'),pet:value('--pet'),output:value('--output'),arch:value('--arch'),format:keys.includes('--format')?value('--format'):'all',assets:keys.includes('--assets')?value('--assets'):undefined})));
 }

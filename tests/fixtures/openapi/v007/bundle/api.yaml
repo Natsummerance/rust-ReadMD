@@ -1,0 +1,25 @@
+openapi: 3.1.1
+info: {title: '重复标题 API 😀', version: '7.0', description: 'Owned multi-file baseline.'}
+servers: [{url: 'https://example.invalid/v7'}]
+security: [{bearer: []}, {oauth: ['read:items']}]
+paths:
+  /items/{id}:
+    $ref: './paths/items.yaml'
+  /search:
+    get:
+      summary: '重复标题'
+      operationId: searchItems
+      security: []
+      responses: {'200': {$ref: './defs/responses.yaml#/Envelope'}}
+  /other:
+    post:
+      summary: '重复标题'
+      operationId: otherItem
+      responses: {'204': {description: 'No content'}}
+components:
+  schemas:
+    Envelope: {$ref: './schemas/complex.json#/$defs/Envelope'}
+  securitySchemes:
+    bearer: {$ref: './defs/auth.yaml#/bearer'}
+    oauth: {$ref: './defs/auth.yaml#/oauth'}
+    apiKey: {type: apiKey, in: header, name: X-Owned-Key}

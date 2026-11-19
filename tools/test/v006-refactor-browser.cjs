@@ -249,9 +249,8 @@ async function main() {
     await until(() => page.evaluate(() => !cmView.state.doc.toString().includes('Saved after the real refactor.')), 'reference undo');
     await page.keyboard.press('Control+y'); await until(() => page.evaluate(() => cmView.state.doc.toString().includes('Saved after the real refactor.')), 'reference redo');
     await page.locator('#edit-save').click();
-    await until(() => page.evaluate(() => !getActiveTab().isDirty && !ReadMDReview.busy()), 'reference saved against adopted head');
+    await until(() => page.evaluate(() => !state.editing && !getActiveTab().isDirty && !ReadMDReview.busy()), 'reference saved against adopted head and reader restored');
     expected.set(firstPath, expected.get(firstPath) + savedText); assert.equal(fs.readFileSync(firstPath, 'utf8'), expected.get(firstPath));
-    await page.locator('#edit-cancel').click(); await until(() => page.evaluate(() => !state.editing), 'reference reader restored');
     await page.locator('#doc-tabs-bar .tab-item.active .tab-close').first().click();
     await until(() => page.evaluate(() => state.tabs.length === 2), 'saved reference tab closes');
     await page.evaluate(async () => { if (!await ReadMDSession.flush()) throw Error('Synthetic close session did not persist'); });

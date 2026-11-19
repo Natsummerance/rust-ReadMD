@@ -169,7 +169,7 @@ fn fingerprint_covers_context_source_body_and_exact_crlf_spelling() {
 
 #[test]
 fn traversal_uses_one_math_sequence_across_wrappers_tables_notes_and_lists() {
-    let author = document(vec![off(true), Block::Quote(vec![latex("a")]), Block::List { ordered: false, start: 1, items: vec![crate::md_ast::ListItem { task: None, blocks: vec![Block::Paragraph(vec![Inline::Strong(vec![Inline::Math("b".into())])])] }] }, Block::Table { aligns: vec![crate::md_ast::Align::None], header: vec![vec![Inline::Math("c".into())]], rows: vec![vec![vec![Inline::Math("d".into())]]] }, Block::FootnoteDef { label: "note".into(), blocks: vec![latex("e")] }]);
+    let author = document(vec![off(true), Block::Quote(vec![latex("a")]), Block::List { ordered: false, start: 1, items: vec![crate::md_ast::ListItem { task: None, blocks: vec![Block::Paragraph(vec![Inline::Strong(vec![Inline::Math("b".into())])])] }] }, Block::Table { geometry: Default::default(), aligns: vec![crate::md_ast::Align::None], header: vec![vec![Inline::Math("c".into())]], rows: vec![vec![vec![Inline::Math("d".into())]]] }, Block::FootnoteDef { label: "note".into(), blocks: vec![latex("e")] }]);
     let plan = DocumentDefaultsPlan::analyze(&author).unwrap(); assert_eq!(plan.formula_count(), 6); for (index, (text, display)) in [("a", true), ("b", false), ("c", false), ("d", false), ("e", true)].into_iter().enumerate() { plan.render_formula(&math_document::parse(text, "latex", display).unwrap(), index + 1, display).unwrap(); }
     let rendered = plan.render_document(&author).unwrap(); assert!(matches!(&rendered.blocks[1], Block::Quote(v) if matches!(&v[0], Block::OfficeMath {..}))); assert_eq!(author.blocks[0], rendered.blocks[0]);
 }

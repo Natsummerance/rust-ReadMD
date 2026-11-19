@@ -29,7 +29,7 @@ try {
   const env = {...process.env, READMD_SPACE_OWNED_VOLUME: mount, READMD_SPACE_INSTALL_ASSETS: assets,
     READMD_SPACE_INSTALL_PACK: pack, READMD_SPACE_REPORT_PATH: report};
   delete env.READMD_SPACE_REOPEN_ONLY;
-  const testArgs = ['--exact', 'capability_packs::space_macos_tests::native_small_volume_preflight_enospc_cancel_and_reopen', '--ignored', '--nocapture', '--test-threads=1'];
+  const testArgs = ['--exact', 'capability_packs::space_volume_tests::native_small_volume_preflight_enospc_cancel_and_reopen', '--ignored', '--nocapture', '--test-threads=1'];
   const first = run(binary, testArgs, env);
   fs.writeFileSync(path.join(out, 'first-process.log'), first.stdout + first.stderr);
   const second = run(binary, testArgs, {...env, READMD_SPACE_REOPEN_ONLY: '1'});

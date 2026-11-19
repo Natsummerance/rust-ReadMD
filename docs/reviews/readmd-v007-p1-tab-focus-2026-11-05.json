@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-05",
+  "uiSourceCommit": "7bf3a171871cdd8b988b6c0dba0ba27d6462ce9c",
+  "binaryProducerSource": "a45e3882cf9022d5340e95eac2ec6261082b99d2",
+  "binarySha256": "1f7c710b0b8790815e4b648e387e4ae126a60888e01b99c4aa6f82640009f523",
+  "rustTree": "e0b93a823af0a3a5cbd27d7fa0836e73300616c3",
+  "xtaskTree": "86836215fdab689b9105cd2764d82a3e92579ed0",
+  "kernelSourceEqualityVerified": true,
+  "bootSha256": "178fa8609708e0f270eabf088363be10a86dacc65f059cbd7976e77fcb7674e7",
+  "indexSha256": "89a1c59544199276774ec4e22b616e0aa880afb4e59c822e4df94c8f1062dbc4",
+  "change": "Preserve the stable ID of the row that owns focus at the synchronous tab-list rebuild; never capture stale focus before await or take focus from editor/menu.",
+  "firstFailure": {
+    "ciRunId": 41981819649,
+    "uiJobFailed": true,
+    "controlledOldSourceMenuTimedOut": true,
+    "historicalCiExactEventOrderCertified": false,
+    "preserved": true
+  },
+  "localNode": {
+    "passed": 2035,
+    "failed": 0,
+    "existingSkipped": 3,
+    "total": 2038,
+    "precommitBindingSha256": "998263b43ad99307fcc0c14af60c3546ac00b53648130f8fb847db0a8163183b",
+    "precommitWorkingBytesEqualUiCommit": true,
+    "sourceUnchangedDuringRun": true
+  },
+  "actualBrowser": {
+    "host": "macOS headless Chrome 157 / Playwright 1.54 / Node 24.22",
+    "controlledGateChecks": 7,
+    "originalShellChecks": 22,
+    "originalRtlChecks": 5,
+    "originalWorkflowAssertionsPassed": true,
+    "realBackendAndOriginalResumeResponse": true,
+    "primaryTrustedF10NaturalFocus": true,
+    "primaryRefocusUsed": false,
+    "originalDeadlineMs": 10000,
+    "realSessionAndPhysicalFilesRechecked": true,
+    "sourceAssetsComparedWithGit": 1177,
+    "ownedObservedPidsIndependentlyGone": 27,
+    "normalBackendExitAndClose": true,
+    "pageErrors": 0,
+    "inferenceRequests": 0
+  },
+  "receiptSha256": {
+    "rootReadback": "42197f37c82493ddd783978a86cbf31f4381652676c67260b6045878501976d9",
+    "manifest": "62bf159c6d87aab4eae2aecd78b593bba1bb6620ffc2e07910e5225c40b00dda",
+    "gate": "65a92b3e577c9061ba3f13b147675343f38efce117c88206d29ad8d8c9b3abf1",
+    "shell": "16b5fc407ab5d3f3fe6a7d00245d735e190bddfab3c30a2bf170a91c3af86de6",
+    "rtl": "59345416520e229f8653fe39bf17a553e928fbf0345bd9c182c4015e71c6f8df"
+  },
+  "nativeUi": {
+    "candidatePreparedAndIndependentlyVerified": true,
+    "executed": false,
+    "physicalKeyboardImeCertified": false
+  },
+  "remaining": [
+    "Permanent deterministic CI regression must handle the real found:true/false resume union and select B before arming A; draft not yet integrated",
+    "Fast Escape before delayed context-menu focus requires separate investigation",
+    "Cocoa, physical input, IME, high DPI/4K and the new full cross-platform CI remain separately gated"
+  ],
+  "wholeP1Accepted": false,
+  "p1Released": false,
+  "v007Released": false,
+  "modelsRequested": false,
+  "stopAfterCurrentV006Delivery": true
+}

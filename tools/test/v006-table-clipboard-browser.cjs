@@ -137,7 +137,7 @@ async function run() {
       const saved = await savedResponse;
       assert.equal(saved.status(), 200);
       assert.equal((await saved.json()).ok, true);
-      await poll(page, () => !getActiveTab().isDirty && getActiveTab().original === getEditContent());
+      await poll(page, () => !state.editing && !getActiveTab().isDirty && getActiveTab().original === state.original);
       assert.equal(fs.readFileSync(file, 'utf8'), source);
       await reopenFile(file, source);
     };

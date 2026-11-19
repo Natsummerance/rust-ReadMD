@@ -1,0 +1,22 @@
+{
+  "productionCsp": true,
+  "headless": true,
+  "native": false,
+  "boot": "378c38786410466085d9f5eaef6021208c5e1206e845bbf3afb912c4d8c2a693",
+  "kernel": "3cdf0ba5d002e776df88d2b66744237563fe9c9fa6cfee800013a14e36a3bfa1",
+  "markdown": "29abce63b7acc3cfcd4b3696fbf882440ab59037cfe33fb6bdb8f2bca55c0f3d",
+  "svg": "5f206dd5f27f3df2dfd94c1cb4cd6ccdb0f9ebcc57fe7315197c9af5f532e043",
+  "checked": [
+    "insert-menu",
+    "draft-preserves-original",
+    "undo",
+    "redo",
+    "save-relative-asset",
+    "reopen-svg",
+    "reload-markdown"
+  ],
+  "limits": [
+    "Synthetic workspace and headless browser",
+    "System WebView, attached pen hardware and cross-platform acceptance pending"
+  ]
+}

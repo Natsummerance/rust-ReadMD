@@ -1,0 +1,49 @@
+{
+  "run": "office-extraction-http-restart",
+  "host": "darwin",
+  "arch": "arm64",
+  "profile": "isolated",
+  "runtime": "local HTTP kernel",
+  "date": "2026-11-19",
+  "kernelSHA256": "cd82ca6047dbc0be76befadae0bc349fc14dca4215f477191e24dc78ce877fe0",
+  "bootSHA256": "d4a4a04c393bcfe506c11d8d2d421575223002ae6dc33c86bb7e9cddf05a9b83",
+  "formats": [
+    {
+      "format": "docx",
+      "sourceSHA256": "1c77fd9ffaf18280d1c89c83f177c917e672af007ad2045db6fa837196d4cbed",
+      "expectedVisibleText": "yield 复核通过",
+      "finding": "review_markup",
+      "status": "review"
+    },
+    {
+      "format": "xlsx",
+      "sourceSHA256": "5867e2f50519513ffe93177e4f51b4fb56efab4123a722b0d3ae4cd7adc4120c",
+      "expectedVisibleText": "=SUM(5,8)",
+      "finding": "formula_cache_missing",
+      "status": "review"
+    },
+    {
+      "format": "pptx",
+      "sourceSHA256": "985b0641699638b9172b183d488624b338538d382819142dcb78f03fce57979d",
+      "expectedVisibleText": "演示结果",
+      "finding": "presentation_effects",
+      "status": "not_preserved"
+    }
+  ],
+  "verified": [
+    "anonymous API request rejected",
+    "source revision matches bytes",
+    "tracked code shows inserted text only",
+    "source DOCX unchanged",
+    "existing sibling Markdown unchanged",
+    "batch published Markdown contains revised code",
+    "new kernel process restored identical receipt",
+    "history includes one report"
+  ],
+  "pending": [
+    "native GUI",
+    "ibisOffice round-trip",
+    "Windows and Linux native runs",
+    "visual layout comparison"
+  ]
+}

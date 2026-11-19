@@ -1,0 +1,158 @@
+'use strict';
+// Explicit prebuilt kernel, production CSP and owned synthetic documents.
+// Headless browser clients are separate from native OS WebView acceptance.
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {ROOT,openOwned,until,sha}=require('./owned-browser-host.cjs');
+async function run(){
+  const binary=process.env.READMD_BIN,playwright=process.env.READMD_PLAYWRIGHT;
+  assert(binary&&path.isAbsolute(binary),'Explicit READMD_BIN is required');
+  const output=path.resolve(process.env.READMD_COLLABORATION_OUTPUT||path.join(ROOT,'.cache','v007-collaboration-resolution-'+Date.now()));
+  assert(output.startsWith(path.join(ROOT,'.cache')+path.sep),'Evidence stays in the owned project cache');
+  fs.mkdirSync(path.dirname(output),{recursive:true});
+  const original='# Evidence\n\nOriginal 🦀\n\nKeep neighbors.\n';
+  const report={passed:false,headless:true,nativeOsAcceptance:false,productionCsp:true,checks:[],binarySha256:sha(fs.readFileSync(binary))};
+  let owned,guest,reviewer,file;
+  const record=name=>{report.checks.push(name);console.log('PASS: '+name);};
+  try{
+    owned=await openOwned(output,async(_api,paths)=>{file=path.join(paths.documents,'Shared.md');fs.writeFileSync(file,original);},{binary,playwright});
+    const page=owned.page;
+    await page.evaluate(async file=>{await loadFile(file);await toggleEdit();await openShareModal();},file);
+    await page.locator('.share-collaboration > summary').click();await page.locator('#collaboration-start').click();
+    await until(()=>page.evaluate(()=>ReadMDCollaborationShare.bound()),'native shared binding');
+    await page.locator('#collaboration-review-panel > summary').click();
+    const invitations=await page.evaluate(async()=>{
+      const link=(credential)=>{const url=new URL(document.getElementById('collaboration-open').href);url.hostname='127.0.0.1';url.hash=new URLSearchParams({room:credential.room,token:credential.token,lang:'en'});return url.href;};
+      const editor=(await ReadMDCollaborationShare.request('invite',{role:'editor',name:'Editor'})).credential;
+      const reviewer=(await ReadMDCollaborationShare.request('invite',{role:'reviewer',name:'Reviewer'})).credential;
+      return {editor:link(editor),reviewer:link(reviewer),member:editor.member};
+    });
+    const allowed=new Set([new URL(page.url()).origin,new URL(invitations.editor).origin]);await owned.context.unroute('**/*');
+    await owned.context.route('**/*',route=>allowed.has(new URL(route.request().url()).origin)?route.continue():route.abort());
+    guest=await owned.context.newPage();reviewer=await owned.context.newPage();
+    for(const [client,url]of [[guest,invitations.editor],[reviewer,invitations.reviewer]]){client.on('pageerror',error=>owned.errors.push(error.message));await client.goto(url);await until(()=>client.evaluate(()=>Boolean(window.ReadMDCollaboration)),'LAN client ready');}
+    async function sharedValue(){return page.evaluate(()=>state.editing?getEditContent():getActiveTab().content);}
+    async function proposed(find,insert,label){
+      await until(async()=>(await reviewer.locator('#editor').inputValue()).includes(find),'reviewer current text');
+      await reviewer.locator('aside > details').first().evaluate(el=>el.open=true);await reviewer.locator('#suggestion').evaluate(el=>el.open=true);
+      await reviewer.locator('#editor').evaluate((el,find)=>{const at=el.value.indexOf(find);el.setSelectionRange(at,at+find.length);},find);
+      await reviewer.locator('#comment').fill(label);await reviewer.locator('#replacement').fill(insert);await reviewer.locator('#propose').click();
+      await until(async()=>(await reviewer.locator('#reviews').innerText()).includes(label),'proposal posted');
+    }
+    await proposed('Original','Suggested heading','Heading proposal');
+    await page.evaluate(()=>{const at=cmView.state.doc.toString().indexOf('Original');cmView.dispatch({changes:{from:at,to:at+8,insert:'Current heading'}});});
+    await until(async()=>(await guest.locator('#editor').inputValue()).includes('Current heading'),'overlapping edit synchronized');
+    await guest.locator('aside > details').first().evaluate(el=>el.open=true);
+    let row=guest.locator('#reviews article').filter({hasText:'Heading proposal'});await row.getByRole('button',{name:'Accept',exact:true}).click();
+    await row.locator('.collaboration-merge textarea').waitFor();
+    await row.locator('.collaboration-merge textarea').fill('Merged heading offline');
+    await guest.evaluate(()=>ReadMDCollaboration.checkpoint(true));
+    await guest.route('**/sessions/**',route=>route.abort());await guest.reload();
+    await until(()=>guest.evaluate(()=>Boolean(window.ReadMDCollaboration)),'offline cached client ready');
+    await guest.locator('aside > details').first().evaluate(el=>el.open=true);
+    row=guest.locator('#reviews article').filter({hasText:'Heading proposal'});
+    await until(async()=>(await row.locator('.collaboration-merge textarea').inputValue())==='Merged heading offline','merge draft and cached review history restored offline');
+    assert((await sharedValue()).includes('Current heading'));assert.equal(fs.readFileSync(file,'utf8'),original);
+    record('overlap blocks direct acceptance; offline reload restores review history and merge draft without writing source');
+    await page.evaluate(member=>ReadMDCollaborationShare.request('permission',{member,role:'reviewer'}),invitations.member);
+    await guest.unroute('**/sessions/**');await guest.evaluate(()=>ReadMDCollaboration.sync());
+    await until(()=>guest.locator('#editor').evaluate(el=>el.readOnly),'downgrade applied');
+    await until(()=>row.getByRole('button',{name:'Apply merged replacement',exact:true}).isDisabled(),'merge decision disabled after downgrade');
+    assert.equal(await row.locator('.collaboration-merge textarea').inputValue(),'Merged heading offline');
+    await page.evaluate(member=>ReadMDCollaborationShare.request('permission',{member,role:'editor'}),invitations.member);
+    await guest.evaluate(()=>ReadMDCollaboration.sync());await until(()=>guest.locator('#editor').evaluate(el=>!el.readOnly),'edit permission restored');
+    row=guest.locator('#reviews article').filter({hasText:'Heading proposal'});
+    await row.locator('.collaboration-merge').getByRole('button',{name:'Compare and merge',exact:true}).click();
+    await until(()=>row.locator('.collaboration-merge').getByRole('button',{name:'Compare and merge',exact:true}).isEnabled(),'fresh comparison');
+    await guest.locator('#editor').evaluate(el=>{const at=el.value.indexOf('Current heading');el.setSelectionRange(at,at+15);});
+    await row.getByRole('button',{name:'Use editor selection',exact:true}).click();
+    // The text returns to identical bytes, but this comparison predates two
+    // committed CRDT updates and must not authorize a manual decision.
+    const sameText=await sharedValue();
+    await page.evaluate(()=>{const at=cmView.state.doc.length;cmView.dispatch({changes:{from:at,insert:'Temporary ABA note'}});});
+    await page.evaluate(()=>ReadMDCollaborationShare.sync());
+    await page.evaluate(()=>ReadMDCollaborationShare.history(false));await page.evaluate(()=>ReadMDCollaborationShare.sync());
+    await until(async()=>(await sharedValue())===sameText,'ABA text restored');await guest.evaluate(()=>ReadMDCollaboration.sync());
+    await row.getByRole('button',{name:'Apply merged replacement',exact:true}).click();
+    await until(async()=>(await guest.locator('#reviews > p').innerText()).includes('The shared text changed'),'ABA comparison rejected');
+    assert.equal(await row.locator('.collaboration-merge textarea').inputValue(),'Merged heading offline');
+    assert.equal((await page.evaluate(()=>ReadMDCollaborationShare.request('reviews'))).reviews[0].status,'open');
+    record('same-text edit and undo invalidate the manual preview while preserving its local merge draft');
+    await row.locator('.collaboration-merge').getByRole('button',{name:'Compare and merge',exact:true}).click();
+    await until(()=>row.locator('.collaboration-merge').getByRole('button',{name:'Compare and merge',exact:true}).isEnabled(),'comparison renewed after ABA');
+    await guest.locator('#editor').evaluate(el=>{const at=el.value.indexOf('Current heading');el.setSelectionRange(at,at+15);});
+    await row.getByRole('button',{name:'Use editor selection',exact:true}).click();
+    await row.getByRole('button',{name:'Apply merged replacement',exact:true}).click();
+    await until(async()=>(await sharedValue()).includes('Merged heading offline 🦀'),'manual merge reaches native draft');
+    assert.equal(fs.readFileSync(file,'utf8'),original);
+    record('server role downgrade preserves draft; fresh revision and explicit selection resolve the conflict');
+    const nativeRow=page.locator('#collaboration-reviews article').filter({hasText:'Heading proposal'});
+    await until(async()=>(await nativeRow.innerText()).includes(await page.evaluate(()=>i18n.t('collaboration.accepted'))),'native shared review accepted');
+    await nativeRow.locator('details > summary').click();assert((await nativeRow.innerText()).includes('Merged heading offline'));
+    await page.evaluate(()=>ReadMDModal.close(document.getElementById('share-modal')));await page.locator('#edit-save').click();
+    await until(()=>Promise.resolve(fs.readFileSync(file,'utf8').includes('Merged heading offline 🦀')),'explicit native save');
+    await until(()=>page.evaluate(()=>!state.editing),'save exits editing');
+    const firstSaved=fs.readFileSync(file,'utf8');
+    record('native sharing panel shows original proposal and decision history; explicit Save writes the local file');
+    await page.evaluate(()=>toggleEdit());
+    await until(()=>page.evaluate(()=>Boolean(state.editing&&cmView)),'editor reopened after save');
+    await proposed('Keep neighbors','Suggested neighbors','Neighbor proposal');
+    await guest.locator('#editor').fill((await guest.locator('#editor').inputValue()).replace('Keep neighbors','Current neighbors'));
+    await guest.evaluate(()=>ReadMDCollaboration.sync());await until(async()=>(await sharedValue()).includes('Current neighbors'),'second overlap native');
+    await page.evaluate(()=>openShareModal());
+    const nativeSecond=page.locator('#collaboration-reviews article').filter({hasText:'Neighbor proposal'});
+    await until(()=>nativeSecond.count(),'native proposal visible');
+    const nativeLabel=key=>page.evaluate(key=>i18n.t(key),key);
+    await nativeSecond.getByRole('button',{name:await nativeLabel('collaboration.accept'),exact:true}).click();
+    await nativeSecond.locator('.collaboration-merge textarea').waitFor();await nativeSecond.locator('.collaboration-merge textarea').fill('Reviewed neighbors final');
+    await page.evaluate(()=>{const at=cmView.state.doc.toString().indexOf('Current neighbors');cmView.dispatch({selection:{anchor:at,head:at+17}});});
+    await nativeSecond.getByRole('button',{name:await nativeLabel('collaboration.resolution.useSelection'),exact:true}).click();
+    await nativeSecond.getByRole('button',{name:await nativeLabel('collaboration.resolution.apply'),exact:true}).click();
+    await until(async()=>(await guest.locator('#editor').inputValue()).includes('Reviewed neighbors final.'),'native manual merge reaches guest');
+    assert.equal(fs.readFileSync(file,'utf8'),firstSaved);
+    record('native sharing controls resolve a second structural conflict and keep file saving separate');
+    const expected='# Evidence\n\nMerged heading offline 🦀\n\nReviewed neighbors final.\n';
+    assert.equal(await sharedValue(),expected);
+    await guest.locator('#editor').fill(expected+'Personal local note.\n');await guest.evaluate(()=>ReadMDCollaboration.sync());
+    await guest.locator('#editor').press('Control+z');await guest.evaluate(()=>ReadMDCollaboration.sync());
+    await until(async()=>(await sharedValue())===expected,'personal undo leaves merged decisions');
+    const snapshot=await page.evaluate(()=>ReadMDCollaborationShare.request('reviews'));
+    assert(snapshot.reviews.every(item=>item.status==='accepted'&&item.body._decision.method==='manual'));
+    assert.equal(snapshot.reviews.length,2);assert.equal(owned.errors.length,0,owned.errors.join('\n'));
+    report.nativeLayout=await page.evaluate(()=>{const bounds=id=>{const r=document.getElementById(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,width:r.width};};return {viewport:innerHeight,box:bounds('share-box'),title:bounds('share-title'),overlayScroll:document.getElementById('share-modal').scrollTop,bodyScroll:document.querySelector('.share-body').scrollTop};});
+    await page.screenshot({path:path.join(output,'native-shared-review.png')});await guest.screenshot({path:path.join(output,'web-shared-review.png')});
+    record('personal undo retains remote manual decisions and both original proposals remain in server history');
+    await page.evaluate(()=>ReadMDModal.close(document.getElementById('share-modal')));
+    const editor=guest.locator('#editor');
+    const anchor=expected.indexOf('🦀');
+    const hostInsert='主持人',guestInsert='来宾';
+    await guest.route('**/sessions/*/sync',route=>route.abort());
+    await editor.focus();
+    await editor.evaluate((el,at)=>el.setSelectionRange(at,at),anchor);
+    await guest.keyboard.insertText(guestInsert);
+    await guest.evaluate(()=>ReadMDCollaboration.checkpoint());
+    await until(()=>guest.evaluate(()=>ReadMDCollaboration.pending()>0),'guest edit queued');
+    assert.equal(await sharedValue(),expected);
+    await page.locator('.cm-content').focus();
+    await page.evaluate(at=>cmView.dispatch({selection:{anchor:at}}),anchor);
+    await page.keyboard.insertText(hostInsert);
+    const withHost=expected.slice(0,anchor)+hostInsert+expected.slice(anchor);
+    assert.equal(await sharedValue(),withHost);
+    assert.equal(await editor.inputValue(),expected.slice(0,anchor)+guestInsert+expected.slice(anchor));
+    await guest.unroute('**/sessions/*/sync');
+    await guest.evaluate(()=>ReadMDCollaboration.sync());
+    const orders=[hostInsert+guestInsert,guestInsert+hostInsert].map(pair=>expected.slice(0,anchor)+pair+expected.slice(anchor));
+    await until(async()=>{const text=await sharedValue();return orders.includes(text)&&await editor.inputValue()===text;},'both editors converge at the same offset');
+    await editor.press('Control+z');
+    await until(async()=>await sharedValue()===withHost&&await editor.inputValue()===withHost,'personal undo keeps host insertion');
+    assert.equal(fs.readFileSync(file,'utf8'),firstSaved);
+    await page.locator('#edit-save').click();
+    await until(()=>fs.readFileSync(file,'utf8')===withHost,'explicit save commits converged text');
+    await guest.reload();
+    await until(async()=>await editor.inputValue()===withHost,'reopened guest sees saved shared text');
+    assert.equal(owned.errors.length,0,owned.errors.join('\n'));
+    record('independent same-position Chinese edits converge after reconnection; guest undo preserves host input, explicit save and guest reload agree');
+    report.passed=true;report.bootSha256=sha(fs.readFileSync(path.join(ROOT,'assets/readmd.boot.js')));
+  }catch(error){report.failure=String(error.message).replaceAll(output,'<owned>').slice(0,2000);if(owned)await owned.page.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});throw error;}
+  finally{if(owned){await owned.close();report.pageErrors=owned.errors;}fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({passed:report.passed,checks:report.checks.length,report:path.join(output,'report.json')}));}
+}
+if(require.main===module)run().catch(error=>{console.error(error.stack);process.exitCode=1;});

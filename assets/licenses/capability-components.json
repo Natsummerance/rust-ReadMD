@@ -200,6 +200,16 @@
       "purpose": "Explicit offline preparation of static weight font resources",
       "loading": "Development only; not packaged, not invoked by runtime or ordinary application builds",
       "maintenanceReview": "Installed exact version checked. Official instancer semantics reviewed; input/output hashes locked. Normal application and capability-pack assembly read prepared locked bytes offline and do not need Python/fontTools."
+    },
+    {
+      "name": "Node.js managed code runtime",
+      "version": "24.22.2",
+      "license": "MIT and bundled third-party notices",
+      "source": "https://nodejs.org/en/blog/release/v24.22.2",
+      "notice": "Optional pack licenses/NODE-LICENSE.txt; complete upstream notices in every platform pack",
+      "purpose": "Application-owned optional JavaScript execution without host PATH discovery",
+      "loading": "Explicit offline capability import; no npm/global installation or automatic model loading",
+      "maintenanceReview": "Six official archives and platform-specific binary/license hashes are locked. Reviewed platform requirements: macOS 13.5+, Windows 10+, Linux glibc 2.28+ and official libstdc++ requirements. Installation runs a version/Unicode/arithmetic probe. Execution holds shared resource and worker leases. Permission Model is an extra restriction, not a malicious-code OS sandbox certification. Native execution and remaining execution checkpoints are recorded separately."
     }
   ],
   "footprintLimits": {

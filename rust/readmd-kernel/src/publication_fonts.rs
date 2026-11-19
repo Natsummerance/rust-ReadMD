@@ -55,7 +55,7 @@ pub(crate) fn required_for_export(format:&str,content:&str,options:&serde_json::
             crate::md_ast::Inline::Math(source)|crate::md_ast::Inline::OfficeMath{latex:source,..}=>required|=needs_cjk(source),
             crate::md_ast::Inline::Image{src,..} if src.starts_with("data:image/svg+xml;base64,")=>{
                 use base64::Engine;
-                if let Ok(bytes)=base64::engine::general_purpose::STANDARD.decode(&src[26..]){required|=std::str::from_utf8(&bytes).is_ok_and(needs_cjk);}
+                if let Ok(bytes)=base64::engine::general_purpose::STANDARD.decode(&src[26..]){required|=crate::svg_render::inspect(&bytes).unwrap_or(false);}
             },_=>(),
         });
         let mut pending=document.blocks.iter().collect::<Vec<_>>();
@@ -65,7 +65,7 @@ pub(crate) fn required_for_export(format:&str,content:&str,options:&serde_json::
             Block::List{items,..}=>for item in items{pending.extend(&item.blocks);},
             Block::Styled{block,..}=>pending.push(block),_=>(),
         }}
-        required|=options.pointer("/figures/rendered").and_then(serde_json::Value::as_array).is_some_and(|items|items.iter().any(|item|item["svg"].as_str().is_some_and(needs_cjk)));
+        required|=options.pointer("/figures/rendered").and_then(serde_json::Value::as_array).is_some_and(|items|items.iter().any(|item|item["svg"].as_str().is_some_and(|svg|crate::svg_render::inspect(svg.as_bytes()).unwrap_or(false))));
         return required;
     }
     if !(format=="docx"||(format=="pdf"&&options.pointer("/pdf/engine").and_then(serde_json::Value::as_str).is_none_or(|engine|matches!(engine,"rust"|"typst")))){return false;}

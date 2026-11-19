@@ -21,7 +21,6 @@ html.rm-theme-vt *, html.rm-theme-vt *::before, html.rm-theme-vt *::after { tran
 .tb-btn:active { background: var(--color-pressed); transform: scale(.96); }
 .tb-btn.accent:hover { opacity: 1; background: color-mix(in srgb, var(--color-accent) 90%, var(--color-fg)); color: var(--color-accent-fg); }
 .tb-btn.accent:active { background: color-mix(in srgb, var(--color-accent) 82%, var(--color-fg)); }
-.tb-palette:hover { border-color: var(--color-border-strong); background: var(--color-surface); color: var(--color-fg-muted); }
 .file-title:hover { background: var(--color-hover); border-color: transparent; }
 .status-btn-home:hover { background: var(--color-hover); color: var(--color-fg); border-color: transparent; }
 .status-update-badge:hover { background: color-mix(in srgb, var(--color-accent) 22%, transparent); transform: none; }
@@ -37,46 +36,6 @@ html.rm-theme-vt *, html.rm-theme-vt *::before, html.rm-theme-vt *::after { tran
 #recent-list .recent-card:hover .recent-remove, #recent-list .recent-remove:focus-visible { opacity: .8; }
 #recent-list .recent-remove:hover { opacity: 1; color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); transform: none; }
 .welcome-hint-btn:hover { background: var(--color-hover); color: var(--color-fg); }
-
-/* ---------- More menu (floating chrome) ---------- */
-#more-menu {
-  top: calc(100% + 6px);
-  min-width: 260px;
-  padding: var(--space-1);
-  border: 0;
-  border-radius: var(--radius-m);
-  background: var(--color-surface-glass);
-  box-shadow: var(--elevation-3);
-  -webkit-backdrop-filter: saturate(180%) blur(var(--blur-l));
-  backdrop-filter: saturate(180%) blur(var(--blur-l));
-  transform-origin: top right;
-}
-#more-menu.open { animation: rm-pop-in var(--duration-base) var(--ease-emphasized); }
-.more-group { margin: 0; border: 0; border-radius: 0; background: transparent; }
-.more-group + .more-group { border-top: var(--hairline) solid var(--color-separator); margin-top: var(--space-1); padding-top: var(--space-1); }
-.more-group-header {
-  min-height: var(--menu-item-h);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: var(--color-fg-subtle);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-.more-group-header:hover { background: var(--color-hover); color: var(--color-fg); }
-.more-group-items { padding: 2px 0; gap: 0; }
-.more-item {
-  min-height: var(--menu-item-h);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-s);
-  font-size: var(--text-sm);
-}
-.more-item em { font-size: var(--text-xs); color: var(--color-fg-subtle); }
-.more-item:hover:not(:disabled), .more-item:focus-visible { background: var(--color-hover); }
-.more-item:focus-visible { outline-offset: -2px; }
-
 
 .doc-tabs-dropdown,
 .tab-context-menu {
@@ -294,9 +253,6 @@ html.rm-theme-vt *, html.rm-theme-vt *::before, html.rm-theme-vt *::after { tran
 }
 .tab-item:hover { background: var(--color-hover); color: var(--color-fg); border-color: transparent; }
 .tab-item.active { background: var(--color-surface); color: var(--color-fg); box-shadow: var(--elevation-1); }
-/* With the sliding indicator in place, the pill itself carries the surface. */
-.rm-has-indicator.rm-ind-ready .tab-item.active { background: transparent; box-shadow: none; }
-.rm-has-indicator.rm-ind-ready .tab-item.active:hover { background: transparent; }
 .tab-item:focus-visible { outline-offset: -2px; }
 .tab-title { line-height: 1.2; }
 .tab-close {
@@ -309,22 +265,6 @@ html.rm-theme-vt *, html.rm-theme-vt *::before, html.rm-theme-vt *::after { tran
 .tab-close:hover { background: var(--color-pressed); color: var(--color-fg); }
 .tab-item.tab-dragging { opacity: .5; border-style: none; }
 
-.rm-tab-indicator {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 0;
-  border-radius: var(--radius-s);
-  background: var(--color-surface);
-  box-shadow: var(--elevation-1);
-  pointer-events: none;
-  opacity: 0;
-  transition: transform var(--motion-slow), width var(--motion-slow), opacity var(--duration-fast) linear;
-}
-.rm-ind-ready > .rm-tab-indicator { opacity: 1; }
-.rm-tab-indicator.rm-no-anim { transition: none; }
-/* Active tab keeps its own surface where the indicator is not used. */
-.doc-tabs-secondary-bar.rm-has-indicator .tab-item.active { background: transparent; box-shadow: none; }
 .doc-tabs-secondary-bar .tab-item.active { background: var(--color-surface); box-shadow: var(--elevation-1); }
 
 .doc-tabs-overflow-btn {
@@ -384,10 +324,10 @@ html.rm-theme-vt *, html.rm-theme-vt *::before, html.rm-theme-vt *::after { tran
 @keyframes rm-toast-in { from { opacity: 0; transform: translate(-50%, 10px) scale(.96); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .rm-palette, .rm-palette-overlay, .rm-keys, .rm-keys-overlay, #toast, #more-menu.open,
+  .rm-palette, .rm-palette-overlay, .rm-keys, .rm-keys-overlay, #toast,
   .doc-tabs-dropdown, .tab-context-menu, #side, #search-bar, .modal-dialog, #busy,
   .modal, #fix-modal, #url-modal, #share-modal, #tpl-modal, #img-modal, #history-modal, #export-modal, #convert-modal,
   #fix-box, #url-box, #share-box, #tpl-box, #img-box, #history-box, #export-box, #convert-box, #update-box, .close-confirm-box { animation: none !important; }
-  .rm-tab-indicator, .tab-item, .rm-tooltip { transition: none !important; }
+  .tab-item, .rm-tooltip { transition: none !important; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
 }

@@ -15,4 +15,7 @@ async function waitForPage(page,predicate,arg,options={}){
     message:'Page condition did not become true under the production CSP',
   }).toBe(true);
 }
-module.exports={waitForPage};
+async function revealDocumentSearch(page) {
+  return page.locator('#side-tabs #btn-search');
+}
+module.exports={waitForPage,revealDocumentSearch};

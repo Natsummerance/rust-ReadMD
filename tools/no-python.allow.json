@@ -622,5 +622,78 @@
     "pattern": "inspect-publication-baseline\\.py",
     "reason": "The isolated Windows QA invokes one bounded source-hashed independent artifact inspector using root's hash-pinned interpreter. The reference is confined to this development test and adds no application Python dependency.",
     "requirement": "R028"
+  },
+  {
+    "path": "tools/test/pdf-choice-fixture.py",
+    "reason": "Independent development fixture. Create an owned two-page choice-form fixture and independently inspect values and widget appearances. Excluded from application packages.",
+    "requirement": "R068"
+  },
+  {
+    "path": "tools/test/v007-pdf-choice-macos.cjs",
+    "pattern": "'pdf\\-choice\\-fixture\\.py'",
+    "reason": "This QA driver invokes the independent fixture inspector. Create an owned two-page choice-form fixture and independently inspect values and widget appearances.",
+    "requirement": "R068"
+  },
+  {
+    "path": "tools/test/pdf-ink-structure.py",
+    "reason": "Independent development fixture. Inspect the saved PDF annotation paths and compare them to the owned SVG strokes. Excluded from application packages.",
+    "requirement": "R067"
+  },
+  {
+    "path": "tools/test/v007-pdf-ink-worker.cjs",
+    "pattern": "'pdf\\-ink\\-structure\\.py'",
+    "reason": "This QA driver invokes the independent fixture inspector. Inspect the saved PDF annotation paths and compare them to the owned SVG strokes.",
+    "requirement": "R067"
+  },
+  {
+    "path": "tools/test/research-table-check.py",
+    "reason": "Independent development fixture. Measure the scientific table in the exported PDF and page images. Excluded from application packages.",
+    "requirement": "R019"
+  },
+  {
+    "path": "tools/test/research-table-output.cjs",
+    "pattern": "'research\\-table\\-check\\.py'",
+    "reason": "This QA driver invokes the independent fixture inspector. Measure the scientific table in the exported PDF and page images.",
+    "requirement": "R019"
+  },
+  {
+    "path": "tools/test/table-track-export.py",
+    "reason": "Independent development fixture. Compare edited row and column geometry against the PDF and split PNG output. Excluded from application packages.",
+    "requirement": "R019"
+  },
+  {
+    "path": "tools/test/table-track-export.cjs",
+    "pattern": "'table\\-track\\-export\\.py'",
+    "reason": "This QA driver invokes the independent fixture inspector. Compare edited row and column geometry against the PDF and split PNG output.",
+    "requirement": "R019"
+  },
+  {
+    "path": "tools/test/v007-pdf-geometry.py",
+    "reason": "Independent development fixture. Measure repeated headers, page boundaries and merged cell contents in real export artifacts. Excluded from application packages.",
+    "requirement": "R019"
+  },
+  {
+    "path": "tools/test/v007-pdf-geometry.cjs",
+    "pattern": "'v007\\-pdf\\-geometry\\.py'",
+    "reason": "This QA driver invokes the independent fixture inspector. Measure repeated headers, page boundaries and merged cell contents in real export artifacts.",
+    "requirement": "R019"
+  },
+  {
+    "path": ".github/workflows/table-geometry.yml",
+    "pattern": "^\\s*- uses: actions/setup-python@v5\\s*$",
+    "reason": "Table export acceptance job only. Prepare an interpreter on the runner for independent artifact inspection.",
+    "requirement": "R019"
+  },
+  {
+    "path": ".github/workflows/table-geometry.yml",
+    "pattern": "^\\s*run: python -m pip install pdfplumber==0\\.11\\.9 Pillow==12\\.1\\.1\\s*$",
+    "reason": "Table export acceptance job only. Install the pinned PDF and image inspection packages in the runner environment.",
+    "requirement": "R019"
+  },
+  {
+    "path": ".github/workflows/table-geometry.yml",
+    "pattern": "args=\\(\\-\\-edited\\-table\\ \"\\$RUNNER_TEMP/tt\"\\ \\-\\-evidence\\ \"\\$RUNNER_TEMP/rg\"\\ \\-\\-python\\ python\\)",
+    "reason": "Table export acceptance job only. Pass the runner interpreter only to the edited table export verification step.",
+    "requirement": "R019"
   }
 ]

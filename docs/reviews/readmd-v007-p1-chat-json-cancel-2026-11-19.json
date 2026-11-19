@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-19",
+  "scope": "V7-11 JSON chat cancellation and shared JSON/SSE commit semantics",
+  "status": "scoped-macos-pass",
+  "baseCommit": "ecf7f9e2111a817b9b5af73747528ab0964ce6e8",
+  "uncommittedCandidate": true,
+  "modelsRequested": false,
+  "networkScope": "Owned loopback HTTP protocol fixture only",
+  "windows10060RootCauseResolved": false,
+  "codeRunnerModified": false,
+  "priorWindowsFailure": {
+    "sourceCommit": "1e39f5bd6e3bbe5f6978d76ae983b04a2397a4d6",
+    "runId": 41955138374,
+    "jobId": 127008138389,
+    "test": "review_transport::network::tests::cancelling_an_actual_stalled_request_retires_both_relay_workers",
+    "observed": "Peer EOF drain returned Windows 10060/TimedOut. Later worker-zero assertion was not reached.",
+    "diagnosticRunId": 41965242001,
+    "diagnosticOnly": true,
+    "diagnosticPassed": true,
+    "diagnosticPassDoesNotResolveOriginalFailure": true,
+    "existingCancellationFixCommit": "889afc23a00cf9db55127b24778a2c48f0b70ff6",
+    "existingFixNotRepeated": true
+  },
+  "firstFailure": {
+    "report": ".cache/v007-json-chat-cancel-first-20261119/report.json",
+    "sha256": "088c58b2ea2b2b8ef2895be4022a9bd907aba20492e9f3628bbfd19485bc8278",
+    "binarySha256": "7311521a468e158a2f9c45797cae6acb058879a7d53c0af8f014f242ad0ffb0b",
+    "observed": {
+      "phase": "json_cancel_headers",
+      "name": "AssertionError",
+      "code": null,
+      "message": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'unknown'\n- 'cancelling'\n"
+    }
+  },
+  "changes": [
+    "JSON chat now registers task_id, uses the bounded request-owned transport and checks inherited cancellation before egress and the shared commit gate.",
+    "JSON HTTP connections use the same scoped peer watcher as completion, so downstream disconnect cancels the owned provider request.",
+    "JSON and SSE share the same commit gate: cancellation that wins prevents history persistence; after the gate wins, the atomic complete-turn write finishes even if the downstream disconnects.",
+    "The existing seven-key successful JSON envelope remains compatible. JSON aggregation now uses the same strict provider-frame validation as SSE."
+  ],
+  "receiptSemantics": {
+    "cancelling": "Cancellation was accepted before the commit gate; this is not proof that every worker has already retired.",
+    "finished": "A still-registered task passed the commit gate, so this cancellation lost. A later persistence failure still returns its ordinary failure receipt.",
+    "unknown": "No live cancellation registration was found. This alone proves neither cancellation nor a successful commit; request outcome, history, upstream EOF and worker/slot observations are checked separately."
+  },
+  "verification": {
+    "rust": {
+      "passed": 27,
+      "failed": 0,
+      "groups": {
+        "jsonChat": 9,
+        "sse": 11,
+        "ownedTransport": 7
+      },
+      "offline": true,
+      "locked": true,
+      "cargoIncremental": 0,
+      "sharedTarget": true,
+      "report": ".cache/v007-json-chat-cancel-20261119/rust-final.log",
+      "sha256": "cb8c0edccaa976828b9f3c641de2ed860c2e22cbb978838178beb543fd0c46fb"
+    },
+    "http": {
+      "report": ".cache/v007-json-chat-cancel-20261119/http/report.json",
+      "sha256": "5d91933c21a183230599a57ce33bebc89011c0611e87ff3549d7569787e211a4",
+      "passed": true,
+      "modelsRequested": false,
+      "protocolFixture": true,
+      "nativeUiCertified": false,
+      "platform": "darwin",
+      "arch": "arm64",
+      "strictAuth": true,
+      "productionCsp": true,
+      "binarySha256": "92f8c8f31b9800e2ca32ecaa9ec6da9f20d95ecaec619771c3a4796f57e69faf",
+      "bootSha256": "923dcd18c5929b1bd2cfd56ee5ddaeab486e526ff2cdcb603cd725331922d21e",
+      "sourceSha256": {
+        "rust/readmd-kernel/src/server.rs": "a6d01acbf8b652e2f9907b1c20b2be8fb23fe0e0b8639d968bed7c98bf6176dd",
+        "rust/readmd-kernel/src/server/chat_stream.rs": "8ef699442f4acbbd167fc1f7a0d5ee0b513453fd50b5d2bb0000af5589106a19",
+        "rust/readmd-kernel/src/review_transport.rs": "41968d521161d44196b14a8b7bbca4db12dd264dca7113f9a97300426202e368",
+        "rust/readmd-kernel/src/review_transport/network.rs": "0d2cd40231ab1a4579919910eeb94df6ac5f7e877467f672677aa3063287e3f3",
+        "tools/test/ai-chat-stream-http.cjs": "9b7c6805c91bd174227ca7c5773547d9a4971222b60702ef6c4a6ffd27d605b8",
+        "tools/test/ai-chat-provider-fixture.cjs": "f399593756ddcfd50f1c346ee0f9acce31d010b1f4e479bd729b701845fef2a9"
+      },
+      "checks": [
+        "production CSP and real token; every trailing-slash alias rejects anonymous access before inference; malformed shape makes no provider request",
+        "a genuine upstream delta arrives before the fixture is allowed to send the rest; no early history commit, one provider request, exact Unicode and one final usage",
+        "nonstream providers emit one genuine delta without a repeated request; the original JSON endpoint remains compatible",
+        "bare upstream EOF, malformed frames, invalid UTF-8 and token exhaustion retain partial text without completion, usage or history writes",
+        "HTTP 400/403/429 remain distinguishable without echoing provider error bodies, connection or authorization; no successful history",
+        "JSON compatibility replies register the same task, stop both JSON and streamed provider reads, retire their slot, and cancel on downstream disconnect without persisting a partial turn",
+        "real cancellation before upstream headers and mid-stream responds below 200ms, closes the owned connection below two seconds, preserves history and permits the next request",
+        "closing the downstream reader without calling the cancellation route stops the owned upstream request and does not persist a partial answer",
+        "incognito replies in both SSE and JSON are usable without raw chat-history persistence; Markdown bytes remain unchanged",
+        "a second real process reopens the committed full turn only; failed, cancelled and incognito sessions and BOM/CRLF original remain intact"
+      ],
+      "processes": [
+        73257,
+        73269
+      ],
+      "cancellations": [
+        {
+          "phase": "json_cancel_headers",
+          "responseMs": 1.0974999999998545,
+          "ownedUpstreamCloseMs": 75.41470800000002
+        },
+        {
+          "phase": "json_cancel_stream",
+          "responseMs": 1.0268340000002354,
+          "ownedUpstreamCloseMs": 75.05625000000009
+        },
+        {
+          "phase": "cancel_headers",
+          "responseMs": 0.7156249999998181,
+          "ownedUpstreamCloseMs": 29.55099999999993
+        },
+        {
+          "phase": "cancel_stream",
+          "responseMs": 0.7754580000000715,
+          "ownedUpstreamCloseMs": 38.4502080000002
+        }
+      ],
+      "providerRequests": 22
+    }
+  },
+  "remaining": [
+    "The original Windows 10060 failure is still open; no same-candidate Windows or Linux rerun was performed.",
+    "The current checks use actual macOS processes and sockets. Native desktop UI, real model/provider inference and OS DNS fault behavior were not certified.",
+    "MCP/Extension Host running cancellation was not exercised in this slice; the inherited cancellation check was covered by a Rust unit test. Code-runtime cancellation, managed runtimes and checkpoints retain their separate V7-05 acceptance boundaries.",
+    "P1/P2 and V0.0.7 release gates remain open. No commit, push, installation or release was performed."
+  ]
+}

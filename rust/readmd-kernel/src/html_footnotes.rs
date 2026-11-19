@@ -1,6 +1,9 @@
 //! Standalone HTML footnotes, parsed before marked can treat their definitions
 //! as link definitions. Only real Markdown events authorize a note or callout.
 //! Definitions are emitted once, so trusted author-run nonce keys stay unique.
+#[path = "html_footnote_tables.rs"]
+pub(crate) mod tables;
+
 use pulldown_cmark::{Event, Parser, RefDefs, Tag, TagEnd};
 use std::fmt::{self, Write};
 
@@ -112,7 +115,8 @@ fn render_bounded(source: &str, max_definitions: usize, max_references: usize, m
     let mut definitions = Vec::<Definition<'_>>::new();
     let mut labels = String::new();
     let mut active = Vec::new();
-    for (event, _) in crate::publication_inline_text::markdown_events(source)? {
+    let events = crate::publication_inline_text::markdown_events(source)?;
+    for event in tables::project(source, events)? {
         match event {
             Event::Start(Tag::FootnoteDefinition(label)) => {
                 if definitions.len() >= max_definitions { return Err(BUDGET.into()); }

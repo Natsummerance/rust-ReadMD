@@ -71,9 +71,7 @@ test('Backlinks filters, switches tabs and exposes unresolved targets',async({pa
 test('Companion workbench exposes character cards and persistent quiet mode', async ({ page }) => {
   await page.evaluate(() => openPetSettings());
   await expect(page.locator('#pet-roster .pet-character-card')).not.toHaveCount(0);
-  await page.locator('#pet-renderer').selectOption('live2d');
   await expect(page.locator('.pet-character-card[data-renderer="live2d"]')).toContainText('Live2D');
-  await page.locator('#pet-renderer').selectOption('hermes-sprite');
   await page.locator('[data-pet-section="companion"]').click();
   await page.locator('#pet-mode-quiet').click();
   await expect(page.locator('#pet-mode-quiet')).toHaveAttribute('aria-pressed', 'true');

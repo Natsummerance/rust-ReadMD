@@ -100,10 +100,18 @@ pub fn probe_cursor(
     left_pressed: bool,
 ) -> CursorProbe {
     let scale = target.scale_factor.max(0.1);
-    let (width, height) = target.effective_size();
     let rel_x = (cursor.0 - origin.0) / scale;
     let rel_y = (cursor.1 - origin.1) / scale;
+    probe_logical_cursor(target, rel_x, rel_y, left_pressed)
+}
 
+fn probe_logical_cursor(
+    target: &HitTestTarget,
+    rel_x: f64,
+    rel_y: f64,
+    left_pressed: bool,
+) -> CursorProbe {
+    let (width, height) = target.effective_size();
     let mut hit = false;
     if target.visible {
         if target.rects.is_empty() && !target.regions_declared {
@@ -185,6 +193,11 @@ pub enum InputEvent {
     Fault(&'static str),
     DragStart,
     PetClick,
+    #[cfg(target_os = "macos")]
+    ContextMenu {
+        x: f64,
+        y: f64,
+    },
 }
 
 pub struct InputWatcher {

@@ -45,6 +45,14 @@ pub(crate) fn validate_directory(path: &Path) -> Result<PathBuf> {
     Ok(directory.path().to_path_buf())
 }
 
+pub(crate) fn directory_identity(path: &Path) -> Result<FileIdentity> {
+    let directory = native::Directory::open(path).map_err(Error::io)?;
+    #[cfg(windows)]
+    directory.verify_case_mode().map_err(Error::io)?;
+    directory.revalidate().map_err(Error::io)?;
+    Ok(directory.identity().clone())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     Busy,
@@ -407,6 +415,40 @@ pub fn observe_identity(path: &Path) -> Result<IdentityObservation> {
         return Err(Error::new(ErrorKind::IdentityChanged));
     }
     Ok(IdentityObservation::Regular(before.identity))
+}
+
+/// Match the published staging object after a process restart without retaining
+/// its entire body. Revalidate the handle and the directory entry after reading.
+pub(crate) fn matches_publication(
+    path: &Path, identity: &str, revision: &str, expected_length: Option<u64>,
+) -> Result<bool> {
+    if !path.is_absolute() { return Err(Error::new(ErrorKind::InvalidPath)); }
+    let name = path.file_name().ok_or_else(|| Error::new(ErrorKind::InvalidPath))?;
+    leaf(name)?;
+    let parent = native::Directory::open(path.parent().ok_or_else(|| Error::new(ErrorKind::InvalidPath))?).map_err(Error::io)?;
+    let mut file = parent.open_file(name).map_err(Error::io)?;
+    let before = native::info(&file).map_err(Error::io)?;
+    if before.redirected || !before.regular || before.links != 1 || before.identity.as_str() != identity {
+        return Ok(false);
+    }
+    // Older receipts recorded the digest and object but only supported bounded captures.
+    if expected_length.map_or(before.length > MAX_CAPTURE_BYTES, |size| size != before.length) {
+        return Ok(false);
+    }
+    let mut digest = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut remaining = before.length;
+    while remaining > 0 {
+        let limit = remaining.min(buffer.len() as u64) as usize;
+        let n = file.read(&mut buffer[..limit]).map_err(Error::io)?;
+        if n == 0 { return Ok(false); }
+        digest.update(&buffer[..n]);
+        remaining -= n as u64;
+    }
+    parent.revalidate().map_err(Error::io)?;
+    Ok(native::info(&file).map_err(Error::io)? == before
+        && parent.open_file(name).and_then(|f| native::info(&f)).map_err(Error::io)? == before
+        && format!("{:x}", digest.finalize()) == revision)
 }
 
 pub struct Guard {

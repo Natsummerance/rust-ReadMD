@@ -1,0 +1,42 @@
+{
+  "schema": 2,
+  "id": "node",
+  "version": "24.22.2",
+  "platform": "windows-arm64",
+  "files": [
+    {
+      "path": "bin/node.exe",
+      "size": 82156872,
+      "sha256": "e2d6e75a0bfe4c176316d7c732eb8def9d94570c759eaeab335473a015abb7ea",
+      "executable": true,
+      "compressedSize": 32049341
+    },
+    {
+      "path": "licenses/NODE-LICENSE.txt",
+      "size": 160555,
+      "sha256": "ed34dd8e3f0a78dbaf00d0444ce8e285b015b765379c2e17880455f70370f8e9",
+      "executable": false,
+      "compressedSize": 24379
+    },
+    {
+      "path": "NOTICE",
+      "size": 468,
+      "sha256": "739fc60066c3c09dc2a3d71e80fc81bf16cc444403b2e0108df6bf286b5d5789",
+      "executable": false,
+      "compressedSize": 352
+    }
+  ],
+  "review": {
+    "source": "https://nodejs.org/en/blog/release/v24.22.2",
+    "inputSha256": "f47968c213105077f64c6510f007632c0ca2574802a0b5067c327c49abe1c468",
+    "minimumPlatform": "Windows 10",
+    "license": "MIT and bundled third-party notices",
+    "unchangedOfficialBinary": true,
+    "npmIncluded": false,
+    "compression": {
+      "node": "24.22.2",
+      "zlib": "1.3.2.1-motley-285e94b",
+      "gzipOS": 255
+    }
+  }
+}

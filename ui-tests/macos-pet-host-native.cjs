@@ -55,10 +55,17 @@ async function run(binary,fixture,out){
   publish({bounds:moved,info:{...snapshot.info,lock_position:true}});await sleep(120);status=await qa();check(status.locked,'native_lock_position_applied');
   const locked={...status.frame};status=await qa('drag');check(Math.abs(status.frame.x-locked.x)<1&&Math.abs(status.frame.y-locked.y)<1,'locked_native_pet_cannot_be_dragged');
   check(interactions()===1,'moved_gestures_do_not_become_accidental_pet_interactions');
-  await qa('context-menu');await until(()=>commands().some(v=>v.command?.type==='open-menu'));
-  check(commands().filter(v=>v.command?.type==='open-menu').length===1,'native_right_click_publishes_one_normal_durable_menu_request');
+  const baselineUi=(await qa()).ui_regions;
+  status=await qa('context-menu-margin');
+  check(status.ui_regions===baselineUi,'native_right_click_ignores_transparent_margin');
+  status=await qa('context-menu');
+  check(status.ui_regions>baselineUi,'native_right_click_opens_interactive_overlay_menu');
+  check(!commands().some(v=>v.command?.type==='open-menu'),'opening_overlay_menu_keeps_reader_in_background');
   publish({visible:false});await until(async()=>!(await qa()).visible);check(true,'normal_snapshot_hides_real_native_window');
   publish({visible:true});await until(async()=>Boolean((await qa()).visible));check(true,'normal_snapshot_wakes_real_native_window');
+  const visibleUi=(await qa()).ui_regions;
+  status=await qa('control-click');
+  check(status.ui_regions>visibleUi&&interactions()===1,'native_control_click_opens_menu_without_petting');
   const at=Date.now();parent.kill('SIGTERM');const outcome=await Promise.race([exited,sleep(2500).then(()=>({error:'parent_exit_timeout'}))]);
   check(outcome.code===0&&Date.now()-at<2000,'native_host_stops_with_owned_parent_under_two_seconds');report.exit=outcome;report.passed=true;
  }finally{

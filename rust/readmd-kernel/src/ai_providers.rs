@@ -671,10 +671,12 @@ fn http_stream(
     }
 }
 
+pub(crate) mod wire_lines;
+
 /// The real egress used by the binary: `ureq` + rustls, no subprocess.
 pub mod ureq_transport {
     use super::{Headers, HttpError, LineStream, Transport};
-    use std::io::{BufRead, BufReader, Read};
+    use std::io::{BufReader, Read};
     use std::time::Duration;
 
     /// `timeout=240` for `_http_json`, `timeout=300` for `_http_stream`.
@@ -719,22 +721,15 @@ pub mod ureq_transport {
 
     pub struct PooledTransport { json: ureq::Agent, stream: ureq::Agent }
 
-    /// Lossy UTF-8, split on `\n` only — same as iterating a urllib response.
     struct ReaderLines {
-        reader: BufReader<Box<dyn Read>>,
+        reader: super::wire_lines::WireLines<BufReader<Box<dyn Read>>>,
         content_type: String,
     }
 
     impl LineStream for ReaderLines {
         fn content_type(&self) -> Option<&str> { Some(&self.content_type) }
         fn next_line(&mut self) -> Result<Option<String>, String> {
-            let mut buf: Vec<u8> = Vec::new();
-            match (&mut self.reader).take(8 * 1024 * 1024 + 1).read_until(b'\n', &mut buf) {
-                Ok(0) => Ok(None),
-                Ok(_) if buf.len() > 8 * 1024 * 1024 => Err("AI response line too large".into()),
-                Ok(_) => Ok(Some(String::from_utf8_lossy(&buf).into_owned())),
-                Err(e) => Err(format!("{}", e)),
-            }
+            self.reader.next(8 * 1024 * 1024).map_err(str::to_owned)
         }
     }
 
@@ -781,7 +776,7 @@ pub mod ureq_transport {
                 Ok(resp) => {
                     let content_type = resp.header("Content-Type").unwrap_or("").to_ascii_lowercase();
                     let reader: Box<dyn Read> = Box::new(resp.into_reader());
-                    Ok(Box::new(ReaderLines { reader: BufReader::new(reader), content_type }))
+                    Ok(Box::new(ReaderLines { reader: super::wire_lines::WireLines::new(BufReader::new(reader), usize::MAX), content_type }))
                 }
                 Err(ureq::Error::Status(code, resp)) => Err(HttpError::Status { code, body: read_body(resp) }),
                 Err(e) => Err(HttpError::Network(format!("{}", e))),

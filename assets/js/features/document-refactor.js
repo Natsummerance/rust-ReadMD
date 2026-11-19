@@ -241,7 +241,7 @@ window.ReadMDRefactor = (() => {
       Object.assign(tab, { mode: 'file', source: 'file', isVirtual: false, path: file.path, dir: file.dir,
         name: file.name, title: file.name, original: file.original ?? file.content, content: file.content, fixed: file.content,
         revision: file.revision, mtime: file.mtime || 0, size: file.size || 0, encoding: file.encoding || tab.encoding,
-        fixes: file.fixes || [], stats: file.stats || {}, isDirty: false, unsavedCreation: false, externalChanged: false });
+        fixes: file.fix_details ?? file.fixes ?? [], stats: file.stats || {}, isDirty: false, unsavedCreation: false, externalChanged: false });
       if (tab.originPath && key(tab.originPath) === key(oldPath)) tab.originPath = file.path;
     }
     if (typeof state !== 'undefined' && Array.isArray(state.folderFiles)) {

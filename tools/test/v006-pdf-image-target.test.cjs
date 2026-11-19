@@ -11,7 +11,7 @@ function host() {
   const nodes = new Map(), inputs = [], pending = [], calls = [], bitmaps = [];
   let canvasAllocations = 0;
   const node = id => { if (!nodes.has(id)) nodes.set(id, { value: '', hidden: false, focus() {}, closest() { return this; } }); return nodes.get(id); };
-  const context = { session: { session: 'A', revision: 3, page: 0, can_edit: true }, selected: { kind: 'image', id: 2 }, working: false, closing: false, imageSelectionEpoch: 0,
+  const context = { session: { session: 'A', revision: 3, page: 0, can_edit: true }, selected: { kind: 'image', id: 2 }, working: false, closing: false, readingMode: false, imageSelectionEpoch: 0,
     t: key => key, $pdf: node, Uint8ClampedArray, btoa: text => Buffer.from(text, 'binary').toString('base64'),
     document: { createElement(tag) {
       if (tag === 'input') { const input = { files: [{ type: 'image/png' }], click() { this.clicked = true; } }; inputs.push(input); return input; }

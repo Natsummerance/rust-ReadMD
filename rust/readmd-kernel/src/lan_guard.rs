@@ -185,6 +185,7 @@ const LAN_BLOCKED_PATHS: &[&str] = &[
     "/api/save",
     "/api/upload",
     "/api/image/save",
+    "/api/drawing",
     "/api/code/run",
     "/api/update/download",
     "/api/update/apply",

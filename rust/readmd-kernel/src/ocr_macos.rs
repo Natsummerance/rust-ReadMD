@@ -70,7 +70,7 @@ fn run(bytes: &[u8], language: Option<&str>, deadline: Instant) -> Result<String
     }
     let work = crate::task_workspace::Workspace::create(&paths.data_dir, "macos-ocr")
         .map_err(|_| "ocr_failed")?;
-    work.scope(|| {
+    work.run_to_completion(|| {
         check(deadline)?;
         let input = work.path().join("input");
         crate::task_workspace::write(&input, bytes).map_err(|_| "ocr_failed")?;
@@ -135,7 +135,7 @@ fn run(bytes: &[u8], language: Option<&str>, deadline: Instant) -> Result<String
                 Err(_) => return Err("ocr_failed".into()),
             }
         }
-    })
+    }).map_err(|_| "ocr_failed")?
 }
 
 /// Private executable protocol. It cannot open an arbitrary input path, start

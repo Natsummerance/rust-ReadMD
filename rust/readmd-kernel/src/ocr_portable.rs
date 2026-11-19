@@ -71,7 +71,8 @@ pub(crate) fn image(bytes:&[u8],language:Option<&str>)->Result<String,String>{
         .map_err(|e|match e.code.as_str(){"cancelled"|"ocr_timeout"|"ocr_busy"=>e.code,_=>"ocr_no_engine".into()})?;
     let program=engine.directory.join(if cfg!(windows){"bin/tesseract.exe"}else{"bin/tesseract"});let models=engine.directory.join("tessdata");
     let work=crate::task_workspace::Workspace::create(&p.data_dir,"ocr-recognize").map_err(|_|"ocr_failed")?;
-    work.scope(||recognize_at(&program,&models,bytes,language,deadline,work.path()))
+    work.run_to_completion(||recognize_at(&program,&models,bytes,language,deadline,work.path()))
+        .map_err(|_|"ocr_failed")?
 }
 pub(crate) fn probe_directory(dir:&Path,data:&Path)->Result<(),String>{
     let deadline=Instant::now()+Duration::from_secs(12);check(deadline)?;
@@ -94,16 +95,27 @@ pub(crate) fn probe_managed()->Result<(),String>{
 fn probe_at(dir:&Path,deadline:Instant,data:&Path)->Result<(),String>{
     check(deadline)?;
     let temp=crate::task_workspace::Workspace::create(data,"ocr-probe").map_err(|_|"ocr_failed")?;
-    temp.scope(||{
+    temp.run_to_completion(||{
     let name=if cfg!(windows){"tesseract.exe"}else{"tesseract"};let program=temp.path().join(name);
     crate::task_workspace::copy(&dir.join("bin").join(name),&program).map_err(|_|"ocr_failed")?;
     let text=recognize_at(&program,&dir.join("tessdata"),include_bytes!("../../../assets/engines/ocr-probe.png"),None,deadline,temp.path())?;
     if text.contains("READMD")&&text.contains("12345"){Ok(())}else{Err("ocr_probe_failed".into())}
-    })
+    }).map_err(|_|"ocr_failed")?
 }
 
 #[cfg(test)]mod tests{
     use super::*;
+    #[test]
+    fn repeated_failed_probes_release_their_workspace_reservations() {
+        let profile = tempfile::tempdir().unwrap();
+        let missing_runtime = profile.path().join("unavailable-runtime");
+        for _ in 0..18 {
+            let deadline = Instant::now() + Duration::from_secs(12);
+            assert_eq!(probe_at(&missing_runtime, deadline, profile.path()).unwrap_err(), "ocr_failed");
+        }
+        let records = std::fs::read_dir(profile.path().join("worker-tasks-v1")).unwrap();
+        assert!(records.filter_map(Result::ok).all(|entry| !entry.file_type().unwrap().is_dir()));
+    }
     #[test]fn worker_launch_failure_is_not_reported_as_a_missing_capability(){
         let root=tempfile::tempdir().unwrap();
         let result=recognize_at(&root.path().join("unavailable-reviewed-program"),root.path(),include_bytes!("../../../assets/engines/ocr-probe.png"),None,Instant::now()+Duration::from_secs(12),root.path());

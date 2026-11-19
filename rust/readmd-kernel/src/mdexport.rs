@@ -1143,7 +1143,9 @@ pub fn export_html(
     let author_text=crate::publication_inline_view::project(&reader_content,options)?;
     let reader_content=&author_text.content;
     let reader_content=section_flow_source(&reader_content,&style)?;
-    if crate::publication_sections::has_sections(&crate::md_ast::parse(content)){warns.push("publication_layout_paged_unsupported".into());}
+    let source_document = crate::md_ast::parse(content);
+    if crate::publication_sections::has_sections(&source_document){warns.push("publication_layout_paged_unsupported".into());}
+    let sized_tables = crate::table_geometry::document_has_track_sizes(&source_document);
     let math=crate::html_math::lower_dsl(crate::md_ast::source_without_front_matter(&reader_content),style["typography"]["size"].as_f64().unwrap_or(12.0))?;
     warns.extend(math.warnings.iter().cloned());
     let front=crate::publication_metadata::front_matter_blocks(&metadata,options);
@@ -1154,7 +1156,17 @@ pub fn export_html(
     let embedded_md = embed_images_for_html(&html_markdown, base_dir, &mut warns);
     let footnotes = crate::html_footnotes::render(&embedded_md)?;
 
-    let marked_js = read_asset_file(assets_dir, "marked.min.js");
+    let mut marked_js = read_asset_file(assets_dir, "marked.min.js");
+    if !marked_js.is_empty() && crate::quoted_strong::candidate(&embedded_md) {
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/reader/quoted-strong.js"));
+    }
+    if !marked_js.is_empty() && crate::table_geometry::source_candidate(&embedded_md) {
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/editor/table-attributes.js"));
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/reader/table-layout.js"));
+    }
     let mathjax_js = read_asset_file(assets_dir, "mathjax/tex-svg.js");
     if marked_js.is_empty() {
         warns.push("marked.min.js 未找到，HTML 导出可能无法渲染".to_string());
@@ -1164,7 +1176,20 @@ pub fn export_html(
     }
 
     let display_options=crate::export_styles::html_display_options(options);
-    let mut css = build_export_css(&display_options);
+    let layout = options["htmlLayout"].as_str().filter(|value| matches!(*value, "reading" | "docs" | "magazine"));
+    let mut css = String::new();
+    if layout.is_some() {
+        css.push_str(include_str!("../../../assets/css/tokens.css"));
+        css.push('\n');
+    }
+    css.push_str(&build_export_css(&display_options));
+    if crate::table_geometry::source_candidate(&embedded_md) { css.push_str(include_str!("../../../assets/css/table-geometry.css")); }
+    if layout.is_some() {
+        css.push('\n');
+        css.push_str(include_str!("../../../assets/css/export-html-layouts.css"));
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/reader/export-html-layout.js"));
+    }
     if options["htmlTheme"].as_str()==Some("dark") {css.push_str("\n:not(pre) > code { color:#ff99b0; }");}
     if math.formulas>0{css.push('\n');css.push_str(crate::html_math::CSS);}
     if footnotes.is_some(){css.push('\n');css.push_str(crate::html_footnotes::CSS);}
@@ -1189,7 +1214,17 @@ pub fn export_html(
     let md_esc = json_dump_escaped(&embedded_md);
     let language=metadata.language.clone();
 
-    let mut html = EXPORT_TEMPLATE
+    let template = if sized_tables {
+        let width_fraction = style["table"]["widthPct"].as_f64().unwrap_or(100.0) / 100.0;
+        std::borrow::Cow::Owned(EXPORT_TEMPLATE.replacen(
+            "  var highlights = __HIGHLIGHTS__;",
+            &format!("  var highlights = __HIGHLIGHTS__;\n  window.ReadMDTableView?.observe(root, root, {width_fraction});"),
+            1,
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(EXPORT_TEMPLATE)
+    };
+    let mut html = template
         .replacen("<html lang=\"zh-CN\">",&format!("<html lang=\"{}\">",esc_attr(language.as_deref().unwrap_or("zh-CN"))),1)
         .replace("__TITLE__", &esc_attr(&title))
         .replace("__CSS__", &css)
@@ -1198,6 +1233,11 @@ pub fn export_html(
         .replace("__MARKED__", &marked_js)
         .replace("__MATHJAX__", &mathjax_js)
         .replace("__MD__", &md_esc);
+    if let Some(layout) = layout {
+        let tone = if options["htmlTheme"] == "dark" {"dark"} else {"light"};
+        html = html.replacen("<body>", &format!("<body data-readmd-html-layout=\"{layout}\" data-readmd-html-tone=\"{tone}\">"), 1);
+        html = html.replacen("  var highlights = ", "  ReadMDExportHtmlLayout.mount(root, document.body.dataset.readmdHtmlLayout, { tone: document.body.dataset.readmdHtmlTone });\n  var highlights = ", 1);
+    }
     if let Some(footnotes)=footnotes{
         // The original source stays available for offline copy/recovery. Only
         // real typed notes select this pre-rendered path; plain HTML retains
@@ -2767,6 +2807,20 @@ pub fn export_pdf(
 fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value,source_name:&str,assets_dir:&Path,
     lines:crate::publication_typography::LineContext)->Result<ExportResult,String>
 {
+    crate::publication_profile::validate_pdf_engine(options).map_err(|error|error.code)?;
+    // Direct native calls cannot bypass the source guard by naming another
+    // engine in style options. This path always consumes Rust's table model.
+    let enhanced_tables = crate::table_geometry::source_candidate(content);
+    let html_tables = crate::md_ast::native_table_source_candidate(content);
+    if enhanced_tables || html_tables {
+        let source_document = crate::md_ast::parse(content);
+        if enhanced_tables {
+            crate::table_geometry::validate_rust_pdf_document(&source_document).map_err(str::to_owned)?;
+        }
+        if html_tables {
+            crate::md_ast::native_table_document(&source_document).map_err(str::to_string)?;
+        }
+    }
     crate::publication_typography::validate_consumer(crate::publication_typography::Consumer::RustPdf,content,options).map_err(str::to_string)?;
     crate::pdf_render::validate_caption_author_source(content,options)?;
     crate::math_word_projection::validate_source_at_width(content,"rust",Some(crate::pdf_render::DocGeometry::from_style(&crate::export_styles::sanitize(options)).avail))?;
@@ -2787,7 +2841,17 @@ fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value
     // The shared AST carries fence languages, table alignment, task markers,
     // list starts and nesting, which the old line parser dropped.
     let (doc,citation_warnings)=publication_document(content,base_dir,options)?;
-    let (doc,mut style,metadata,front_count)=crate::publication_metadata_formats::prepare_with_front_count(&doc,options,source_name,"pdf")?;
+    let tables = crate::md_ast::native_table_document(&doc).map_err(str::to_string)?;
+    if matches!(&tables, std::borrow::Cow::Owned(_)) {
+        // Numeric HTML entities may introduce CJK absent from the raw source.
+        // Keep missing-font failure explicit before staging or writing output.
+        let mut text = String::new();
+        crate::md_ast::walk_inlines(&tables.blocks, &mut |inline| match inline {
+            crate::md_ast::Inline::Text(value)|crate::md_ast::Inline::Code(value) => text.push_str(value), _ => (),
+        });
+        crate::publication_fonts::require_cjk(&text)?;
+    }
+    let (doc,mut style,metadata,front_count)=crate::publication_metadata_formats::prepare_with_front_count(tables.as_ref(),options,source_name,"pdf")?;
     crate::publication_typography::baseline::validate_document(&doc, &style,
         crate::publication_typography::baseline::Consumer::RustPdf).map_err(str::to_string)?;
     crate::publication_sections::resolve(&doc,&style).map_err(str::to_string)?;
@@ -2995,6 +3059,13 @@ pub(crate) fn validate_caption_author_export(format:&str,content:&str,options:&V
     Ok(())
 }
 pub(crate) fn export_document_with_resolved_options(format:&str,content:&str,base_dir:&str,out_path:&str,resolved:&crate::publication_typography::ResolvedOptions,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
+    if crate::image_export::is_image(format) {
+        return crate::publication_budget::run("pdf", resolved.values(), || {
+            crate::image_export::export(format, Path::new(out_path), data_dir, assets_dir, |pdf| {
+                export_within_budget("pdf", content, base_dir, &pdf.to_string_lossy(), resolved, source_name, assets_dir, data_dir)
+            })
+        });
+    }
     crate::publication_budget::run(format,resolved.values(),||export_within_budget(format,content,base_dir,out_path,resolved,source_name,assets_dir,data_dir))
 }
 fn export_within_budget(format:&str,content:&str,base_dir:&str,out_path:&str,resolved:&crate::publication_typography::ResolvedOptions,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
@@ -3087,6 +3158,9 @@ pub(crate) fn image_resource_revision(source:&str,base:&str)->Option<String>{
 // that `convert_charrefs=True` applies to text runs.
 // ============================================================================
 
+#[path = "presentation_tables.rs"]
+mod presentation_tables;
+
 const PRES_THEMES: &[&str] = &[
     "black", "white", "league", "beige", "night", "serif", "simple", "solarized", "blood", "moon", "sky",
 ];
@@ -3101,7 +3175,7 @@ const PRES_SCRIPTS: &[&str] = &[
 ];
 /// `_PRESENTATION_ALLOWED_TAGS`
 const PRES_ALLOWED_TAGS: &[&str] = &[
-    "a", "abbr", "article", "b", "blockquote", "br", "caption", "cite", "code", "dd", "del", "details", "div",
+    "a", "abbr", "article", "b", "blockquote", "br", "caption", "cite", "code", "col", "colgroup", "dd", "del", "details", "div",
     "dl", "dt", "em", "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "ins",
     "kbd", "li", "mark", "ol", "p", "pre", "q", "s", "section", "span", "strike", "strong", "sub", "summary",
     "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul",
@@ -3112,7 +3186,7 @@ const PRES_DROP_CONTENT: &[&str] = &[
     "style", "template", "title",
 ];
 /// `_PRESENTATION_VOID_TAGS`
-const PRES_VOID_TAGS: &[&str] = &["br", "hr", "img"];
+const PRES_VOID_TAGS: &[&str] = &["br", "col", "hr", "img"];
 /// `_PRESENTATION_GLOBAL_ATTRS`
 /// `dir` is part of the upstream set — dropping it silently stripped the text
 /// direction off every RTL slide, which is a content loss, not a hardening.
@@ -3129,8 +3203,10 @@ fn pres_tag_attrs(tag: &str) -> &'static [&'static str] {
         "img" => &["src", "srcset", "alt", "width", "height", "loading"],
         "source" => &["src", "srcset"],
         "ol" => &["start", "type"],
-        "td" => &["colspan", "rowspan"],
-        "th" => &["colspan", "rowspan", "scope"],
+        "td" => &["colspan", "rowspan", "align", "valign"],
+        "th" => &["colspan", "rowspan", "scope", "align", "valign"],
+        "col" => &["width", "span"],
+        "tr" => &["height"],
         "time" => &["datetime"],
         "blockquote" => &["cite"],
         _ => &[],
@@ -4145,6 +4221,16 @@ fn presentation_attr(tag: &str, name: &str, value: &str) -> Option<(String, Stri
     if (name == "href" || name == "src") && !presentation_safe_url(value) {
         return None;
     }
+    if (name == "align" && !matches!(value, "left" | "center" | "right"))
+        || (name == "valign" && !matches!(value, "top" | "middle" | "bottom"))
+        || ((tag, name) == ("tr", "height") && !value.parse::<usize>().is_ok_and(|height| height > 0))
+    {
+        return None;
+    }
+    if name == "style" && matches!(tag, "col" | "colgroup") {
+        let declarations = safe_inline_css(value);
+        return (!declarations.is_empty()).then(|| (name.to_string(), declarations));
+    }
     if name == "srcset" {
         let mut candidates: Vec<String> = Vec::new();
         for candidate in value.split(',') {
@@ -4200,7 +4286,9 @@ fn safe_start(tag: &str, attrs: &[(String, Option<String>)]) -> String {
 
 /// `_PresentationHTMLSanitizer` + `_sanitize_slide_html`
 fn sanitize_slide_html(markdown: &str) -> String {
-    let (protected, code_blocks) = protect_blocks(markdown);
+    let marker = format!("READMDSLIDELITERAL{}X", uuid::Uuid::new_v4().simple());
+    let (protected, literals) = protect_slide_literals(markdown, &marker);
+    let (protected, code_blocks) = protect_blocks(&protected);
     let mut inline_counter = 0usize;
     let mut inline_blocks: Vec<(String, String)> = Vec::new();
     let protected = protect_inline_code(&protected, &mut inline_counter, &mut inline_blocks);
@@ -4273,7 +4361,8 @@ fn sanitize_slide_html(markdown: &str) -> String {
     }
 
     let clean = restore_blocks(&out, &inline_blocks);
-    restore_blocks(&clean, &code_blocks)
+    let clean = restore_blocks(&clean, &code_blocks);
+    restore_slide_literals(&clean, &marker, &literals)
 }
 
 // ---------------------------------------------------- block protection
@@ -4449,14 +4538,33 @@ fn meta_get<'a>(meta: &'a [(String, String)], key: &str) -> Option<&'a str> {
 // ---------------------------------------------------- split helpers
 
 /// `(?=^#{1,max}\s)` MULTILINE split points.
-fn heading_split_points(c: &[char], max_hashes: usize, exact: bool) -> Vec<usize> {
+fn heading_split_points(c: &[char], max_hashes: usize, exact: bool, skip_notes: bool) -> Vec<usize> {
     let mut pts = Vec::new();
     let mut i = 0usize;
+    let mut in_notes = false;
+    let dash_subslides = skip_notes && find_directive(c, 0, &["subslide"], true, true).is_none();
     while i < c.len() {
         let line_start = i == 0 || c[i - 1] == '\n';
         if !line_start {
             i += 1;
             continue;
+        }
+        if skip_notes {
+            if let Some(end) = directive_end(c, i, &["note"], false, false) {
+                in_notes = true;
+                i = end;
+                continue;
+            }
+            if in_notes {
+                let dash = i + c[i..].iter().take_while(|&&ch| is_space_or_tab(ch)).count();
+                if directive_end(c, i, &["subslide"], true, true).is_some()
+                    || (dash_subslides && starts_with_chars(c, dash, &['-', '-']) && line_tail_blank(c, dash + 2))
+                {
+                    in_notes = false;
+                }
+                i += 1;
+                continue;
+            }
         }
         let mut k = 0usize;
         while i + k < c.len() && c[i + k] == '#' {
@@ -4677,7 +4785,7 @@ fn auto_split_long_chunk(chunk: &str, max_chars: usize) -> Vec<String> {
     }
     let (protected_chunk, block_map) = protect_blocks(&chunk);
     let c: Vec<char> = protected_chunk.chars().collect();
-    let h3 = split_at_points(&protected_chunk, &heading_split_points(&c, 3, true));
+    let h3 = split_at_points(&protected_chunk, &heading_split_points(&c, 3, true, false));
     let h3: Vec<String> = h3
         .iter()
         .map(|s| py_strip(s).to_string())
@@ -4744,15 +4852,73 @@ fn split_on_blank_runs(s: &str) -> Vec<String> {
 
 /// `split_slides_structure` — [[(content, note)]]
 pub(crate) fn split_slides_structure(content: &str) -> Vec<Vec<(String, String)>> {
-    split_slides_content(content, true)
+    split_slides_content(content, true).into_iter().map(|group| {
+        group.into_iter().map(|(body, notes)| (body, notes.unwrap_or_default())).collect()
+    }).collect()
 }
 /// The native slide writer consumes Markdown, not an HTML-template string.
-/// Escaping `>`/`&` before parsing changes authored blockquotes and text.
-pub(crate) fn split_slides_markdown(content: &str) -> Vec<Vec<(String, String)>> {
+/// An automatic continuation inherits the previous chunk's notes.
+pub(crate) fn split_slides_markdown(content: &str) -> Vec<Vec<(String, Option<String>)>> {
     split_slides_content(content, false)
 }
-fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, String)>> {
+
+// Protect real Markdown literal ranges before scanning for headings and
+// directives, so examples and formulas cannot change slide/notes ownership.
+fn protect_slide_literals<'a>(source: &'a str, marker: &str) -> (String, Vec<&'a str>) {
+    use pulldown_cmark::{Event, Parser, Tag};
+
+    let mut body = String::with_capacity(source.len());
+    let mut literals = Vec::new();
+    let mut cursor = 0;
+    for (event, range) in Parser::new_ext(source, crate::md_ast::options()).into_offset_iter() {
+        if !matches!(event, Event::Start(Tag::CodeBlock(_)) | Event::DisplayMath(_)) || range.start < cursor {
+            continue;
+        }
+        let literal = source[range.clone()].trim_end_matches(['\r', '\n']);
+        body.push_str(&source[cursor..range.start]);
+        body.push_str(&format!("{marker}{}Z", literals.len()));
+        literals.push(literal);
+        cursor = range.start + literal.len();
+    }
+    body.push_str(&source[cursor..]);
+    (body, literals)
+}
+
+fn restore_slide_literals(source: &str, marker: &str, literals: &[&str]) -> String {
+    let mut parts = source.split(marker);
+    let mut text = parts.next().unwrap_or_default().to_string();
+    for part in parts {
+        let entry = part.split_once('Z').and_then(|(index, rest)| {
+            let index = index.parse::<usize>().ok()?;
+            Some((literals.get(index)?, rest))
+        });
+        if let Some((literal, rest)) = entry {
+            text.push_str(literal);
+            text.push_str(rest);
+        } else {
+            text.push_str(marker);
+            text.push_str(part);
+        }
+    }
+    text
+}
+
+fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, Option<String>)>> {
     let (_meta, body) = parse_frontmatter(content);
+    let marker = format!("READMDSLIDELITERAL{}X", uuid::Uuid::new_v4().simple());
+    let (body, literals) = protect_slide_literals(&body, &marker);
+    let finish_body = |text: &str| {
+        let restored = restore_slide_literals(text, &marker, &literals);
+        if sanitize { sanitize_slide_html(&restored) } else { restored }
+    };
+    let finish_notes = |notes: &[String]| {
+        let restored = restore_slide_literals(&notes.join("\n\n"), &marker, &literals);
+        if sanitize {
+            py_strip(&sanitize_slide_html(&restored)).to_string()
+        } else {
+            restored
+        }
+    };
     let bc: Vec<char> = body.chars().collect();
     let has_explicit_slide = find_directive(&bc, 0, &["slide"], true, false).is_some();
 
@@ -4763,7 +4929,7 @@ fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, Strin
     {
         split_on_marker_line(&body, "---")
     } else {
-        let pts = heading_split_points(&bc, 3, false);
+        let pts = heading_split_points(&bc, 3, false, true);
         let splits: Vec<String> = split_at_points(&body, &pts)
             .into_iter()
             .map(|s| py_strip(&s).to_string())
@@ -4776,37 +4942,41 @@ fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, Strin
         }
     };
 
-    let mut matrix: Vec<Vec<(String, String)>> = Vec::new();
+    let mut matrix = Vec::new();
     for h_chunk in raw_horizontal {
         let h_chunk = py_strip(&h_chunk).to_string();
         if h_chunk.is_empty() {
             continue;
         }
         let hc: Vec<char> = h_chunk.chars().collect();
-        let raw_vertical: Vec<String> = if find_directive(&hc, 0, &["subslide"], true, false).is_some() {
+        let raw_vertical = if find_directive(&hc, 0, &["subslide"], true, false).is_some() {
             split_on_directive(&h_chunk, &["subslide"], true)
         } else if !has_explicit_slide && marker_line_present(&h_chunk, "--") {
             split_on_marker_line(&h_chunk, "--")
         } else {
-            let split = auto_split_long_chunk(&h_chunk, 800);
-            if split.is_empty() {
-                vec![h_chunk.clone()]
-            } else {
-                split
+            let (clean, notes) = extract_notes(&h_chunk);
+            let mut chunks = auto_split_long_chunk(&clean, 800);
+            if chunks.is_empty() {
+                chunks.push(String::new());
             }
+            // Browser slides retain a single notes panel at the end of the
+            // group. PPTX stores the notes once and inherits them as it paginates.
+            let owner = if sanitize { chunks.len() - 1 } else { 0 };
+            let mut notes = Some(finish_notes(&notes));
+            matrix.push(chunks.into_iter().enumerate().map(|(index, chunk)| {
+                (finish_body(&chunk), if index == owner { notes.take() } else { None })
+            }).collect());
+            continue;
         };
 
-        let mut vertical: Vec<(String, String)> = Vec::new();
+        let mut vertical = Vec::new();
         for v_chunk in raw_vertical {
             let v_chunk = py_strip(&v_chunk).to_string();
             if v_chunk.is_empty() {
                 continue;
             }
             let (clean, notes) = extract_notes(&v_chunk);
-            let clean = py_strip(&clean).to_string();
-            let clean = if sanitize { sanitize_slide_html(&clean) } else { clean };
-            let note_text = if sanitize { py_strip(&sanitize_slide_html(&notes.join("\n\n"))).to_string() } else { notes.join("\n\n") };
-            vertical.push((clean, note_text));
+            vertical.push((finish_body(py_strip(&clean)), Some(finish_notes(&notes))));
         }
         if !vertical.is_empty() {
             matrix.push(vertical);
@@ -4822,7 +4992,32 @@ fn marker_line_present(s: &str, marker: &str) -> bool {
 // ------------------------------------------------------------- template
 
 fn escape_template_md(md: &str) -> String {
-    md.replace("</textarea>", "&lt;/textarea&gt;")
+    static END_TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let end_tag = END_TAG.get_or_init(|| {
+        regex::Regex::new(r"(?i-u:</textarea)[\t\n\x0C\r />]").expect("HTML textarea end tag")
+    });
+    end_tag.replace_all(md, |captures: &regex::Captures<'_>| {
+        html_escape(&captures[0], false)
+    }).into_owned()
+}
+
+fn presentation_slide(body: &str, notes: &str) -> String {
+    let notes = if notes.is_empty() {
+        String::new()
+    } else {
+        let options = crate::md_ast::options() & !pulldown_cmark::Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, pulldown_cmark::Parser::new_ext(notes, options));
+        // Keep the rendered notes in a single HTML block while Reveal reads
+        // the Markdown template. A fence in notes cannot absorb the closing tag.
+        let html = sanitize_slide_html(&html).replace('\r', "&#13;").replace('\n', "&#10;");
+        let aside = html_escape(&format!("<aside class=\"notes\">{html}</aside>"), false);
+        format!("\n\n{aside}")
+    };
+    // Rust already split the deck and identified notes on source boundaries.
+    let table_class = if body.contains("<table") { " class=\"readmd-table-slide\"" } else { "" };
+    let body = escape_template_md(body);
+    format!("<section{table_class} data-markdown data-separator=\"(?!)\" data-separator-notes=\"(?!)\"><textarea data-template>\n{body}{notes}\n</textarea></section>")
 }
 
 /// `_read_vendor` — strict UTF-8, like Python's `open(..., encoding='utf-8')`.
@@ -5115,9 +5310,14 @@ pub(crate) fn presentation_with_images(content:&str,base:&str,title:&str,options
         crate::publication_budget::check()?;
         let encoded_bytes=bytes.len().checked_add(2).and_then(|n|n.checked_div(3)).and_then(|n|n.checked_mul(4)).and_then(|n|n.checked_add(mime.len()+13)).ok_or("export_snapshot_budget")?;
         if source.len().checked_sub(range.len()).and_then(|n|n.checked_add(encoded_bytes)).is_none_or(|n|n>crate::export_snapshot::MAX_SNAPSHOT_BYTES){return Err("export_snapshot_budget".into());}
-        source.replace_range(range,&format!("data:{mime};base64,{}",base64::engine::general_purpose::STANDARD.encode(bytes)));
+        let data = format!("data:{mime};base64,{}",base64::engine::general_purpose::STANDARD.encode(bytes));
+        let image = presentation_tables::embed_image(content, range.clone(), &url, &data)?;
+        if source.len().checked_sub(range.len()).and_then(|n| n.checked_add(image.len())).is_none_or(|n| n > crate::export_snapshot::MAX_SNAPSHOT_BYTES) {
+            return Err("export_snapshot_budget".into());
+        }
+        source.replace_range(range, &image);
     }
-    let html=render_presentation_html(&source,title,options["theme"].as_str().unwrap_or("black"),options["transition"].as_str().unwrap_or("slide"),standalone,assets)?;
+    let html=render_styled_presentation_html(&source,title,options["theme"].as_str().unwrap_or("black"),options["transition"].as_str().unwrap_or("slide"),standalone,assets,options)?;
     if html.len()>crate::export_snapshot::MAX_SNAPSHOT_BYTES{return Err("export_snapshot_budget".into());}
     Ok((html,warnings))
 }
@@ -5128,6 +5328,18 @@ pub fn render_presentation_html(
     transition: &str,
     standalone: bool,
     assets_dir: &Path,
+) -> Result<String, String> {
+    render_styled_presentation_html(content, title, theme, transition, standalone, assets_dir, &Value::Null)
+}
+
+pub(crate) fn render_styled_presentation_html(
+    content: &str,
+    title: &str,
+    theme: &str,
+    transition: &str,
+    standalone: bool,
+    assets_dir: &Path,
+    options: &Value,
 ) -> Result<String, String> {
     let (meta, _) = parse_frontmatter(content);
     let mut theme = meta_get(&meta, "theme").unwrap_or(theme).to_string();
@@ -5140,33 +5352,18 @@ pub fn render_presentation_html(
     let title_esc = html_escape(&title_raw, true);
     let theme_tag = if pres_in(PRES_THEMES, &theme) { theme.clone() } else { "black".to_string() };
 
-    let matrix = split_slides_structure(content);
+    let tables = presentation_tables::project(content)?;
+    let matrix = split_slides_structure(&tables.source);
+    let slide = |body: &str, notes: &str| {
+        presentation_slide(&tables.restore(body, true), &tables.restore(notes, false))
+    };
     let mut sections: Vec<String> = Vec::new();
     for v_slides in &matrix {
         if v_slides.len() == 1 {
             let (slide_content, note) = &v_slides[0];
-            let note_tag = if note.is_empty() {
-                String::new()
-            } else {
-                format!("\n<aside class=\"notes\">{note}</aside>")
-            };
-            let escaped_md = escape_template_md(slide_content);
-            sections.push(format!(
-                "<section data-markdown><textarea data-template>\n{escaped_md}{note_tag}\n</textarea></section>"
-            ));
+            sections.push(slide(slide_content, note));
         } else {
-            let mut sub_sections: Vec<String> = Vec::new();
-            for (slide_content, note) in v_slides {
-                let note_tag = if note.is_empty() {
-                    String::new()
-                } else {
-                    format!("\n<aside class=\"notes\">{note}</aside>")
-                };
-                let escaped_md = escape_template_md(slide_content);
-                sub_sections.push(format!(
-                    "<section data-markdown><textarea data-template>\n{escaped_md}{note_tag}\n</textarea></section>"
-                ));
-            }
+            let sub_sections = v_slides.iter().map(|(body, notes)| slide(body, notes)).collect::<Vec<_>>();
             sections.push(format!("<section>\n{}\n</section>", sub_sections.join("\n")));
         }
     }
@@ -5177,6 +5374,9 @@ pub fn render_presentation_html(
     head_parts.push(pres_css_tag(&format!("theme/{theme_tag}.css"), standalone, "theme", assets_dir)?);
     head_parts.push(pres_css_tag("plugin/highlight/monokai.css", standalone, "", assets_dir)?);
     head_parts.push(pres_katex_tags(standalone, assets_dir)?);
+    if slides_body.contains("class=\"readmd-table-slide\"") || crate::export_styles::three_line_table(options) {
+        head_parts.push(format!("<style>\n{}\n</style>", presentation_tables::style(options)));
+    }
     let head_css = head_parts.join("\n");
 
     let mut body_scripts: Vec<String> = Vec::new();
@@ -5228,7 +5428,7 @@ if (window.deck && window.mermaid) window.deck.on('ready', function () {
         start = PRES_HEAD_START,
         title = title_esc,
         style_block = PRES_STYLE_BLOCK.replace("{head}", &head_css),
-        transition = transition_meta,
+        transition = reveal_transition,
         slides = slides_body,
         scripts = body_scripts,
         config = config_json,
@@ -6618,6 +6818,55 @@ mod tests {
             .unwrap_or_else(|e| panic!("embedded markdown is not valid JSON ({e}): {payload}"));
         assert!(parsed.contains("</script><b>raw</b>"), "round-trip lost the markup: {parsed}");
         assert!(parsed.contains("段落里的 <tag>"), "round-trip lost the CJK body: {parsed}");
+    }
+
+    #[test]
+    fn html_table_track_sizes_survive_the_standalone_footnote_projection() {
+        let source = concat!(
+            "| Head {colspan=2 height=120 width=160} | Pair {width=96} | Edge |\n",
+            "| --- | --- | --- |\n",
+            "| **One** {rowspan=2 colspan=2} | Two[^a] | A |\n",
+            "| Three {height=112} | Four | B |\n\n[^a]: Table note.\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tracks.html");
+        let options = serde_json::json!({"table": {"widthPct":75}});
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let result = export_html(source, "", path.to_str().unwrap(), &options, "Sized table", &assets).unwrap();
+        assert!(result.ok);
+        let html = fs::read_to_string(path).unwrap();
+        let payload = html.split_once("id=\"readmd-footnote-html\">").unwrap().1.split_once("</script>").unwrap().0;
+        let markup: String = serde_json::from_str(payload).unwrap();
+        assert!(markup.contains("readmd-table-geometry--columns"));
+        assert!(markup.contains("<colgroup><col width=\"160\" data-table-width=\"160\" /><col width=\"96\" data-table-width=\"96\" /><col /></colgroup>"));
+        assert!(markup.contains("<tr height=\"120\" data-table-height=\"120\">"));
+        assert!(markup.contains("<tr height=\"112\" data-table-height=\"112\">"));
+        assert!(markup.contains("<td colspan=\"2\" rowspan=\"2\"><strong>One</strong><br />\nTwo"));
+        assert!(markup.contains("role=\"doc-noteref\"") && markup.contains("Table note."));
+        assert!(html.contains("window.ReadMDTableView?.observe(root, root, 0.75);"));
+    }
+
+    #[test]
+    fn epub_table_track_sizes_reflow_and_preserve_merged_content_in_the_container() {
+        let source = concat!(
+            "| Head {width=160} | Pair |\n| --- | --- |\n",
+            "| **One** {colspan=2 rowspan=2} | Two |\n",
+            "| Three {height=112} | Four |\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tracks.epub");
+        let result = export_epub(source, "", path.to_str().unwrap(), &serde_json::json!({}), "Sized table").unwrap();
+        assert!(result.ok);
+        let warning = crate::api_codes::WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+        assert!(!result.warns.unwrap_or_default().iter().any(|value| value == warning));
+        let bytes = fs::read(path).unwrap();
+        let entries = crate::convert::parse_zip_entries(&bytes).unwrap();
+        let markup = entries.iter().filter(|(name, _)| name.ends_with(".xhtml"))
+            .find_map(|(_, body)| std::str::from_utf8(body).ok().filter(|html| html.contains("<td colspan=\"2\" rowspan=\"2\">")))
+            .unwrap();
+        assert!(markup.contains("width:min(160px,83.3333%)") && markup.contains(r#"<tr style="height:112px">"#));
+        assert!(markup.contains("<strong>One</strong><br/>Two<br/>Three<br/>Four"));
+        assert!(!markup.contains("{width=") && !markup.contains("{height="));
     }
 
     /// The crate's own `shutil.which` mirror, `crate::plugin_manager::which`, is

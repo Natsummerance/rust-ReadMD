@@ -74,7 +74,7 @@ fn ordinary_empty_and_other_axis_code_retain_native_raw_relative_size(){
 fn headings_and_table_cells_reset_to_their_own_structural_base(){
     let reset=|name:&str|authored(json!({"size":30}),vec![authored(json!({"size":"base"}),vec![leaf(name)])]);
     let mut settings=options();settings["headings"]=json!({"h1":{"size":24}});settings["table"]=json!({"cellSize":10.5});
-    let source=output(vec![Block::Heading{level:1,id:"h".into(),inlines:vec![reset("HEAD")],numbering:None},Block::Table{aligns:Vec::new(),header:vec![vec![reset("CELL")]],rows:Vec::new()}],settings).unwrap().text;
+    let source=output(vec![Block::Heading{level:1,id:"h".into(),inlines:vec![reset("HEAD")],numbering:None},Block::Table{geometry: Default::default(),aligns:Vec::new(),header:vec![vec![reset("CELL")]],rows:Vec::new()}],settings).unwrap().text;
     assert!(source.contains("#text(size:24pt)[#text(\"HEAD\")]"));assert!(source.contains("#text(size:10.5pt)[#text(\"CELL\")]"));
 }
 

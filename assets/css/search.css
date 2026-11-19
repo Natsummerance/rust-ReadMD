@@ -1,0 +1,57 @@
+/* Document search results live below the search and replacement controls. */
+#search-results {
+  min-height: 0;
+  margin: 0;
+  padding: 2px 6px 8px;
+  list-style: none;
+  overscroll-behavior: contain;
+}
+
+.search-result {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--touch-target);
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  text-align: start;
+  cursor: pointer;
+}
+
+.search-result:hover { background: var(--color-hover); }
+.search-result[aria-current] {
+  border-color: var(--color-accent-soft);
+  background: var(--color-accent-soft);
+}
+.search-result:focus-visible { outline-offset: -2px; }
+
+.search-result-context {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.search-result-context mark {
+  padding: 0;
+  border-radius: 2px;
+  background: var(--rd-hit, var(--color-accent-soft));
+  color: inherit;
+  font-weight: var(--weight-semibold);
+}
+
+.search-result-location {
+  display: block;
+  overflow: hidden;
+  color: var(--color-fg-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

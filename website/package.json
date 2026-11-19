@@ -7,6 +7,7 @@
     "build:css": "tailwindcss -i ./src/site.css -o ./dist/assets/site.css --minify",
     "build": "node tools/build-integrations.mjs && node tools/build-ai-pages.mjs && node tools/build-motion-pages.mjs && npm run clean && npm run build:css && node tools/copy-static.mjs && node tools/sync-version.mjs && node tools/build-scroll-media.mjs",
     "verify": "node tools/validate-website.mjs",
+    "verify:publication": "node tools/sync-version.mjs --check --public-only",
     "verify:themes": "node tools/theme-smoke.cjs",
     "verify:motion": "node tools/motion-smoke.cjs",
     "verify:release": "npm run build && node tools/validate-website.mjs --release",

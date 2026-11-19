@@ -68,6 +68,7 @@ for (const f of files) {
   const dict = load(f);
   for (const key of enKeys) {
     if (key in dict && placeholders(dict[key]) !== placeholders(en[key])) problems.push(`${f}: placeholder mismatch in ${key}`);
+    if (key.startsWith('inspection.') && dict[key] === en[key]) problems.push(`${f}: untranslated document inspection text in ${key}`);
     // These newly expanded panels previously passed with copied English.
     // Shared brands and short loanwords are allowed; whole UI sentences are not.
     const recentPanel = /^(?:window|storage|audit|ux)\.|^plugin\.native\./.test(key);
@@ -75,6 +76,11 @@ for (const f of files) {
       problems.push(`${f}: untranslated panel text in ${key}`);
     }
   }
+}
+
+const shellMarkup = fs.readFileSync(path.join(root, 'assets', 'index.html'), 'utf8');
+for (const key of new Set([...shellMarkup.matchAll(/\bdata-i18n(?:-(?:aria|html|placeholder|title))?="([\w.-]+)"/g)].map(match => match[1]))) {
+  if (!en[key] || !zh[key]) problems.push(`index.html: missing interface label ${key}`);
 }
 
 // ---- 3. hard-coded Chinese in user-visible calls --------------------------

@@ -3,7 +3,7 @@
 //! no text, characters, focused window title or clipboard is read here.
 use super::{
     pressed::{smoothing_alpha, PressedInput},
-    probe_cursor, HitTestTarget, InputEvent,
+    probe_cursor, probe_logical_cursor, HitTestTarget, InputEvent,
 };
 use std::{
     ffi::c_void,
@@ -241,8 +241,7 @@ where
     emit(InputEvent::Bongo(pressed.snapshot()));
 }
 
-/// A local monitor observes only events already delivered to this pet window.
-/// It preserves WebView delivery and never requests global event-tap access.
+/// Observe the pet panel's AppKit events and handle its secondary click before WebKit.
 pub(crate) struct LocalMonitor(objc2::rc::Retained<objc2::runtime::AnyObject>);
 impl Drop for LocalMonitor {
     fn drop(&mut self) {
@@ -258,43 +257,84 @@ impl LocalMonitor {
         emit: impl Fn(InputEvent) + 'static,
     ) -> Option<Self> {
         use objc2::{rc::Retained, MainThreadMarker};
-        use objc2_app_kit::{NSEvent, NSEventMask, NSEventType, NSWindow};
-        use std::{cell::RefCell, ptr::NonNull};
+        use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSWindow};
+        use std::{cell::Cell, ptr::NonNull};
         let _main = MainThreadMarker::new()?;
         let native = unsafe { Retained::retain(window.ns_window().cast::<NSWindow>()) }?;
         // Native frame uses AppKit points, bottom-left origin. Keeping the
         // initial frame and pointer avoids accumulating rounding during a drag.
-        let drag: RefCell<Option<(objc2_foundation::NSPoint, objc2_foundation::NSPoint, bool)>> =
-            RefCell::new(None);
+        let drag = Cell::new(None);
+        let right_click = Cell::new(false);
+        let control_click = Cell::new(false);
         let handler = block2::RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
             let event_ref = unsafe { event.as_ref() };
             if event_ref.windowNumber() != native.windowNumber() {
                 return event.as_ptr();
             }
-            let t = target.lock().map(|v| v.clone()).unwrap_or_default();
             let local = event_ref.locationInWindow();
-            let point = native.convertPointToScreen(local);
-            match event_ref.r#type() {
-                NSEventType::LeftMouseDown => {
-                    let mut logical = t.clone();
-                    logical.scale_factor = 1.0;
-                    let probe = probe_cursor(
-                        &logical,
-                        (0.0, 0.0),
-                        (local.x, native.frame().size.height - local.y),
+            let kind = event_ref.r#type();
+            match kind {
+                NSEventType::LeftMouseDown | NSEventType::RightMouseDown => {
+                    let Ok(t) = target.lock() else {
+                        return event.as_ptr();
+                    };
+                    // The macOS watcher and this local event both use logical points.
+                    let probe = probe_logical_cursor(
+                        &t,
+                        local.x,
+                        native.frame().size.height - local.y,
                         true,
                     );
-                    *drag.borrow_mut() = probe
-                        .head_clicked
-                        .then(|| (point, native.frame().origin, false));
+                    drop(t);
+                    let secondary = if kind == NSEventType::RightMouseDown {
+                        Some(&right_click)
+                    } else if event_ref
+                        .modifierFlags()
+                        .contains(NSEventModifierFlags::Control)
+                    {
+                        Some(&control_click)
+                    } else {
+                        control_click.set(false);
+                        None
+                    };
+                    if let Some(handled) = secondary {
+                        handled.set(probe.head_clicked && !crate::platform::native_drag_active());
+                        if handled.get() {
+                            emit(InputEvent::ContextMenu {
+                                x: probe.rel_x,
+                                y: probe.rel_y,
+                            });
+                            return std::ptr::null_mut();
+                        }
+                        return event.as_ptr();
+                    }
+                    drag.set(probe.head_clicked.then(|| {
+                        (
+                            native.convertPointToScreen(local),
+                            native.frame().origin,
+                            false,
+                        )
+                    }));
+                }
+                NSEventType::RightMouseDragged if right_click.get() => return std::ptr::null_mut(),
+                NSEventType::RightMouseUp if right_click.replace(false) => {
+                    return std::ptr::null_mut()
+                }
+                NSEventType::LeftMouseDragged if control_click.get() => {
+                    return std::ptr::null_mut()
+                }
+                NSEventType::LeftMouseUp if control_click.replace(false) => {
+                    return std::ptr::null_mut()
                 }
                 NSEventType::LeftMouseDragged => {
-                    if let Some((start, origin, moved)) = drag.borrow_mut().as_mut() {
+                    if let Some((start, origin, mut moved)) = drag.get() {
+                        let point = native.convertPointToScreen(local);
                         let (dx, dy) = (point.x - start.x, point.y - start.y);
                         if dx.abs() + dy.abs() >= 4.0 {
-                            *moved = true;
+                            moved = true;
                         }
-                        if !t.lock_position && *moved {
+                        drag.set(Some((start, origin, moved)));
+                        if moved && target.lock().is_ok_and(|t| !t.lock_position) {
                             crate::platform::set_native_drag_active(true);
                             native.setFrameOrigin(objc2_foundation::NSPoint::new(
                                 origin.x + dx,
@@ -304,12 +344,12 @@ impl LocalMonitor {
                     }
                 }
                 NSEventType::LeftMouseUp => {
-                    if let Some((_, _, moved)) = drag.borrow_mut().take() {
+                    if let Some((_, _, moved)) = drag.take() {
                         if moved {
                             if crate::platform::native_drag_active() {
                                 crate::platform::complete_native_drag();
                             }
-                        } else if t.visible {
+                        } else if target.lock().is_ok_and(|t| t.visible) {
                             emit(InputEvent::PetClick);
                         }
                     }
@@ -318,8 +358,12 @@ impl LocalMonitor {
             }
             event.as_ptr()
         });
-        let mask =
-            NSEventMask::LeftMouseDown | NSEventMask::LeftMouseDragged | NSEventMask::LeftMouseUp;
+        let mask = NSEventMask::LeftMouseDown
+            | NSEventMask::LeftMouseDragged
+            | NSEventMask::LeftMouseUp
+            | NSEventMask::RightMouseDown
+            | NSEventMask::RightMouseDragged
+            | NSEventMask::RightMouseUp;
         unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &handler).map(Self) }
     }
 }

@@ -1,5 +1,5 @@
 # ReadMD 繁體中文索引
-> ReadMD is a local-first Markdown reader, editor, converter and presenter. Published version: V0.0.4; V0.0.5 is being validated. VS Code and MCP share the native Rust engine.
+> ReadMD 是本機優先的 Markdown 閱讀、編輯、轉換與放映工作台。目前正式版與下載套件見下載頁及 GitHub Releases；VS Code 和 MCP 共用原生 Rust 核心。
 
 ## Docs
 - [繁體中文主頁](https://rust.readmd.asia/zh-tw/): 產品定義、平台支援、隱私邊界和可直接引用的答案。
@@ -11,13 +11,13 @@
 - [PDF 轉 Markdown](https://rust.readmd.asia/zh-tw/pdf-to-markdown/): 適合文字型 PDF 和掃描文件的本機轉換與覆核工作流。
 - [掃描件轉 Markdown](https://rust.readmd.asia/zh-tw/scan-to-markdown/): 在 Windows 和 macOS 使用本機離線 OCR 擷取掃描頁或截圖文字。
 - [BibTeX 引用](https://rust.readmd.asia/zh-tw/bibtex-citations/): 把同目錄 `.bib` 文獻庫連接到內嵌引用徽章、來源卡片、可複製 BibTeX 和參考文獻彙整。
-- [發布說明](https://rust.readmd.asia/zh-tw/release-notes/): VV0.0.4 驗收候選的放映安全、更新校驗、啟動載入、標籤狀態和平台資產。
+- [發布說明](https://rust.readmd.asia/zh-tw/release-notes/): 各版本的變更、平台套件與發布歷史。
 - [下載頁](https://rust.readmd.asia/zh-tw/download/): Windows、macOS、Linux、國產系統、編輯器和 MCP 套件的下載路徑。
 - [完整中文語料](https://rust.readmd.asia/zh-tw/llms-full.txt): 涵蓋長文件分頁、非破壞修正、格式轉換、離線工作流程和版本事實。
 - [英文總索引](https://rust.readmd.asia/llms.txt): 跨語言入口、英文全文語料和權威事實。
 
 ## Key Facts
-- 目前公開版本：V0.0.4
+- 目前正式版與下載套件：https://rust.readmd.asia/zh-tw/download/ · https://github.com/Natsummerance/rust-ReadMD/releases/latest
 - 授權：MIT
 - 長文件門檻：約 8,000 行或 500 KB 啟用語意分頁
 - 核心模式：閱讀、編輯、分頁和本地轉換不需要雲端帳號
@@ -26,6 +26,6 @@
 ## Source
 - [GitHub 儲存庫](https://github.com/Natsummerance/rust-ReadMD): MIT 原始碼、發行套件、校驗清單和問題回報。
 
-- [ReadMD 的 VS Code 與 MCP 整合](https://rust.readmd.asia/zh-tw/integrations/): 本機核心整合與 V0.0.5 新能力預覽。
+- [ReadMD 的 VS Code 與 MCP 整合](https://rust.readmd.asia/zh-tw/integrations/): 本機核心整合，附 V0.0.5 時期的功能介紹。
 
-- [V0.0.5 · AI 自動補全](https://rust.readmd.asia/zh-tw/ai-autocomplete/): 灰色候選在游標旁串流出現。Tab 接受眼前的文字，Esc 忽略；不滿意，一次復原回到原稿。
+- [AI 自動補全（V0.0.5 引入）](https://rust.readmd.asia/zh-tw/ai-autocomplete/): 灰色候選在游標旁串流出現。Tab 接受眼前的文字，Esc 忽略；不滿意，一次復原回到原稿。

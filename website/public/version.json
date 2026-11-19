@@ -8,42 +8,42 @@
   "assets": [
     {
       "name": "ReadMDSetup-windows-x64.exe",
-      "size": 65147687,
+      "size": 65182435,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMDSetup-windows-x64.exe"
     },
     {
       "name": "ReadMD-windows-x64.zip",
-      "size": 68559134,
+      "size": 68593909,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-windows-x64.zip"
     },
     {
       "name": "ReadMD-macos-arm64.zip",
-      "size": 68065286,
+      "size": 68107587,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-arm64.zip"
     },
     {
       "name": "ReadMD-macos-x64.zip",
-      "size": 68973280,
+      "size": 69019475,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-x64.zip"
     },
     {
       "name": "ReadMD-macos-arm64.dmg",
-      "size": 77275616,
+      "size": 77019293,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-arm64.dmg"
     },
     {
       "name": "ReadMD-macos-x64.dmg",
-      "size": 76843209,
+      "size": 77215637,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-x64.dmg"
     },
     {
       "name": "ReadMD-linux-x86_64.tar.gz",
-      "size": 68126691,
+      "size": 68163590,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-linux-x86_64.tar.gz"
     },
     {
       "name": "ReadMD-linux-x86_64.deb",
-      "size": 56982248,
+      "size": 56997574,
       "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-linux-x86_64.deb"
     },
     {

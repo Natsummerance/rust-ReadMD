@@ -21,7 +21,9 @@ function plan() {
       'dependency update, idempotence, surrounding prose and manual edit protection',
       'missing dependency creation invalidates old receipt',
       'canonical containment and native junction/symlink escape rejection',
-      'cycles and bounded source bytes', 'single-file compatibility'],
+      'cycles and bounded source bytes', 'single-file compatibility',
+      'local Path Item alias chains retain sibling operations and actual definitions',
+      'strict same-file URI fragments and file/inline projection parity'],
     nativeGuiCertified: false, extensionHostCertified: false, modelCalled: false,
     automaticRetries: 0, binaryRequired: 'READMD_BIN',
   };
@@ -135,6 +137,7 @@ async function run() {
   fs.writeFileSync(stringFile, 'type: string\nminLength: 2\n');
   const report = { ...plan(), passed: false, checks: [], startedAt: new Date().toISOString(),
     binarySha256: hash(fs.readFileSync(binary)), moduleSha256: hash(fs.readFileSync(path.join(ROOT, 'rust/readmd-kernel/src/openapi_document.rs'))),
+    projectionSha256: hash(fs.readFileSync(path.join(ROOT, 'rust/readmd-kernel/src/openapi_document/projection.rs'))),
     runnerSha256: hash(fs.readFileSync(__filename)), bootSha256: hash(fs.readFileSync(path.join(ROOT, 'assets/readmd.boot.js'))) };
   let phase = 'startup', server, mcp, serverClosed, token, origin;
   const record = name => report.checks.push({ name, passed: true });
@@ -282,6 +285,64 @@ async function run() {
     assert.deepEqual(fromFile, inline); assert.equal(fromFile.source_revision, hash(standalone));
     assert.deepEqual(fromFile.references, []);
     record('OpenAPI 3.0 single-file projection, generated region and raw source revision remain byte-compatible');
+
+    phase = 'local Path Item aliases with external definitions';
+    const aliasFile = path.join(documents, 'aliases.json'), aliasDependency = path.join(documents, 'paths/alias.yaml');
+    const aliasSpec = { openapi: '3.1.1', info: { title: 'Reusable paths 😀', version: '1' }, paths: {
+      '/notes': { $ref: '#/components/pathItems/Joined', post: { responses: { 204: { description: 'Written locally' } } } },
+    }, components: { pathItems: {
+      Joined: { $ref: '#/components/pathItems/Read', delete: { responses: { 204: { description: 'Deleted locally' } } } },
+      Read: { $ref: 'paths/alias.yaml' },
+    } } };
+    fs.writeFileSync(aliasFile, JSON.stringify(aliasSpec));
+    fs.writeFileSync(aliasDependency, "get: {summary: Read dependency, responses: {'200': {description: Read from disk}}}\n");
+    const aliasArgs = { file_path: aliasFile, source_id: 'fixture/aliases.json', content: original, base_revision: hash(original), locale: 'en' };
+    const aliases = await http('POST', '/api/developer/openapi', aliasArgs);
+    assert.deepEqual(await mcp.tool('readmd_openapi_document', aliasArgs), aliases);
+    assert.deepEqual(aliases.warnings, []); assert.equal(aliases.source_map.length, 3);
+    for (const [method, definition] of [
+      ['get', { source: 'paths/alias.yaml', pointer: '/get' }],
+      ['post', { source: 'aliases.json', pointer: '/paths/~1notes/post' }],
+      ['delete', { source: 'aliases.json', pointer: '/components/pathItems/Joined/delete' }],
+    ]) {
+      const entry = aliases.source_map.find(row => row.method === method); assert(entry);
+      assert.equal(entry.pointer, '/paths/~1notes/' + method); assert.deepEqual(entry.definition, definition);
+      assert(aliases.result.content.slice(entry.from).startsWith('## ' + method.toUpperCase()));
+    }
+    assert(aliases.result.content.startsWith(original));
+    assert.equal((await http('POST', '/api/developer/openapi', { ...aliasArgs, content: aliases.result.content, base_revision: hash(aliases.result.content) })).result.changed, false);
+    fs.writeFileSync(aliasDependency, "get: {summary: Read revised dependency, responses: {'200': {description: Read from disk}}}\n");
+    const staleAliasArgs = { ...aliasArgs, expected_source_revision: aliases.source_revision };
+    assert.equal((await http('POST', '/api/developer/openapi', staleAliasArgs, 409)).error_code, 'transaction_conflict');
+    await mcp.tool('readmd_openapi_document', staleAliasArgs, 'transaction_conflict');
+    const updatedAliases = await http('POST', '/api/developer/openapi', { ...aliasArgs, content: aliases.result.content, base_revision: hash(aliases.result.content) });
+    assert.deepEqual(updatedAliases.changes, [{ pointer: '/paths/~1notes/get', kind: 'changed' }]);
+    record('Local Path Item aliases retain GET/POST/DELETE with true local/external definitions, preserve author prose and reject stale dependency receipts over HTTP and MCP');
+
+    phase = 'same-file sibling and URI fragment semantics';
+    const localFile = path.join(documents, 'local-paths.json');
+    for (const version of ['3.0.4', '3.1.1']) {
+      const localSpec = JSON.stringify({ openapi: version, info: { title: 'Local siblings', version: '1' }, paths: {
+        '/notes': { $ref: '#/x-shared', post: { responses: { 204: { description: 'Written locally' } } } },
+      }, 'x-shared': { get: { responses: { 200: { description: 'Read shared' } } } } });
+      fs.writeFileSync(localFile, localSpec);
+      const localArgs = { source: localSpec, source_name: 'local-paths.json', source_id: 'fixture/local-paths.json', content: '', base_revision: hash(''), locale: 'en' };
+      const local = await http('POST', '/api/developer/openapi', localArgs);
+      assert.deepEqual(await http('POST', '/api/developer/openapi', { ...localArgs, file_path: localFile }), local);
+      assert.deepEqual(await mcp.tool('readmd_openapi_document', localArgs), local);
+      assert.equal(local.source_map.length, 2); assert(local.result.content.includes('Written locally'));
+      assert.equal(local.source_map[0].definition.pointer, '/x-shared/get');
+      assert.deepEqual(local.references, []); assert.equal(local.source_revision, hash(localSpec));
+    }
+    for (const [reference, valid] of [['#%2Fx-shared%2Fa~1b~0c', true], ['#/x-shared/a~2b', false], ['#/x-shared/a%QQb', false]]) {
+      const pointerSpec = responseSpec(reference);
+      pointerSpec['x-shared'] = { 'a/b~c': { description: 'Decoded response' }, 'a~2b': { description: 'MUST NOT RESOLVE' }, 'a%QQb': { description: 'MUST NOT RESOLVE' } };
+      const checked = await http('POST', '/api/developer/openapi', { source: JSON.stringify(pointerSpec), content: '', base_revision: hash(''), locale: 'en' });
+      const entry = checked.source_map[0], operation = checked.result.content.slice(entry.from, entry.to);
+      if (valid) { assert.deepEqual(checked.warnings, []); assert(operation.includes('Decoded response')); }
+      else { assert(checked.warnings.some(row => row.pointer === '/paths/~1x/get/responses/200')); assert(operation.includes(reference)); assert(!operation.includes('MUST NOT RESOLVE')); }
+    }
+    record('Same-file 3.0/3.1 Path Item siblings agree over HTTP file/inline and MCP; URI decoding accepts encoded separators and refuses invalid percent/tilde escapes');
 
     phase = 'MCP normal EOF'; await mcp.finish(); mcp = null;
     assert.equal(fs.readFileSync(target, 'utf8'), generated);

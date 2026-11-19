@@ -118,16 +118,24 @@ pub fn session_request(
         }
         "review" => Ok(json!({"ok":true,"id":service.review(room,secret,v)?})),
         "reviews" => service.reviews(room, secret),
+        "review-preview" => service.review_preview(room, secret, string(&v, "id")?),
+        "reverse" => service.reverse_review(
+            room, secret, string(&v,"id")?,
+            v["generation"].as_i64().filter(|g|*g>=0).ok_or_else(||bad("collaboration_invalid"))?,
+            string(&v,"revision")?,
+        ),
         "attachments" => service.attachments(room, secret),
         "members" => service.members(room, secret),
         "resolve" => {
-            service.resolve(
+            service.resolve_with_transaction(
                 room,
                 secret,
                 string(&v, "id")?,
                 v["accept"]
                     .as_bool()
                     .ok_or_else(|| bad("collaboration_invalid"))?,
+                v.get("transaction").map(|tx| serde_json::from_value(tx.clone()).map_err(|_| bad("collaboration_invalid"))).transpose()?,
+                v.get("generation").map(|g| g.as_i64().filter(|g|*g>=0).ok_or_else(|| bad("collaboration_invalid"))).transpose()?,
             )?;
             Ok(json!({"ok":true}))
         }
@@ -356,6 +364,8 @@ fn dispatch(
             "/" => ("collaboration/index.html", "text/html; charset=utf-8"),
             "/client.js" => ("collaboration/client.js", "text/javascript; charset=utf-8"),
             "/session.js" => ("collaboration/session.js", "text/javascript; charset=utf-8"),
+            "/reviews.js" => ("collaboration/reviews.js", "text/javascript; charset=utf-8"),
+            "/reviews.css" => ("collaboration/reviews.css", "text/css; charset=utf-8"),
             "/client.css" => ("collaboration/client.css", "text/css; charset=utf-8"),
             "/tokens.css" => ("css/tokens.css", "text/css; charset=utf-8"),
             "/yjs.js" => ("vendor/yjs.bundle.js", "text/javascript; charset=utf-8"),

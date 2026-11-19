@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/ibisjp/ibis-office.git",
+  "tag": "v0.8.6",
+  "commit": "96e218055a41261c3c12c0ea1b07f143424f368d",
+  "sourceVersion": "0.8.5",
+  "license": "AGPL-3.0-only",
+  "files": {
+    "Cargo.toml": "79814d857358b0649a8fb88809d60aeec7ff5c0baf7bdd6e728cbfd6b16282b6",
+    "Cargo.lock": "093708f440be02710366a7d60926ed358a010d9ed9d096735fa9dd53e9e9e135",
+    ".gitmodules": "136c2cc37b266ac47cb9e4f71bc00484721660185fb0905096bbdd8fff2aae14",
+    "version.txt": "62745ba1c7f638fb9bbc932871649bd270656d713493a52f25ac2ebc3614fb68",
+    "LICENSE": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+    "NOTICE": "c5f7e47db86710c8e018861ccb57db565b3f9de0936366404993679d34642a44",
+    "docs/TRADEMARK.md": "ee866c4ff6896fc2b13270122a25ed05d98ae0a466e8317e28292b178d5f6343",
+    "docs/THIRD-PARTY-NOTICES.md": "c074ce17bab9bfaa15ac80c760500ecf318f1a24eda0ad9e62e1ef21fcf596ef",
+    "crates/ibis-office-app/Cargo.toml": "681ea355349d8e036e843007bf05b54a20707cec9862fc54b673a8ac8de3d1dc",
+    "crates/ibis-office-app/src/lib.rs": "71ed63b9c9243dea5d6c4823902641c2dc0a795c5b6866d5543bd01123652c25",
+    "crates/ibis-office-app/src/export.rs": "30f41d5592a3655bc7a3af15300d13b2cfcd91d2365919b8108295ff4ce9c39b",
+    "crates/ibis-office-app/src/pdf_vector.rs": "bf06d8f52efc4dbc3538f46907f06c64ca4562923bfc9442216f8fd61538d541",
+    "crates/ibis-office-app/src/render/web_image.rs": "6b137f55368e4e88b0bc57f0f1dffe45ff3071c96387d2cda5c6b080dc0849fd"
+  },
+  "forks": [
+    {"repository":"gpui-component","commit":"36b346ba5a9c0a0e644294d3114bdcea6c843aac","size":682831,"sha256":"681c550e9e4d3a450a348da2f76503ea42be0d4396162be029f8ed0d31de6434"},
+    {"repository":"gpui-pre","commit":"4d3e4d6ea9a093781dedb1d44ecda200733ce4f2","size":5320188,"sha256":"475d23cc0fd5141c1cb999c4dacb25de02ed2dab48b2e1eb4151a02d0f2e546e"},
+    {"repository":"gpui-pre-macos","commit":"a5c35305b6f3099b17899f4324be300e57461b1b","size":131999,"sha256":"398e9a8883953192b226fefa096a534281e3a9bddf8905c349c03ff438b03641"},
+    {"repository":"gpui-pre-web","commit":"9fd3dd660eb9dd7d433a3c77f823c905d8d21f42","size":100999,"sha256":"d3e60d137f4d01bc861863861d756ddd20e32cd27f6b7e67baf70b30e8496848"},
+    {"repository":"gpui-pre-windows","commit":"24529c3c193b72fe90951e04bc570f87af744c54","size":158218,"sha256":"6941d68426147e769814c52fc5ba04f16d83e915b3491eefa52f4875a4375705"},
+    {"repository":"gpui-pre-linux","commit":"94a307ca7306fb1727b493695ffc632d47d01bc4","size":172458,"sha256":"d45e43375084cbff02399026b94cc82d52473557f2fdec5dfed1621cb7f5fb86"},
+    {"repository":"gpui-pre-wgpu","commit":"bca747d853d13204ec815a71a8dd1a6149adfb1d","size":94095,"sha256":"55cc88e654cb3c92eb5340b17dcff457a80d4a6fddab7eec7fbfc417a256e3c7"}
+  ]
+}

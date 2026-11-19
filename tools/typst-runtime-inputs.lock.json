@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "version": "0.15.1",
+  "platform": "macos-arm64",
+  "reviewedOn": "2026-11-19",
+  "source": "https://github.com/typst/typst/releases/tag/v0.15.1",
+  "archive": "https://github.com/typst/typst/releases/download/v0.15.1/typst-aarch64-apple-darwin.tar.xz",
+  "archiveBytes": 14438168,
+  "archiveSha256": "48f62ed034aa3a7978309579ac6ca00045e2ef0da73114e8af27cfd8e74dc05a",
+  "prefix": "typst-aarch64-apple-darwin",
+  "license": "Apache-2.0; original dependency and font notices included",
+  "files": [
+    { "member": "typst", "path": "bin/typst", "maximum": 134217728, "executable": true },
+    { "member": "LICENSE", "path": "LICENSE", "maximum": 1048576, "executable": false },
+    { "member": "NOTICE", "path": "NOTICE", "maximum": 4194304, "executable": false }
+  ]
+}

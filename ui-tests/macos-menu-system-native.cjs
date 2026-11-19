@@ -12,7 +12,8 @@ function driver(phase,file,textFile,converted){return String.raw`(async()=>{
  const until=async(fn,key)=>{const end=Date.now()+20000;while(Date.now()<end){py.window_control('status');if(await fn())return;await pause(50);}throw Error(key||'menu_wait_timeout');};
  const settled=async test=>{let key='',since=0;await until(()=>{const next=[innerWidth,innerHeight,window.__readmdNativeWindowState?.chrome?.nativeFullscreen].join(',');if(next!==key){key=next;since=Date.now();}return test()&&Date.now()-since>=1200;},'native_space_animation_not_settled');};
  const visible=id=>!!$(id)&&!$(id).classList.contains('hidden');
- const menu=async action=>{const mine=++id;py.window_control('qa_tray',{id:mine,action});await until(()=>window.__readmdNativeTrayResult?.id===mine);const r=window.__readmdNativeTrayResult;check(r.performed,'native_'+action.replaceAll('-','_')+'_dispatched');return r.menu;};
+ const menuResult=async action=>{const mine=++id;py.window_control('qa_tray',{id:mine,action});await until(()=>window.__readmdNativeTrayResult?.id===mine);return window.__readmdNativeTrayResult;};
+ const menu=async action=>{const r=await menuResult(action);check(r.performed,'native_'+action.replaceAll('-','_')+'_dispatched');return r.menu;};
  const panel=async choice=>{const mine=++id;py.window_control('qa_native_dialog',{id:mine,choice});await until(()=>window.__readmdNativeDialogResult?.id===mine);return window.__readmdNativeDialogResult;};
  const cancelPanel=async()=>{await until(async()=>{const r=await panel('status');return r.available&&r.visible;},'native_menu_file_panel_not_visible');check(true,'actual_native_menu_file_panel_visible');await panel('cancel');await until(async()=>!(await panel('status')).available);};
  const json=async(route,body)=>{const r=await apiFetch(route,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const data=await r.json();if(!r.ok||data.ok===false)throw Error('backend_'+r.status+'_'+(data.error_code||'failed').replace(/[^a-z_0-9]/g,''));return data;};
@@ -25,6 +26,20 @@ function driver(phase,file,textFile,converted){return String.raw`(async()=>{
   const native=await menu('show');check(native.template===true&&native.width===18&&native.height===18,'actual_monochrome_template_image');
   check(['new','folder','plugins','pet','settings','close-document','zen','fullscreen','minimize','hide','select-all','save','save-as','undo','redo'].every(k=>native.commands.includes(k)),'native_command_inventory');
   if(phase==='install_menu'){
+   check(Object.values(native.labels).flat().every(title=>title&&!/^[\w-]+(?:\.[\w-]+)+$/.test(title)),'startup_menu_contains_readable_titles');
+   const titles=async()=> (await menuResult('snapshot')).menu.labels;
+   for(const lang of ['en','ja','ar']){
+    await i18n.setLanguage(lang,false);
+    await until(async()=>{
+     const labels=await titles();
+     return labels.open.length===2&&labels.open.every(title=>title===i18n.t('menu.open'))&&labels['select-all'][0]===i18n.t('mac.selectAll');
+    },'actual_menu_locale_'+lang);
+    check(true,'actual_menu_and_status_item_relabel_'+lang);
+   }
+   const before=await titles();
+   py.window_control('preferences',{closeToTray:false,menuLabels:{open:'menu.open',exit:'window.exit'}});
+   check(JSON.stringify(await titles())===JSON.stringify(before),'native_menu_rejects_untranslated_key_payload');
+   await i18n.setLanguage('en',false);
    await menu('plugins');await until(()=>visible('plugin-modal')&&document.querySelectorAll('.plugin-card').length===14);
    check(true,'native_menu_opens_real_plugin_panel');
    const listing=await json('/api/plugins/list');check(listing.plugins.easyocr.native.validation==='on_demand','ocr_validation_is_on_demand');

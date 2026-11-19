@@ -1,15 +1,25 @@
-# ReadMD V0.0.6 for macOS
+# ReadMD V0.0.7 for macOS
 
-包含 V0.0.6 迁移分支的审阅、任务、快照和恢复增量，以及中文路径、资源定位和原生导出预览修复。Mac PDF 页面使用系统 Quartz 渲染；演示文稿按同一份 16:9 模型预览并导出可编辑 PPTX，TeX 预览为生成源码。HTML 预览读取与导出相同的冻结正文和图片字节，并等待图片解码后显示。
+2026-11-19
 
-最顶栏采用原生红黄绿窗口按钮：窗口操作在左，其余控件反转并靠右，LOGO 位于最右。阅读和编辑工具栏保留原有顺序；全屏、禅模式、未保存提示及关闭确认沿用原生窗口与现有保存保护。
+本版更新 PDF 原版页面阅读、DOCX／PPTX 只读原排版视图、表格合并与行列尺寸、图片和历史另存、共享建议冲突合并、SVG 绘图、OpenAPI 与聊天取消流程。版本与 VS Code／MCP 集成包统一为 `0.0.7`。
 
-- Apple Silicon：ReadMD-macos-arm64.dmg / ReadMD-macos-arm64.zip
-- Intel：ReadMD-macos-x64.dmg / ReadMD-macos-x64.zip
-- 完整性校验：SHA256SUMS.txt
+## 下载与安装
 
-采用免费 ad-hoc 签名，没有 Developer ID 或 Apple 公证。首次打开按[安装说明](macos-install.md)在系统设置中仅对 ReadMD 允许打开，无需付费开发者账号；默认 Gatekeeper 并未被声明为放行。
+- Apple Silicon：[DMG](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-arm64.dmg) · [ZIP](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-arm64.zip)
+- Intel：[DMG](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-x64.dmg) · [ZIP](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-x64.zip)
+- [SHA-256 清单](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/SHA256SUMS.txt)
 
-基础中文路径编辑、保存、关闭、会话恢复、外部修订保护，以及六种格式的原生预览／提交采用本轮独立候选记录。原生 QA 构建、正式安装副本冷启动及 headless 录制分别绑定摘要，不混用。较大的中文出版字体支持受管离线安装。
+面向 macOS 13+。退出旧版后，把 `ReadMD.app` 移入“应用程序”，个人文档无需移动。**本版使用免费 ad hoc 签名，未使用 Developer ID，未作 Apple 公证。** 首次打开可能被 Gatekeeper 拦截，请按[安装说明](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/release/macos-install.md)在“系统设置 → 隐私与安全性”中仅允许 ReadMD 打开。
 
-非 Windows 多文件引用重命名继续明确拒绝并保护原文。DOCX 预览仍是共享布局参考，不是 Word 分页；PPTX 的文字、项目符号、表格和代码可编辑，公式保留矢量外观并提示其为图像。网页演讲的离线 HTML 输出继续保留。实体 Intel、旧版系统、真实 IME／键盘和全部功能认证继续待验，详见 [V0.0.7 延续清单](../docs/design/v007-carryover-2026-10-30.md)。
+## 阅读、出版与能力包
+
+桌面包提供对应架构的 Office 阅读运行时和离线 PDFium 包；运行应用无需 Python 或 Microsoft Office。Office 原排版显示使用随包引擎，复杂文档可能与 Word／PowerPoint 有差异。PDF 默认进入阅读模式，选择“编辑原 PDF”后才进入支持的编辑操作。
+
+OCR、Typst、出版字体、代码运行时和转写按实际平台能力包提供。转写依赖匹配平台的 FFmpeg、Whisper 引擎与模型；这两个独立离线包未包含在本次桌面／集成下载资产中。本轮媒体包实际操作覆盖 macOS ARM64，其他架构以实际包目录及能力状态为准。多文件引用重命名继续保留非 Windows 平台的安全限制。
+
+## Mac 本机验证
+
+macOS ARM64 完成六组共 **244 项原生检查**，包括关闭、保存冲突、草稿恢复、六格式导出、最终 ZIP 冷启动／重开与 V0.0.6 隔离会话升级。最终归档生产二进制完成 46 语言保存编码流程，页面异常为 0。[本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败和同包复测结果。Intel 包由独立构建目标生成，其原生操作证据与 ARM64 分开记录。
+
+[完整 V0.0.7 更新](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/release/release_notes.md) · [使用指南](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/README.md) · [问题反馈](https://github.com/Natsummerance/rust-ReadMD/issues)

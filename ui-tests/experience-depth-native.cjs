@@ -111,18 +111,29 @@ async function until(fn, timeout = 20000) {
     const inputs = Array.from({ length: 32 }, (_, i) => {
       const ext = Object.keys(formats)[i % 8], file = path.join(docs, `阅读材料-${String(i + 1).padStart(2, '0')}.${ext}`); fs.writeFileSync(file, formats[ext]); return file;
     });
-    await scenario('native-32-file-eight-format-batch-counts-skip-and-keyboard-open', async () => {
+    await scenario('native-32-file-eight-format-batches-keep-separate-outputs-and-keyboard-open', async () => {
+      const progress = () => page.evaluate(async () => (await apiFetch('/api/convert/progress?job=' + encodeURIComponent(batchJobId))).json());
       await page.evaluate(paths => enqueueBatchFiles([...paths, ...paths.slice(0, 4)], false), inputs);
       await until(() => page.evaluate(() => !isBatchRunning()), 60000);
       let counts = await page.evaluate(() => ({ ...batchCount })); assert.equal(counts.ok, 32); assert.equal(counts.error, 0);
       assert.equal(await page.locator('.batch-item').count(), 32);
-      for (const input of inputs) { const out = input.replace(/\.[^.]+$/, '.md'); assert.ok(fs.statSync(out).size > 0); }
+      const first = await progress();
+      assert.equal(first.items.length, 32);
+      for (const item of first.items) {
+        assert.ok(fs.statSync(item.out).size > 0);
+        assert.equal(path.dirname(item.out), first.output_dir);
+        assert.ok(!fs.existsSync(item.src.replace(/\.[^.]+$/, '.md')));
+      }
+      const previous = first.items.map(item => hash(item.out));
       const row = page.locator('.batch-item.ok').first(); await row.focus(); await page.keyboard.press('Enter');
       await until(() => page.evaluate(() => /阅读材料-01\.md$/.test(state.file || '')));
       await page.evaluate(paths => enqueueBatchFiles(paths, false), inputs);
       await until(() => page.evaluate(() => !isBatchRunning()), 60000);
-      counts = await page.evaluate(() => ({ ...batchCount })); assert.equal(counts.skipped, 32); assert.equal(counts.ok, 0);
-      await page.evaluate(() => closeBatchModal()); return { formats: 8, inputs: 32, duplicatesExcluded: 4, existingOutputsSkipped: 32 };
+      counts = await page.evaluate(() => ({ ...batchCount })); assert.equal(counts.skipped, 0); assert.equal(counts.ok, 32);
+      const next = await progress();
+      assert.notEqual(first.output_dir, next.output_dir);
+      assert.deepEqual(first.items.map(item => hash(item.out)), previous);
+      await page.evaluate(() => closeBatchModal()); return { formats: 8, inputs: 32, duplicatesExcluded: 4, isolatedBatches: 2 };
     });
     await scenario('native-offline-plugin-install-toggle-reopen-uninstall', async () => {
       const installed = await page.evaluate(async () => (await (await apiFetch('/api/plugins/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plugin_id: 'jieba' }) })).json())); assert.equal(installed.ok, true);

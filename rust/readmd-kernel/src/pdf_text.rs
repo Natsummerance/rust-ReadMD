@@ -3,6 +3,10 @@
 //! richer extractor; use the PDF's own ToUnicode map through lopdf in that case.
 pub fn extract(bytes: &[u8]) -> Result<String, String> {
     let doc = lopdf::Document::load_mem(bytes).map_err(|_| "pdf_invalid")?;
+    extract_document(&doc, bytes)
+}
+
+pub(crate) fn extract_document(doc: &lopdf::Document, bytes: &[u8]) -> Result<String, String> {
     let unsupported = doc
         .objects
         .values()

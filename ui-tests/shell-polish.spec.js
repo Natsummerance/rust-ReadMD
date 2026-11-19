@@ -3,11 +3,11 @@ test.beforeEach(async({page})=>{
  await page.goto('/');await page.evaluate(()=>window.__readmdSessionReady);
  await page.evaluate(async()=>{await i18n.setLanguage('zh-CN',false);await renderVirtual('convert','阅读记录.md','','# 阅读记录\n\n核对证据后，再写下判断。',[]);});
 });
-test('brand returns home without closing pages and respects unsaved-change cancellation',async({page})=>{
- await page.locator('#titlebar-home').click();
+test('home shortcut returns home without closing pages and respects unsaved-change cancellation',async({page})=>{
+ await page.locator('#btn-home').click();
  expect(await page.evaluate(()=>({mode:state.mode,pages:state.tabs.length}))).toEqual({mode:'welcome',pages:1});
  await page.locator('.tab-item').click();await page.evaluate(async()=>{await toggleEdit();cmView.dispatch({changes:{from:cmView.state.doc.length,insert:'\n尚未保存的结论。'}});});
- await page.locator('#titlebar-home').focus();await page.keyboard.press('Enter');
+ await page.locator('#btn-home').focus();await page.keyboard.press('Enter');
  await expect(page.locator('#close-confirm-modal')).toBeVisible();await page.locator('#close-confirm-cancel').click();
  expect(await page.evaluate(()=>getEditContent())).toContain('尚未保存');
  expect(await page.evaluate(()=>state.mode)).toBe('virtual');

@@ -1,5 +1,5 @@
 'use strict';
-function fixture(){
+function fixture(options = {}){
   const stream=text=>'<< /Length '+Buffer.byteLength(text)+' >>\nstream\n'+text+'\nendstream';
   const objects=[
     '<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [9 0 R] /DR << /Font << /Helv 4 0 R >> >> /DA (/Helv 12 Tf 0 g) >> >>',
@@ -12,6 +12,20 @@ function fixture(){
     '<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\n'+String.fromCharCode(230,170,90)+'\nendstream',
     '<< /Type /Annot /Subtype /Widget /FT /Tx /T (reviewer) /V (ReadMD) /Rect [50 420 250 452] /P 3 0 R /F 4 /DA (/Helv 12 Tf 0 g) >>'
   ];
+  if (options.signature) {
+    objects[8]='<< /Type /Annot /Subtype /Widget /FT /Sig /T (synthetic_signature_gate) /V 10 0 R /Rect [50 420 250 452] /P 3 0 R /F 4 >>';
+    objects.push('<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /ByteRange [0 0 0 0] /Contents <0000> >>');
+  }
+  if (options.fieldFlags) {
+    // An ordinary widget can inherit flags and value from a field dictionary.
+    if (options.inherited) {
+      objects[0] = objects[0].replace('/Fields [9 0 R]', '/Fields [10 0 R]');
+      objects[8] = objects[8].replace('/FT /Tx /T (reviewer) /V (ReadMD)', '/Parent 10 0 R');
+      objects.push(`<< /FT /Tx /T (reviewer) /V (ReadMD) /Ff ${options.fieldFlags} /Kids [9 0 R] >>`);
+    } else {
+      objects[8] = objects[8].replace('/FT /Tx', '/FT /Tx /Ff ' + options.fieldFlags);
+    }
+  }
   let text='%PDF-1.7\n',offsets=[0];for(let i=0;i<objects.length;i++){offsets.push(Buffer.byteLength(text,'latin1'));text+=(i+1)+' 0 obj\n'+objects[i]+'\nendobj\n';}
   const xref=Buffer.byteLength(text,'latin1');text+='xref\n0 '+(objects.length+1)+'\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size '+(objects.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n';return Buffer.from(text,'latin1');
 }

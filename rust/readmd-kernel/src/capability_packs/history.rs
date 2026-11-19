@@ -289,6 +289,7 @@ impl<'a> Trusted<'a> {
             if !matches!(
                 entry.id.as_str(),
                 "pdfium" | "typst" | "ocr" | "fonts" | "latex"
+                    | crate::whisper_cpp::WHISPER_ID | crate::whisper_cpp::DECODER_ID
             ) || !matches!(
                 entry.platform.as_str(),
                 "universal"

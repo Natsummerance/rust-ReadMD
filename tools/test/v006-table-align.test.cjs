@@ -98,11 +98,12 @@ function modalHost(f) {
       append(...items) { for (const item of items) { this.children.push(item); item.parentElement = this; } },
       before(item) { const siblings = this.parentElement.children; siblings.splice(siblings.indexOf(this), 0, item); item.parentElement = this.parentElement; },
       remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(item => item !== this); nodes.delete(this.id); },
-      addEventListener(name, callback) { this.listeners[name] = callback; }, focus() {}, querySelectorAll() { return this.children; }
+      addEventListener(name, callback) { this.listeners[name] = callback; }, focus() {}, querySelector() { return null; }, querySelectorAll() { return this.children; }
     };
     Object.defineProperty(value, 'innerHTML', { set() { this.children = []; } });
     if (id) nodes.set(id, value); return value;
   }
+  node('div', 'edit-bar');
   const modal = node('div', 'table-modal'), picker = node('div', 'table-grid-picker'), label = node('div', 'table-grid-label'), body = node(); body.append(picker, label); modal.append(body); modal.classList.add('hidden');
   f.context.$ = id => nodes.get(id) || [...body.children].find(item => item.id === id) || null;
   f.context.document.createElement = tag => node(tag); f.context.ReadMDModal = { close: element => element.classList.add('hidden') };

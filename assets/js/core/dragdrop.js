@@ -8,11 +8,13 @@
 let dragCounter = 0;
 let lastNativeDropAt = 0;
 
-/** 拖放条目的分类：zip / folder / binary（走转换） / text（直接打开）。 */
+/** Office/PDF 先读原排版；其余条目保留已有直接打开/显式转换行为。 */
 function classifyDroppedEntry(entry) {
   const name = entry.name || '';
   if (entry.isDir) return 'folder';
   if (/\.zip$/i.test(name)) return 'zip';
+  if (/\.pdf$/i.test(name)) return 'pdf';
+  if (/\.(docx|pptx)$/i.test(name)) return 'office';
   const binary = (typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(name))
     || (typeof IMG_RE !== 'undefined' && IMG_RE.test(name));
   return binary ? 'binary' : 'text';
@@ -57,7 +59,7 @@ async function extractDroppedZip(entry) {
  */
 async function handleDroppedEntries(entries) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const groups = { zip: [], folder: [], binary: [], text: [] };
+  const groups = { zip: [], folder: [], pdf: [], office: [], binary: [], text: [] };
   for (const en of entries || []) groups[classifyDroppedEntry(en)].push(en);
 
   if (groups.folder.length && typeof listFolder === 'function') {
@@ -80,6 +82,11 @@ async function handleDroppedEntries(entries) {
   for (const f of groups.text) {
     const path = f.path ? f.path : await uploadFile(f.file);
     if (path) await loadFile(path, { browserCopy: !f.path });
+  }
+
+  for (const f of [...groups.pdf, ...groups.office]) {
+    const path = f.path ? f.path : await uploadFile(f.file);
+    if (path) await openDocumentPath(path, { browserCopy: !f.path });
   }
 
   if (groups.binary.length) {
@@ -107,7 +114,7 @@ window.__readmdNativeDrop = function (payload) {
       const title = $('drag-title');
       const desc = $('drag-desc');
       if (title) title.textContent = _t('dialog.dropTitle') || '松开以导入文档';
-      if (desc) desc.textContent = _t('dialog.dropDesc') || 'Markdown 文件将在新标签页中打开；Word/PDF 等将自动导入转换';
+      if (desc) desc.textContent = _t('dialog.dropOriginalPdf');
     }
     return;
   }
@@ -143,7 +150,7 @@ function bindGlobalDragAndDrop() {
       if (title && desc) {
         if (types.includes('Files')) {
           title.textContent = _t('dialog.dropTitle') || '松开以导入文档';
-          desc.textContent = _t('dialog.dropDesc') || 'Markdown 文件将在新标签页中打开；Word/PDF 等将自动导入转换';
+          desc.textContent = _t('dialog.dropOriginalPdf');
         } else if (types.includes('text/uri-list')) {
           title.textContent = _t('dialog.dropUrlTitle') || '松开以抓取网页';
           desc.textContent = _t('dialog.dropUrlDesc') || '自动解析 URL 网页并提取为 Markdown 文档';
@@ -192,7 +199,7 @@ function bindGlobalDragAndDrop() {
     const dt = e.dataTransfer;
     if (!dt) return;
 
-    // 1. 处理文件拖拽（万物皆可开：代码/配置/脚本/文本直接开，Office/PDF 走转换，ZIP 自动解压）
+    // 1. Office/PDF 读原排版，代码/配置/脚本/文本直接开，ZIP 自动解压。
     if (dt.files && dt.files.length > 0) {
       // 桌面端的原生拖放会直接送来真实路径（__readmdNativeDrop），DOM 这里只是兜底。
       if (Date.now() - lastNativeDropAt < 1500) return;
@@ -237,37 +244,18 @@ function bindTabOverflowEvents() {
   const overflowWrap = $('doc-tabs-overflow-wrap');
   if (!overflowBtn || !dropdown || !overflowWrap) return;
 
-  let isPinned = false;
-
-  const setOverflowMenu = visible => {
-    isPinned = visible;
-    dropdown.classList.toggle('hidden', !visible);
-    overflowBtn.setAttribute('aria-expanded', visible ? 'true' : 'false');
-    if (visible) setTimeout(() => dropdown.querySelector('[role="menuitem"]')?.focus(), 20);
-  };
-
-  overflowWrap.addEventListener('mouseenter', () => {
-    if (!isPinned) setOverflowMenu(true);
-  });
-  overflowWrap.addEventListener('mouseleave', () => {
-    if (!isPinned) setOverflowMenu(false);
-  });
-
-  overflowBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    setOverflowMenu(!isPinned);
+  overflowBtn.addEventListener('click', () => {
+    setTopTabMenu(dropdown.classList.contains('hidden'), { focus: true });
   });
 
   overflowBtn.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowDown' && event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.key !== 'ArrowDown') return;
     event.preventDefault();
-    setOverflowMenu(true);
+    setTopTabMenu(true, { focus: true });
   });
 
   document.addEventListener('click', e => {
-    if (!overflowWrap.contains(e.target)) {
-      setOverflowMenu(false);
-    }
+    if (!overflowWrap.contains(e.target)) setTopTabMenu(false);
   });
 
   dropdown.addEventListener('keydown', event => {
@@ -281,7 +269,8 @@ function bindTabOverflowEvents() {
       (event.key === 'Home' ? items[0] : items[items.length - 1])?.focus();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      setOverflowMenu(false);
+      event.stopPropagation();
+      setTopTabMenu(false);
       overflowBtn.focus();
     }
   });
@@ -317,7 +306,7 @@ function bindTabContextMenuEvents() {
       if (!tab) return;
 
       if (action === 'close') {
-        closeTab(tabId, false, 'tab_menu');
+        requestTabClose(tabId, 'tab_menu');
       } else if (action === 'close-others') {
         closeOtherTabs(tabId);
       } else if (action === 'close-all') {

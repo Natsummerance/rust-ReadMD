@@ -33,7 +33,7 @@ mobile-ffi = []
 pdfium-worker = ["dep:pdfium-render"]
 
 [dependencies]
-rusqlite = { version = "=0.40.2", features = ["bundled"] }
+rusqlite = { version = "=0.40.2", features = ["bundled", "hooks"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 # `preserve_order`: CPython's `json.dumps` emits object keys in dict insertion
 # order; the default `Map` is a `BTreeMap` and emits them alphabetically.
@@ -60,6 +60,7 @@ base64 = "=0.22.1"
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "gif", "tiff", "webp"] }
 ureq = { version = "=2.12.1", features = ["json"] }
 regex = "=1.11.1"
+memchr = "=2.8.3"
 quick-xml = "=0.42.0"
 # Pure Rust YAML 1.2 parser. Stream events are budgeted before building the
 # OpenAPI value tree; implicit network references and executable tags are not used.

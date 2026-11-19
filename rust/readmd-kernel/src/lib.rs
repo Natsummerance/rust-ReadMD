@@ -37,6 +37,7 @@ pub mod publication_pdf_metadata;
 #[cfg(test)]mod publication_export_tests;
 pub mod cross_references;
 pub mod code_chunk_runner;
+mod code_chunk_output;
 pub mod codecs;
 pub mod content;
 pub mod document_history;
@@ -48,6 +49,8 @@ mod settings_persistence;
 pub mod review;
 mod review_store;
 pub mod review_api;
+mod manuscript;
+mod ink;
 pub mod ai_review;
 pub mod ai_harness;
 mod ai_task_store;
@@ -105,6 +108,7 @@ pub mod mdexport;
 pub mod native_diagrams;
 /// Shared pulldown-cmark AST for the DOCX / LaTeX / PDF exporters.
 pub mod md_ast;
+pub mod table_geometry;
 /// AST-based Markdown → LaTeX writer used by the LaTeX export.
 pub mod latex_writer;
 /// AST-based Markdown → DOCX (WordprocessingML) writer.
@@ -163,6 +167,7 @@ pub mod server;
 pub mod store;
 pub mod transcribe;
 pub mod speech;
+pub(crate) mod whisper_cpp;
 pub mod mail;
 pub mod export_preview;
 pub mod svg_render;
@@ -175,6 +180,9 @@ pub mod ole2;
 pub mod pet_queue;
 pub mod texmd;
 pub mod pdf_editor;
+mod office_package;
+mod office_preview;
+mod office_render;
 pub mod pdf_workspace;
 pub mod capability_packs;
 pub mod capability_store;
@@ -472,6 +480,11 @@ pub mod error {
 
     pub type ApiResult<T> = std::result::Result<T, ApiError>;
 }
+
+mod package_download;
+mod quoted_strong;
+mod image_export;
+mod export_profile_packs;
 
 pub mod paths {
     use super::error::{Error, Result};
@@ -942,6 +955,7 @@ pub struct App {
     /// Ephemeral completion cache, observed latency and pooled HTTP transport.
     pub completion: ai_completion::Runtime,
     pub collaboration: collaboration_host::Runtime,
+    office_views: office_preview::Views,
     pub(crate) math_context: math_context::Runtime,
     pub review: review::Service,
     pub ai_tasks: ai_harness::Service,
@@ -1076,6 +1090,7 @@ impl App {
             modules: Mutex::new(modules::Registry::fresh()),
             completion: ai_completion::Runtime::default(),
             collaboration: collaboration_host::Runtime::default(),
+            office_views: office_preview::Views::default(),
             math_context: math_context::Runtime::default(),
             review: review::Service::new(&paths.data_dir),
             ai_tasks: ai_harness::Service::new(&paths.data_dir),

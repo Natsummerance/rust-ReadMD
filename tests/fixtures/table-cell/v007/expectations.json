@@ -1,0 +1,49 @@
+{
+  "definedBeforeImplementation": true,
+  "target": {
+    "tableOrdinal": 2,
+    "displayRow": 3,
+    "bodyRow": 2,
+    "column": 2,
+    "line": 13,
+    "from": 168,
+    "to": 170,
+    "original": "23",
+    "insert": "42😀",
+    "utf16Delta": 2,
+    "independentCoordinates": "fixed literal line13 prefix + 7 UTF16 units; no parser/product lookup"
+  },
+  "canonical": {
+    "initial": "# 双表 😀\n\n| A | B | C |\n| --- | :---: | ---: |\n| 11 | left\\|right | 13 |\n| 21 | 23 | 24 |\n\n中间 🧭。\n\n| A | B | C |\n| --- | :---: | ---: |\n| 11 | left\\|right | 13 |\n| 21 | 23 | 24 |\n\n待审段落 ORIGINAL_AI_SCOPE。\n",
+    "pending": "# 双表 😀\n\n| A | B | C |\n| --- | :---: | ---: |\n| 11 | left\\|right | 13 |\n| 21 | 23 | 24 |\n\n中间 🧭。\n\n| A | B | C |\n| --- | :---: | ---: |\n| 11 | left\\|right | 13 |\n| 21 | 23 | 24 |\n\n待审段落 PENDING_AI_CANDIDATE。\n",
+    "expected": "# 双表 😀\n\n| A | B | C |\n| --- | :---: | ---: |\n| 11 | left\\|right | 13 |\n| 21 | 23 | 24 |\n\n中间 🧭。\n\n| A | B | C |\n| --- | :---: | ---: |\n| 11 | left\\|right | 13 |\n| 21 | 42😀 | 24 |\n\n待审段落 PENDING_AI_CANDIDATE。\n"
+  },
+  "physical": {
+    "initialSha256": "f9082d1858d1c0bdc04f03c0aef0ba65dec55c4abbf5f3fbfa0c5faaf89c13be",
+    "savedSha256": "bf68ea4ae379ed666f6810970651320c9b72d57b9d22e7b6c95903d0a06e0123",
+    "bom": true,
+    "lineEnding": "crlf",
+    "initialBase64": "77u/IyDlj4zooagg8J+YgA0KDQp8IEEgfCBCIHwgQyB8DQp8IC0tLSB8IDotLS06IHwgLS0tOiB8DQp8IDExIHwgbGVmdFx8cmlnaHQgfCAxMyB8DQp8IDIxIHwgMjMgfCAyNCB8DQoNCuS4remXtCDwn6et44CCDQoNCnwgQSB8IEIgfCBDIHwNCnwgLS0tIHwgOi0tLTogfCAtLS06IHwNCnwgMTEgfCBsZWZ0XHxyaWdodCB8IDEzIHwNCnwgMjEgfCAyMyB8IDI0IHwNCg0K5b6F5a6h5q616JC9IE9SSUdJTkFMX0FJX1NDT1BF44CCDQo="
+  },
+  "pendingAi": {
+    "original": "ORIGINAL_AI_SCOPE",
+    "replacement": "PENDING_AI_CANDIDATE",
+    "decision": "pending",
+    "rangeShiftAfterManualEdit": 2
+  },
+  "oldApplyRejects": [
+    "edit then durable undo equal-text ABA",
+    "tab or view change",
+    "Review document/generation/review_revision/revision change",
+    "path/file revision change",
+    "external physical revision detected by authorized resume"
+  ],
+  "rootRealExpectations": [
+    "actual one /api/review action:edit origin:editor with exact UTF16 source span",
+    "no propose or resolve by manual Apply",
+    "Save leaves AI pending ID/original/replacement/decision and shifts anchors +2",
+    "fresh process open+Review resume then one durable undo reverts only42😀→23; redo restores; disk waits explicit Save",
+    "failed Save leaves disk bytes unchanged and dirty/recovery draft retained"
+  ],
+  "pureTestBoundary": "CM/parser/VM/protocol doubles are not real Rust persistence or native evidence"
+}

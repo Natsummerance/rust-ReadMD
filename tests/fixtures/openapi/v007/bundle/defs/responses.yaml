@@ -1,0 +1,8 @@
+Envelope:
+  description: OPENAPI_V007_MULTIFILE_RESPONSE
+  headers:
+    X-Request-Id: {schema: {type: string}}
+  content:
+    application/json:
+      schema: {$ref: '../schemas/complex.json#/$defs/Envelope'}
+      example: {$ref: './literal-no-read.yaml'}

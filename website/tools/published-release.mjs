@@ -24,40 +24,59 @@ export async function refreshRelease() {
     published: r.updatedAt.slice(0, 10), repository: r.repository }, null, 2) + '\n');
   console.log('[published-release] Verified ' + r.releaseTag + ': ' + r.assets.length + ' published packages');
 }
-export async function syncRelease() {
-  const r = publishedRelease(JSON.parse(await fs.readFile(snapshot, 'utf8')));
-  const config = JSON.parse(await fs.readFile(path.join(site, 'release.json'), 'utf8'));
+export async function syncRelease({ check = false, siteRoot = site, folders = ['public', 'dist'] } = {}) {
+  const r = publishedRelease(JSON.parse(await fs.readFile(path.join(siteRoot, 'published-release.json'), 'utf8')));
+  const config = JSON.parse(await fs.readFile(path.join(siteRoot, 'release.json'), 'utf8'));
   if (config.stable !== r.version) throw Error('Published snapshot differs from website manifest');
+  const changes = [], planned = new Map();
+  async function stage(file, text) {
+    planned.set(file, text);
+    let original;
+    try { original = await fs.readFile(file, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (original === text) return;
+    changes.push(path.relative(siteRoot, file).replaceAll('\\', '/'));
+    if (!check) await writeChanged(file, text);
+  }
   async function walk(directory) {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
       if (entry.name === 'showcase') continue;
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) await walk(file);
-      else if (entry.name.endsWith('.html')) await writeChanged(file, updateReleaseHtml(await fs.readFile(file, 'utf8'), r, {
+      else if (entry.name.endsWith('.html')) await stage(file, updateReleaseHtml(await fs.readFile(file, 'utf8'), r, {
         download: /[\\/]download[\\/]index\.html$/.test(file), historical: /[\\/]release-notes[\\/]/.test(file),
         candidate: /[\\/](?:ai-autocomplete|integrations)[\\/]/.test(file),
       }));
     }
   }
-  for (const folder of ['public', 'dist']) {
-    const directory = path.join(site, folder);
-    try { await fs.access(directory); } catch { continue; }
+  for (const folder of folders) {
+    const directory = path.join(siteRoot, folder);
+    try { await fs.access(directory); } catch (error) {
+      if (folder === 'public') throw Error('Missing published website source directory');
+      if (error.code !== 'ENOENT') throw error;
+      continue;
+    }
     await walk(directory);
-    await writeChanged(path.join(directory, 'version.json'), JSON.stringify(r, null, 2) + '\n');
+    await stage(path.join(directory, 'version.json'), JSON.stringify(r, null, 2) + '\n');
     const headerFile = path.join(directory, '_headers');
     let headers = await fs.readFile(headerFile, 'utf8');
+    if (!headers.includes("script-src 'self'")) throw Error('Published website _headers lacks its script-src self policy');
     for (const language of ['', 'zh-cn/', 'zh-tw/', 'ja/']) {
-      const html = await fs.readFile(path.join(directory, language, 'index.html'), 'utf8');
+      const file = path.join(directory, language, 'index.html');
+      const html = planned.get(file) ?? await fs.readFile(file, 'utf8');
       const block = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)?.[1];
-      if (block) {
-        const hash = "'sha256-" + crypto.createHash('sha256').update(block).digest('base64') + "'";
-        if (!headers.includes(hash)) headers = headers.replace("script-src 'self'", "script-src 'self' " + hash);
-      }
+      if (!block) throw Error('Published website homepage lacks JSON-LD: ' + (language || 'en'));
+      const hash = "'sha256-" + crypto.createHash('sha256').update(block).digest('base64') + "'";
+      if (!headers.includes(hash)) headers = headers.replace("script-src 'self'", "script-src 'self' " + hash);
     }
-    await writeChanged(headerFile, headers);
+    await stage(headerFile, headers);
   }
-  console.log('[sync-version] Offline ' + r.releaseTag + ': pages, metadata and downloads synchronized');
+  if (check && changes.length) throw Error('Published website files out of sync with offline ' + r.releaseTag + ':\n - ' + changes.join('\n - '));
+  console.log('[sync-version] Offline ' + r.releaseTag + ': pages, metadata, downloads and CSP ' + (check ? 'verified' : 'synchronized'));
+  return { releaseTag: r.releaseTag, changes };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.includes('--refresh')) await refreshRelease(); else await syncRelease();
+  if (process.argv.includes('--refresh') && process.argv.includes('--check')) throw Error('--check is offline and cannot be combined with --refresh');
+  if (process.argv.includes('--refresh')) await refreshRelease();
+  else await syncRelease({ check: process.argv.includes('--check'),
+    ...(process.argv.includes('--public-only') ? { folders: ['public'] } : {}) });
 }

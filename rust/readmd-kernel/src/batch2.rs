@@ -493,19 +493,27 @@ fn begin_download(
 /// must pass SHA-256 before publication; an exhausted loop reports download failure.
 fn run_download(job: DownloadJob) {
     let _running = RunningDownloadGuard;
-    download_with(&job, &mut |url| {
-        // Release packages exceed 200 MiB: keep the 30-second inactivity timeout,
-        // but allow slow, progressing transfers up to two hours per source.
-        let transfer_budget = std::time::Duration::from_secs(2 * 60 * 60);
-        let resp = crate::updater::update_agent(transfer_budget, 5).get(url)
-            .timeout(transfer_budget).call().map_err(|_| ())?;
+    let candidates = crate::package_download::ranked(&job.url, job.prefer_mirror, None);
+    // Keep the existing verified staging/commit and report progress on the
+    // one transfer being attempted. The small ranking probes never land.
+    let budget = std::time::Duration::from_secs(2 * 60 * 60);
+    let agent = crate::updater::update_agent(budget, 0);
+    download_with_candidates(&job, candidates, &mut |url| {
+        let resp = crate::package_download::response(&agent, url, std::time::Instant::now() + budget, None)?;
         let total = resp.header("Content-Length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
         Ok((resp.into_reader(), total))
     });
 }
 
-fn download_with(job: &DownloadJob, transport: &mut dyn FnMut(&str) -> Result<(Box<dyn std::io::Read + Send + Sync>, u64), ()>) {
-    for url in crate::updater::download_candidates(&job.url, job.prefer_mirror) {
+type PackageTransport<'a> = dyn FnMut(&str) -> Result<(Box<dyn std::io::Read + Send + Sync>, u64), ()> + 'a;
+
+#[cfg(test)]
+fn download_with(job: &DownloadJob, transport: &mut PackageTransport<'_>) {
+    download_with_candidates(job, crate::updater::download_candidates(&job.url, job.prefer_mirror), transport);
+}
+
+fn download_with_candidates(job: &DownloadJob, candidates: Vec<String>, transport: &mut PackageTransport<'_>) {
+    for url in candidates {
         if download_state().cancel_requested { with_download_state(|state| { state.status = "cancelled".into(); state.running = false; }); cleanup_part(&job.part_path); return; }
         with_download_state(|state| { state.status = "downloading".into(); state.downloaded_bytes = 0; state.percent = 0; state.speed_bps = 0; });
         if let Ok((mut reader, total)) = transport(&url) {
@@ -1506,6 +1514,9 @@ pub(crate) fn h_skill_imports_apply(app: &Arc<App>, req: &Request) -> ApiResult<
 // /api/convert/* - Convert batch management
 // ============================================================================
 
+#[path = "conversion_batch.rs"]
+pub(crate) mod conversion_batch;
+
 /// `readmd.py:933` — the job item dict.  Python builds it as
 /// `{'src', 'planned_out', 'status', 'done'}` and `_convert_worker` adds
 /// `out`/`engine`/`warns` (`readmd.py:901-903`) and `error`/`error_code`
@@ -1528,6 +1539,8 @@ pub struct ConvertJobItem {
     pub error_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_details: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fidelity_report: Option<Value>,
     pub done: bool,
 }
 
@@ -1567,8 +1580,8 @@ fn content_length(req: &Request) -> Option<i64> {
 /// `os.walk(p)` (top-down, `dirs` pruned in place) for
 /// `readmd.py:3123-3134`: the same `.///_` directory skip, the same
 /// `root[len(p):].count(os.sep) >= 4` stop, per-directory `sorted(names)`, and
-/// the `len(files) >= 200` early break.
-fn walk_convert_dir(root: &Path, depth: usize, exts: &[&str], files: &mut Vec<String>) {
+/// item limit supplied by the caller.
+fn walk_convert_dir(root: &Path, depth: usize, exts: &[&str], limit: usize, files: &mut Vec<String>) {
     if depth >= 4 {
         // `dirs[:] = []; continue` — this level is yielded but contributes nothing.
         return;
@@ -1577,13 +1590,21 @@ fn walk_convert_dir(root: &Path, depth: usize, exts: &[&str], files: &mut Vec<St
     let mut names: Vec<String> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(root) {
         for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // `entry.is_dir()` follows symlinks, like os.walk's scandir walk.
-            if root.join(&name).is_dir() {
+            let Ok(name) = entry.file_name().into_string() else { continue; };
+            let Ok(kind) = entry.file_type() else { continue; };
+            #[cfg(windows)]
+            if entry.metadata().is_ok_and(|metadata| {
+                use std::os::windows::fs::MetadataExt;
+                metadata.file_attributes() & 0x400 != 0
+            }) {
+                continue;
+            }
+            // A selected directory only admits its own ordinary descendants.
+            if kind.is_dir() {
                 if !name.starts_with('.') && !name.starts_with('_') {
                     dirs.push(name);
                 }
-            } else {
+            } else if kind.is_file() {
                 names.push(name);
             }
         }
@@ -1594,22 +1615,27 @@ fn walk_convert_dir(root: &Path, depth: usize, exts: &[&str], files: &mut Vec<St
         let ext = crate::convert::splitext_raw(n).1.to_lowercase();
         if exts.contains(&ext.as_str()) {
             files.push(root.join(n).to_string_lossy().into_owned());
+            if files.len() == limit {
+                return;
+            }
         }
     }
-    if files.len() >= 200 {
-        return;
-    }
+    dirs.sort();
     for d in &dirs {
-        walk_convert_dir(&root.join(d), depth + 1, exts, files);
-        if files.len() >= 200 {
+        walk_convert_dir(&root.join(d), depth + 1, exts, limit, files);
+        if files.len() == limit {
             return;
         }
     }
 }
 
-/// `readmd.py:3114 Handler._api_convert_collect` — always 200, always
-/// `{'dir': p, 'files': [...]}`.
-pub(crate) fn h_convert_collect(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+/// Legacy callers receive the first 200 paths; the workbench reports overflow.
+pub(crate) fn h_convert_collect(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    const LIMIT: usize = conversion_batch::MAX_ITEMS;
+    let workbench = req.q("workbench") == Some("1");
+    if workbench {
+        conversion_batch::require_token(app, req)?;
+    }
     // `q.get('dir', [''])[0]` — query string only, and no `unquote()` on top.
     let p = req.q("dir").unwrap_or("").to_string();
     if p.is_empty() || !Path::new(&p).is_dir() {
@@ -1621,16 +1647,21 @@ pub(crate) fn h_convert_collect(_app: &Arc<App>, req: &Request) -> ApiResult<Res
         crate::convert::CONVERT_EXTS
     };
     let mut files: Vec<String> = Vec::new();
-    walk_convert_dir(Path::new(&p), 0, exts, &mut files);
-    files.truncate(200);
+    walk_convert_dir(Path::new(&p), 0, exts, LIMIT + usize::from(workbench), &mut files);
+    if files.len() > LIMIT {
+        return Ok(api_error(413, "batch_too_many_files"));
+    }
     Ok(Response::json(&json!({ "dir": p, "files": files })))
 }
 
 /// `readmd.py:3329 Handler._api_convert_progress(jid)`, where the dispatcher
 /// passes `qs.get('job', [''])[0]` (`readmd.py:1210`) — query string only, no
 /// `unquote`, no body fallback.
-pub(crate) fn h_convert_progress(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+pub(crate) fn h_convert_progress(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let jid = req.q("job").unwrap_or("");
+    if req.q("latest") == Some("1") || req.q("history") == Some("1") || conversion_batch::valid_id(jid) {
+        return conversion_batch::progress(app, req, jid);
+    }
     let guard = CONVERT_JOBS.lock().unwrap_or_else(|e| e.into_inner());
     // `if not job:` — `_CONVERT_JOBS.get()` only answers falsy when the id is
     // absent, so presence of the map entry is the whole test.
@@ -1668,7 +1699,7 @@ pub(crate) fn cancel_convert_job(id: &str) -> crate::cancel::CancelState {
 }
 
 /// `readmd.py:3342 Handler._api_convert_cancel`.
-pub(crate) fn h_convert_cancel(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+pub(crate) fn h_convert_cancel(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     // `int(self.headers.get('Content-Length', 0) or 0)` sits outside the
     // `try`, so a garbage header escapes `_route()` and `do_POST` answers with
     // the plain-text 500 (`readmd.py:1080-1085`).
@@ -1698,6 +1729,15 @@ pub(crate) fn h_convert_cancel(_app: &Arc<App>, req: &Request) -> ApiResult<Resp
             .to_string(),
         _ => String::new(),
     };
+    if conversion_batch::valid_id(&asked) {
+        return conversion_batch::cancel(app, req, &asked).map(|state| {
+            if state == crate::cancel::CancelState::Unknown {
+                api_error(404, "job_not_found")
+            } else {
+                Response::json(&json!({ "ok": true, "job": asked, "state": state.as_str() }))
+            }
+        });
+    }
     let mut guard = CONVERT_JOBS.lock().unwrap_or_else(|e| e.into_inner());
     let job = guard.as_mut().and_then(|m| m.get_mut(&asked));
     match job {
@@ -2200,15 +2240,17 @@ pub(crate) fn h_export_presentation(app: &Arc<App>, req: &Request) -> ApiResult<
     // defaults `title="ReadMD Presentation"` and `standalone=False` — the
     // in-app preview that references same-origin vendor assets instead of
     // inlining them.
-    match crate::mdexport::render_presentation_html(
+    match crate::mdexport::render_styled_presentation_html(
         &content,
         "ReadMD Presentation",
         &theme,
         &transition,
         false,
         &app.paths.assets_dir,
+        &body["options"],
     ) {
         Ok(html_out) => Ok(Response::json(&json!({ "ok": true, "html": html_out }))),
+        Err(code) if code == crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED => Ok(api_error(422, &code)),
         // `_read_vendor` is what usually fails; Python reports it through the
         // handler's `except` as `_send_api_error(500, 'presentation_export_failed')`.
         Err(_) => Ok(failed()),
@@ -2634,6 +2676,12 @@ fn save_converted(data_dir: &Path, fixed: &str, plan: &ConvertedOutputPlan) -> R
 }
 
 fn save_converted_assets(data_dir: &Path, fixed: &str, plan: &ConvertedOutputPlan, assets: &[crate::document_assets::AssetHandle], check_speech_cancel: bool) -> Result<(PathBuf, bool, bool, bool, String),String> {
+    save_converted_assets_prepared(data_dir, fixed, plan, assets, || {
+        if check_speech_cancel && crate::speech::cancelled() { Err("cancelled".into()) } else { Ok(()) }
+    }, |_, _| Ok(()))
+}
+
+fn save_converted_assets_prepared(data_dir: &Path, fixed: &str, plan: &ConvertedOutputPlan, assets: &[crate::document_assets::AssetHandle], check: impl Fn() -> Result<(), String>, prepare: impl FnOnce(&str, &Path) -> Result<(), String>) -> Result<(PathBuf, bool, bool, bool, String),String> {
     if plan.preview {return Ok((plan.target.clone(),false,false,plan.existed,fixed.into()));}
     let expected=match &plan.expected {
         Ok(expected)=>expected,
@@ -2643,11 +2691,14 @@ fn save_converted_assets(data_dir: &Path, fixed: &str, plan: &ConvertedOutputPla
     let _saving = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let gate=crate::document_operations::acquire(data_dir,std::time::Duration::from_secs(3)).map_err(|e|e.code().to_string())?;
     crate::convert::verify_md_output_plan(data_dir,expected,&gate)?;
-    if check_speech_cancel && crate::speech::cancelled() {return Err("cancelled".into());}
+    check()?;
     // Shared resources can be reused by another process. Keep materialization,
     // document publication, and this guard's commit/rollback in the same gate.
     let mut resources=crate::document_assets::materialize(fixed,expected.target(),assets)?;
-    crate::convert::write_md_output_plan_guarded(data_dir,expected,&resources.text,&gate,||!check_speech_cancel || !crate::speech::cancelled())?;
+    crate::convert::write_md_output_plan_prepared(data_dir, expected, &resources.text, &gate, |temporary| {
+        check()?;
+        prepare(&resources.text, temporary)
+    })?;
     resources.commit();
     Ok((plan.target.clone(),true,false,plan.existed,resources.text.clone()))
 }
@@ -2674,7 +2725,9 @@ fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists, pre
         Err(_) => return api_error(500, "conversion_failed"),
     };
     let (md, tstats) = crate::convert::txt_to_markdown(&text);
-    if md.trim().is_empty() {
+    let text_result = crate::convert::ConvertTriple::ok(md, if tstats.changed { "txt 智能识别" } else { "TXT" });
+    let fidelity = crate::convert::fidelity_source::report_if_current(working, &text_result, None);
+    if text_result.text.trim().is_empty() {
         return Response::json(&json!({
             "content": "",
             "name": name,
@@ -2682,11 +2735,12 @@ fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists, pre
             "source": "convert",
             "engine": "txt 智能识别",
             "note": "文件为空，没有可转换的内容",
+            "fidelity_report": fidelity,
             "note_code": crate::api_codes::CONVERT_NO_TEXT
         }));
     }
 
-    let (fixed, warns) = crate::convert::mdcheck_check(&md, &mdcheck_base_dir(working));
+    let (fixed, warns) = crate::convert::mdcheck_check(&text_result.text, &mdcheck_base_dir(working));
     let fixes = auto_fixes(&warns);
     let (out,saved,skipped,out_exists)=match save_converted(&app.paths.data_dir,&fixed,&plan) {
         Ok(result)=>result,Err(code)=>return conversion_commit_error(&code,&fixed,&plan.target),
@@ -2704,6 +2758,7 @@ fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists, pre
         "saved": saved,
         "skipped": skipped,
         "out_exists": out_exists,
+        "fidelity_report": fidelity,
         "warns": warns
     }))
 }
@@ -2733,7 +2788,8 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         let plan=plan_converted_output(&app.paths.data_dir,PathBuf::from(crate::convert::md_output_path(&ws)),mode,
             crate::convert::is_upload_path(&ws,&app.paths.data_dir),req.q("preview")==Some("1"));
         if let Some(code)=plan.admission_error() {return Ok(conversion_commit_error(code,"",&plan.target));}
-        let res = crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::for_app(app), &ws, true, req.q("language"));
+        let source_stamp = crate::convert::fidelity_source::observe(&target);
+        let res = crate::plugin_manager::convert_document_with_source(&crate::plugin_manager::Sandbox::for_app(app), &ws, true, req.q("language"), source_stamp.as_ref().map(|file| file.bytes()));
         let err = res.error.clone().unwrap_or_default();
         if !err.is_empty() && res.text.is_empty() {
             // readmd.py:3152 `if err and not text:`
@@ -2749,6 +2805,7 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             }
             return Ok(Response::json_status(422, &body));
         }
+        let fidelity = crate::convert::fidelity_source::report_if_current(&target, &res, source_stamp.as_ref());
         if res.text.trim().is_empty() {
             // readmd.py:3155 — an empty extraction is a 200, not an error.
             return Ok(Response::json(&json!({
@@ -2757,6 +2814,7 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
                 "dir": crate::convert::dirname(&p),
                 "source": "convert",
                 "engine": res.engine,
+                "fidelity_report": fidelity,
                 "note": "未提取到文字，可尝试“扫描转 MD”（OCR）",
                 "note_code": crate::api_codes::CONVERT_NO_TEXT
             })));
@@ -2782,6 +2840,7 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             "saved": saved,
             "skipped": skipped,
             "out_exists": out_exists,
+            "fidelity_report": fidelity,
             "warns": warns,
             "assets": res.assets
         })));
@@ -2820,6 +2879,9 @@ pub(crate) fn h_convert_batch(app: &Arc<App>, req: &Request) -> ApiResult<Respon
     }
     if body.get("confirm").and_then(Value::as_bool) != Some(true) {
         return Ok(api_error(400, "confirmation_required"));
+    }
+    if body.get("workbench").and_then(Value::as_bool) == Some(true) {
+        return conversion_batch::start(app, req, &body);
     }
     let mut paths: Vec<String> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -2887,6 +2949,7 @@ fn start_convert_job_with_language(app: &Arc<App>, paths: Vec<String>, overwrite
             error: None,
             error_code: None,
             error_details: None,
+            fidelity_report: None,
             done: false,
         })
         .collect();
@@ -2961,7 +3024,8 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
         // without the guard the worker thread dies and the job never finishes.
         let cancel_id=job_id.to_string();
         let check=Arc::new(move || CONVERT_JOBS.lock().unwrap_or_else(|e|e.into_inner()).as_ref().and_then(|m|m.get(&cancel_id)).is_none_or(|job|job.cancel));
-        let res = if planning_error.is_some() {crate::convert::ConvertTriple {text:String::new(),engine:String::new(),error:None,assets:Vec::new()}} else {std::panic::catch_unwind(|| crate::speech::with_cancel(check,||crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::new(data_dir), &src, true, language))).unwrap_or_else(|_| {
+        let source_stamp = if planning_error.is_none() {crate::convert::fidelity_source::observe(Path::new(&src))} else {None};
+        let res = if planning_error.is_some() {crate::convert::ConvertTriple {text:String::new(),engine:String::new(),error:None,assets:Vec::new()}} else {std::panic::catch_unwind(|| crate::speech::with_cancel(check,||crate::plugin_manager::convert_document_with_source(&crate::plugin_manager::Sandbox::new(data_dir), &src, true, language,source_stamp.as_ref().map(|file|file.bytes())))).unwrap_or_else(|_| {
             crate::convert::ConvertTriple {
                 text: String::new(),
                 engine: String::new(),
@@ -2993,6 +3057,7 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
         let mut out: Option<String> = None;
         let mut engine: Option<String> = None;
         let mut warns: Option<Vec<Value>> = None;
+        let mut fidelity_report: Option<Value> = None;
 
         if let Some(code)=planning_error {
             error=Some("输出位置不可安全写入；未发布转换结果".into()); error_code=Some(code);
@@ -3006,6 +3071,7 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
             error = Some("未提取到文字（可尝试 OCR）".to_string());
             error_code = Some("empty_output".to_string());
         } else {
+            let report = crate::convert::fidelity_source::report_if_current(Path::new(&src), &res, source_stamp.as_ref());
             let base_dir = mdcheck_base_dir(Path::new(&src));
             let (fixed, issues) = crate::convert::mdcheck_check(&res.text, &base_dir);
             let target = commit_plan.target.to_string_lossy().into_owned();
@@ -3024,7 +3090,7 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                     // The jobs mutex already linearizes cancel versus this
                     // commit; do not re-enter its speech cancellation hook.
                     match save_converted_assets(data_dir,&fixed,&commit_plan,&res.assets,false) {
-                        Ok((_,true,_,_,_))=>status="ok".into(),
+                        Ok((_,true,_,_,_))=>{status="ok".into();fidelity_report=Some(report);},
                         Ok((_,_,true,_,_))=>{status="skipped".into();error_code=Some("output_exists".into());},
                         Ok(_)=>{error=Some("写入失败：资源或文档未能保存".into());error_code=Some("write_failed".into());},
                         Err(code)=>{error=Some("输出位置已改变或无法写入；未发布转换结果".into());error_code=Some(code);},
@@ -3046,6 +3112,7 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                     item.out = out;
                     item.engine = engine;
                     item.warns = warns;
+                    item.fidelity_report = fidelity_report;
                     item.done = true;
                 }
             }
@@ -4675,10 +4742,12 @@ mod tests {
         assert_eq!(
             key_set(&payload),
             vec![
-                "content", "dir", "engine", "fixes", "name", "out", "out_exists", "path", "saved",
+                "content", "dir", "engine", "fidelity_report", "fixes", "name", "out", "out_exists", "path", "saved",
                 "skipped", "source", "warns"
             ]
         );
+        assert_eq!(payload["fidelity_report"]["format"], "txt");
+        assert_eq!(payload["fidelity_report"]["extraction"]["status"], "complete");
         let engine = payload["engine"].as_str().unwrap_or_default();
         assert!(
             engine == "TXT" || engine == "txt 智能识别",
@@ -4721,12 +4790,12 @@ mod tests {
         let _env = env_guard();
         let app = test_app("convert-empty-txt");
         let file = write_file(&scratch_dir("convert-empty-txt"), "empty.txt", b"");
-        let (status, payload, _) = convert_call(&app, Some(file.to_str().unwrap()));
+        let (status, mut payload, _) = convert_call(&app, Some(file.to_str().unwrap()));
         assert_eq!(status, 200, "{payload}");
-        assert_eq!(
-            key_set(&payload),
-            vec!["content", "dir", "engine", "name", "note", "note_code", "source"]
-        );
+        let report = payload.as_object_mut().unwrap().remove("fidelity_report").unwrap();
+        assert_eq!(report["format"], "txt");
+        assert_eq!(report["extraction"]["status"], "empty");
+        assert_eq!(report["extraction"]["characters"], 0);
         assert_eq!(
             payload,
             json!({
@@ -4803,6 +4872,7 @@ mod tests {
                 error: None,
                 error_code: None,
                 error_details: None,
+                fidelity_report: None,
                 done: true,
             },
             ConvertJobItem {
@@ -4815,6 +4885,7 @@ mod tests {
                 error: None,
                 error_code: None,
                 error_details: None,
+                fidelity_report: None,
                 done: false,
             },
         ];

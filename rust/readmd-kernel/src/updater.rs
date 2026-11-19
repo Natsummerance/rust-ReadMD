@@ -1322,13 +1322,8 @@ pub fn real_sleep(period: Duration) {
 pub fn live_sha_manifest(timeout: Duration) -> impl FnMut(&str) -> Option<String> {
     move |url: &str| {
         let mut sleeper = real_sleep;
-        for target in download_candidates(url, false) {
-            if let Ok(Some(text)) = fetch_text(&target, &mut |target| redirecting_reply_via_ureq(target, timeout), &mut sleeper) {
-                if !text.lines().any(|line| manifest_line_parts(line).is_some()) { continue; }
-                return Some(text);
-            }
-        }
-        None
+        let text = fetch_text(url, &mut |target| redirecting_reply_via_ureq(target, timeout), &mut sleeper).ok()??;
+        text.lines().any(|line| manifest_line_parts(line).is_some()).then_some(text)
     }
 }
 
@@ -1346,15 +1341,11 @@ pub fn check_update_live(current_version: &str, timeout: Duration) -> Value {
         to_reply(update_agent(remaining, redirects).get(url).call())
     };
     let mut sha_manifest = |url: &str| {
-        for target in download_candidates(url, false) {
-            if let Ok(reply) = fetch(&target, 5) {
-                if reply.status == 200 {
-                    let text = String::from_utf8_lossy(&reply.body).into_owned();
-                    if text.lines().any(|line| manifest_line_parts(line).is_some()) { return Some(text); }
-                }
-            }
-        }
-        None
+        // A mirror may transport a package, but never supply its trusted digest.
+        let reply = fetch(url, 5).ok()?;
+        if reply.status != 200 { return None; }
+        let text = String::from_utf8_lossy(&reply.body).into_owned();
+        text.lines().any(|line| manifest_line_parts(line).is_some()).then_some(text)
     };
     check_update(
         current_version,

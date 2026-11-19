@@ -11,7 +11,11 @@ const run=(program,args,options={})=>execFileSync(program,args,{maxBuffer:256*10
 export function inspectPlatformPackages({directory,sourceCommit,buildRunId,scratch}) {
   if(!/^[a-f\d]{40}$/.test(sourceCommit)||!Number.isSafeInteger(buildRunId))throw Error('Bound source and build run required');
   const original=file=>run('git',['show',sourceCommit+':'+file],{cwd:root});
-  const assets=['assets/index.html','assets/readmd.boot.js','assets/js/core/lifecycle.js'];
+  const assets=[
+    'assets/index.html','assets/readmd.boot.js','assets/js/core/lifecycle.js',
+    'assets/css/shell.css','assets/css/dialogs.css','assets/css/reader.css',
+    'assets/providers/provider-catalog.json','assets/i18n/zh-CN.json',
+  ];
   const sourceBytes=new Map(assets.map(file=>[file,original(file)]));
   const expected=new Map(assets.map(file=>[file,sha(sourceBytes.get(file))]));
   const packages=PLATFORM_NAMES.map(name=>{

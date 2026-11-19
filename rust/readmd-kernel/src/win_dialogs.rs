@@ -333,7 +333,7 @@ impl DialogShape {
         match self {
             DialogShape::ChooseFolder => None,
             DialogShape::ChooseFile => {
-                Some("Markdown 文件 (*.md;*.markdown)|*.md;*.markdown|所有文件 (*.*)|*.*")
+                Some("文稿 (*.md;*.markdown;*.mdown;*.mkd;*.mdx;*.txt;*.pdf;*.docx;*.pptx)|*.md;*.markdown;*.mdown;*.mkd;*.mdx;*.txt;*.pdf;*.docx;*.pptx|所有文件 (*.*)|*.*")
             }
             DialogShape::ChooseAnyFile => Some("所有文件 (*.*)|*.*"),
             DialogShape::ChooseManyFiles => Some("所有支持的文件 (*.*)|*.*"),
@@ -353,8 +353,11 @@ impl DialogShape {
             "pdf" => Some(("pdf", "PDF 文档 (*.pdf)|*.pdf|所有文件 (*.*)|*.*")),
             "docx" => Some(("docx", "Word 文档 (*.docx)|*.docx|所有文件 (*.*)|*.*")),
             "pptx" => Some(("pptx", "PowerPoint (*.pptx)|*.pptx|所有文件 (*.*)|*.*")),
+            "png" => Some(("png", "PNG (*.png)|*.png|所有文件 (*.*)|*.*")),
+            "png-pages" => Some(("zip", "PNG ZIP (*.zip)|*.zip|所有文件 (*.*)|*.*")),
             "epub" => Some(("epub", "EPUB 电子书 (*.epub)|*.epub|所有文件 (*.*)|*.*")),
             "html" => Some(("html", "HTML 网页 (*.html)|*.html|所有文件 (*.*)|*.*")),
+            "vtt" => Some(("vtt", "WebVTT 字幕 (*.vtt)|*.vtt")),
             "tex" => Some(("tex", "LaTeX 文档 (*.tex)|*.tex|所有文件 (*.*)|*.*")),
             "presentation" => Some(("html", "演示文稿 HTML (*.html)|*.html|所有文件 (*.*)|*.*")),
             _ => None,
@@ -1223,7 +1226,8 @@ mod tests {
         assert_eq!(DialogShape::Export.title(), "导出文档");
 
         assert_eq!(DialogShape::ChooseFolder.filter_text(), None);
-        assert_eq!(DialogShape::ChooseFile.filter_text(), Some(CHOOSE_FILE_FILTER));
+        let reader = parse_win_filter(DialogShape::ChooseFile.filter_text().unwrap());
+        assert_eq!(reader[0].patterns, "*.md;*.markdown;*.mdown;*.mkd;*.mdx;*.txt;*.pdf;*.docx;*.pptx");
         assert_eq!(DialogShape::ChooseAnyFile.filter_text(), Some("所有文件 (*.*)|*.*"));
         assert_eq!(
             DialogShape::ChooseManyFiles.filter_text(),

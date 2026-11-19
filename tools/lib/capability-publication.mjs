@@ -15,10 +15,34 @@ export function validateCatalog(catalog) {
     const identity = p.id + ':' + p.platform;
     if (identities.has(identity)) throw Error('Duplicate capability/platform');
     identities.add(identity);
+    if (p.delivery === 'bundled') {
+      if(p.id!=='pdfium'||p.version!=='7881'||!['windows-x64','linux-x64','linux-arm64','macos-x64','macos-arm64'].includes(p.platform)
+          ||(p.format!==undefined&&p.format!=='json-v1')||p.url!==undefined)throw Error('Invalid bundled PDFium identity or source');
+      continue;
+    }
+    if(p.delivery!==undefined)throw Error('Unsupported online capability delivery');
     const name = `readmd-${p.id}-${p.version}-${p.platform}.readmd-pack`;
     if (p.url !== `https://github.com/${repository}/releases/download/${catalog.release}/${name}`) throw Error('Capability URL differs from owned immutable release');
   }
+  if (catalog.offlinePacks !== undefined) {
+    if (!Array.isArray(catalog.offlinePacks)) throw Error('Invalid offline capability catalog');
+    for (const p of catalog.offlinePacks) {
+      const identity=p.id+':'+p.platform;
+      if(!['node','whisper','media-ffmpeg','typst'].includes(p.id)||p.delivery!=='offline-only'||p.format!=='stream-v2'||p.url!==undefined||!safe(p.version)||!safe(p.platform)||!digest(p.sha256)||!digest(p.manifestSha256)||!Number.isSafeInteger(p.downloadBytes)||p.downloadBytes<=0||p.downloadBytes>2*1073741824||!Number.isSafeInteger(p.installedBytes)||p.installedBytes<=0||identities.has(identity))throw Error('Invalid offline capability identity or size');
+      identities.add(identity);
+    }
+  }
   return catalog;
+}
+
+// A development candidate may carry a bundled PDFium and reviewed offline
+// additions. Neither belongs in an online release's catalog or upload list.
+export function onlineReleaseCatalog(catalog) {
+  validateCatalog(catalog);
+  const published={...catalog,packs:catalog.packs.filter(entry=>entry.delivery!=='bundled')};
+  delete published.offlinePacks;
+  if(!published.packs.length)throw Error('No online release packs');
+  return published;
 }
 
 export function verifyLocalPack(bytes, lock, entry) {

@@ -55,7 +55,7 @@ pub fn parse(source: &str) -> Result<Value> {
     if value["info"]["title"].as_str().is_none()
         || value["info"]["version"].as_str().is_none()
         || !value["paths"].is_object()
-            && !(version.starts_with("3.1.") && value["webhooks"].is_object())
+            && !(version.starts_with("3.1.") && (value["webhooks"].is_object() || value["components"].is_object()))
     {
         return Err(INVALID);
     }
@@ -433,6 +433,7 @@ enum NodeKind {
     Document,
     Components,
     PathItems,
+    NamedPathItems,
     PathItem,
     Operation,
     Parameters,
@@ -481,7 +482,7 @@ impl NodeKind {
         if key.starts_with("x-")
             && !matches!(
                 self,
-                Schemas
+                NamedPathItems | Schemas
                     | Parameters
                     | RequestBodies
                     | Headers
@@ -496,7 +497,8 @@ impl NodeKind {
             return Opaque;
         }
         match (self, key) {
-            (Document, "paths" | "webhooks") => PathItems,
+            (Document, "paths") => PathItems,
+            (Document, "webhooks") => NamedPathItems,
             (Document, "components") => Components,
             (Components, "schemas") => Schemas,
             (Components, "parameters") => Parameters,
@@ -507,8 +509,8 @@ impl NodeKind {
             (Components, "callbacks") => Callbacks,
             (Components, "securitySchemes") => SecuritySchemes,
             (Components, "links") => Links,
-            (Components, "pathItems") => PathItems,
-            (PathItems, _) => PathItem,
+            (Components, "pathItems") => NamedPathItems,
+            (PathItems | NamedPathItems, _) => PathItem,
             (
                 PathItem,
                 "get" | "post" | "put" | "patch" | "delete" | "head" | "options" | "trace",
@@ -592,6 +594,22 @@ fn uri_decode(raw: &str) -> Option<String> {
         .decode_utf8()
         .ok()
         .map(|s| s.into_owned())
+}
+
+fn pointer_fragment(raw: &str) -> Option<String> {
+    let fragment = uri_decode(raw)?;
+    if !fragment.is_empty() && !fragment.starts_with('/') {
+        return None;
+    }
+    for token in fragment.split('/') {
+        let mut chars = token.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '~' && !matches!(chars.next(), Some('0' | '1')) {
+                return None;
+            }
+        }
+    }
+    Some(fragment)
 }
 
 impl LocalReferences {
@@ -686,18 +704,7 @@ impl LocalReferences {
     }
     fn target(&self, source: &Path, raw: &str) -> Option<(PathBuf, String)> {
         let (file, fragment) = raw.split_once('#').unwrap_or((raw, ""));
-        let fragment = uri_decode(fragment)?;
-        if !fragment.is_empty() && !fragment.starts_with('/') {
-            return None;
-        }
-        for token in fragment.split('/') {
-            let mut chars = token.chars();
-            while let Some(ch) = chars.next() {
-                if ch == '~' && !matches!(chars.next(), Some('0' | '1')) {
-                    return None;
-                }
-            }
-        }
+        let fragment = pointer_fragment(fragment)?;
         let file = uri_decode(file)?;
         if file.is_empty() {
             return Some((source.to_path_buf(), fragment));
@@ -1048,245 +1055,7 @@ struct Projection<'a> {
     maps: Vec<Value>,
     operations: BTreeMap<String, String>,
 }
-impl Projection<'_> {
-    fn warning(&mut self, code: &str, pointer: &str) {
-        if self.warnings.len() < 256 {
-            self.warnings.push(json!({"code":code,"pointer":pointer}));
-        }
-    }
-    fn resolve(&mut self, value: &Value, location: &str) -> Value {
-        let mut value = value.clone();
-        let mut seen = HashSet::new();
-        for _ in 0..16 {
-            let Some(target) = value["$ref"].as_str().map(str::to_owned) else {
-                return value;
-            };
-            if !target.starts_with("#/") {
-                self.warning("external_reference", location);
-                return value;
-            }
-            if !seen.insert(target.clone()) {
-                self.warning("recursive_reference", location);
-                return value;
-            }
-            let decoded = percent_encoding::percent_decode_str(&target[1..]).decode_utf8();
-            let Some(resolved) = decoded.ok().and_then(|p| self.root.pointer(&p)).cloned() else {
-                self.warning("missing_reference", location);
-                return value;
-            };
-            if self.root["openapi"]
-                .as_str()
-                .unwrap_or("")
-                .starts_with("3.1.")
-            {
-                let siblings = value.as_object().cloned().unwrap_or_default();
-                value = resolved;
-                if let Some(object) = value.as_object_mut() {
-                    for key in ["summary", "description"] {
-                        if let Some(v) = siblings.get(key) {
-                            object.insert(key.into(), v.clone());
-                        }
-                    }
-                }
-            } else {
-                value = resolved;
-            }
-        }
-        self.warning("recursive_reference", location);
-        value
-    }
-    fn section(&self, key: &str, value: &Value) -> String {
-        if value.is_null()
-            || value.as_array().is_some_and(Vec::is_empty)
-            || value.as_object().is_some_and(Map::is_empty)
-        {
-            return String::new();
-        }
-        format!("#### {}\n\n{}", label(self.labels, key), fenced(value))
-    }
-    fn generate(&mut self) -> Result<String> {
-        let mut out = format!(
-            "# {}\n\n{} · {}\n\n",
-            escape(self.root["info"]["title"].as_str().unwrap_or("")),
-            escape(self.root["info"]["version"].as_str().unwrap_or("")),
-            escape(self.root["openapi"].as_str().unwrap_or(""))
-        );
-        if let Some(description) = self.root["info"]["description"].as_str() {
-            out.push_str(&escape(description));
-            out.push_str("\n\n");
-        }
-        out.push_str(&self.section("openapi.servers", &self.root["servers"]));
-        let mut paths: Vec<_> = self.root["paths"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .collect();
-        paths.sort_by_key(|(p, _)| *p);
-        let mut count = 0;
-        for (path, item) in paths {
-            if path.starts_with("x-") {
-                continue;
-            }
-            if !path.starts_with('/') {
-                return Err(INVALID);
-            }
-            let path_pointer = format!("/paths/{}", pointer(path));
-            let item = self.resolve(item, &path_pointer);
-            for method in [
-                "get", "post", "put", "patch", "delete", "head", "options", "trace",
-            ] {
-                if crate::speech::cancelled() {
-                    return Err("cancelled");
-                }
-                let Some(operation) = item.get(method) else {
-                    continue;
-                };
-                if !operation.is_object() {
-                    return Err(INVALID);
-                }
-                count += 1;
-                if count > 2048 {
-                    return Err(BUDGET);
-                }
-                let location = format!("{path_pointer}/{method}");
-                let start_byte = out.len();
-                let start = out.encode_utf16().count();
-                let summary = operation["summary"].as_str().unwrap_or("");
-                out.push_str(&format!(
-                    "## {} {}{}\n\n",
-                    method.to_uppercase(),
-                    code(path),
-                    if summary.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" — {}", cell(summary))
-                    }
-                ));
-                if let Some(id) = operation["operationId"].as_str() {
-                    out.push_str(&format!("{}\n\n", code(id)));
-                }
-                if operation["deprecated"] == true {
-                    out.push_str(&format!(
-                        "**{}**\n\n",
-                        label(self.labels, "openapi.deprecated")
-                    ));
-                }
-                if let Some(description) = operation["description"].as_str() {
-                    out.push_str(&escape(description));
-                    out.push_str("\n\n");
-                }
-                let servers = operation.get("servers").or_else(|| item.get("servers"));
-                if let Some(servers) = servers {
-                    out.push_str(&self.section("openapi.servers", servers));
-                }
-                let mut parameters: BTreeMap<(String, String), Value> = BTreeMap::new();
-                for group in [&item["parameters"], &operation["parameters"]] {
-                    if !group.is_null() && !group.is_array() {
-                        return Err(INVALID);
-                    }
-                    for raw in group.as_array().into_iter().flatten() {
-                        let p = self.resolve(raw, &format!("{location}/parameters"));
-                        let (Some(name), Some(position)) = (p["name"].as_str(), p["in"].as_str())
-                        else {
-                            self.warning("missing_reference", &location);
-                            continue;
-                        };
-                        parameters.insert((position.into(), name.into()), p);
-                    }
-                }
-                if !parameters.is_empty() {
-                    out.push_str(&format!(
-                        "### {}\n\n| {} | {} | {} | {} | {} |\n| --- | --- | --- | --- | --- |\n",
-                        label(self.labels, "openapi.parameters"),
-                        label(self.labels, "openapi.name"),
-                        label(self.labels, "openapi.location"),
-                        label(self.labels, "openapi.required"),
-                        label(self.labels, "openapi.schema"),
-                        label(self.labels, "openapi.description")
-                    ));
-                    for ((position, name), p) in parameters {
-                        out.push_str(&format!(
-                            "| {} | {} | {} | {} | {} |\n",
-                            code(&name),
-                            code(&position),
-                            label(
-                                self.labels,
-                                if position == "path" || p["required"] == true {
-                                    "openapi.yes"
-                                } else {
-                                    "openapi.no"
-                                }
-                            ),
-                            cell(&serde_json::to_string(&p["schema"]).unwrap_or_default()),
-                            cell(p["description"].as_str().unwrap_or(""))
-                        ));
-                        // Preserve serialization, examples and content properties too.
-                        if p.get("content").is_some()
-                            || p.get("examples").is_some()
-                            || p.get("style").is_some()
-                        {
-                            out.push_str("\n");
-                            out.push_str(&fenced(&p));
-                        }
-                    }
-                    out.push('\n');
-                }
-                let body = self.resolve(
-                    &operation["requestBody"],
-                    &format!("{location}/requestBody"),
-                );
-                out.push_str(&self.section("openapi.requestBody", &body));
-                if !operation["responses"].is_object() {
-                    return Err(INVALID);
-                }
-                let mut responses = Map::new();
-                for (status, response) in operation["responses"].as_object().unwrap() {
-                    responses.insert(
-                        status.clone(),
-                        self.resolve(
-                            response,
-                            &format!("{location}/responses/{}", pointer(status)),
-                        ),
-                    );
-                }
-                out.push_str(&self.section("openapi.responses", &Value::Object(responses)));
-                let security = operation.get("security").unwrap_or(&self.root["security"]);
-                // Explicit [] clears inherited security; keep this visible.
-                if !security.is_null() {
-                    out.push_str(&format!(
-                        "#### {}\n\n{}",
-                        label(self.labels, "openapi.security"),
-                        fenced(security)
-                    ));
-                }
-                for key in ["callbacks", "externalDocs", "tags"] {
-                    if let Some(v) = operation.get(key) {
-                        out.push_str(&self.section(&format!("openapi.{key}"), v));
-                    }
-                }
-                self.operations.insert(
-                    location.clone(),
-                    document_transaction::revision(&out[start_byte..]),
-                );
-                self.maps.push(json!({"pointer":location,"method":method,"path":path,"operation_id":operation["operationId"],"from":start,"to":out.encode_utf16().count()}));
-                if out.len() > MAX_OUTPUT {
-                    return Err(BUDGET);
-                }
-            }
-        }
-        for (key, label_key) in [
-            ("schemas", "openapi.schemas"),
-            ("securitySchemes", "openapi.securitySchemes"),
-        ] {
-            out.push_str(&self.section(label_key, &self.root["components"][key]));
-        }
-        out.push_str(&self.section("openapi.webhooks", &self.root["webhooks"]));
-        if out.len() > MAX_OUTPUT {
-            return Err(BUDGET);
-        }
-        Ok(out)
-    }
-}
+mod projection;
 
 pub fn project(
     source: &str,
@@ -1500,9 +1269,13 @@ fn project_snapshot(
             entry[key] = json!(position + map_offset + newline_offset);
         }
         entry["source"] = json!(source_name);
-        if let Some(location) = entry["pointer"].as_str() {
-            // Keep the original root call site for existing consumers and add
-            // the actual definition location for cross-file Path Items.
+        if let Some(location) = entry["definition"]["pointer"]
+            .as_str()
+            .or_else(|| entry["pointer"].as_str())
+            .map(str::to_owned)
+        {
+            // Keep the call site while following local Path Item aliases
+            // through any cross-file definition provenance.
             if let Some(origin) = snapshot
                 .reference_map
                 .iter()
@@ -1518,6 +1291,8 @@ fn project_snapshot(
             {
                 let pointer = origin["pointer"].as_str().unwrap();
                 entry["definition"] = json!({"source":origin["source"],"pointer":format!("{}{}",origin["target"].as_str().unwrap_or(""),&location[pointer.len()..])});
+            } else if entry.get("definition").is_some() {
+                entry["definition"]["source"] = json!(source_name);
             }
         }
     }
@@ -1704,6 +1479,27 @@ mod tests {
         assert_eq!(updated["result"]["content"], crlf);
     }
     #[test]
+    fn projection_keeps_source_metadata_extensions_and_unresolved_parameters_in_their_operation() {
+        let mut source: Value = serde_json::from_str(&fixture()).unwrap();
+        source["info"]["license"] = json!({"name":"Test License","identifier":"MIT"});
+        source["jsonSchemaDialect"] = json!("urn:example:schema");
+        source["paths"]["x-trace"] = json!(["X-Correlation-ID"]);
+        source["components"]["x-ui"] = json!({"sample":"opaque-value"});
+        source["paths"]["/notes/{id}"]["get"]["x-hook"] = json!({"example":"literal-code"});
+        source["paths"]["/notes/{id}"]["get"]["parameters"] = json!([{"$ref":"#/components/parameters/missing"}]);
+        let result = run(&source.to_string(),"");
+        let text = result["result"]["content"].as_str().unwrap();
+        for needle in ["Test License","urn:example:schema","X-Correlation-ID","opaque-value"] {
+            assert!(text.contains(needle),"{needle}");
+        }
+        let entry = result["source_map"].as_array().unwrap().iter().find(|m| m["method"]=="get").unwrap();
+        let byte = |key:&str| document_transaction::byte_offset(text,entry[key].as_u64().unwrap() as usize).unwrap();
+        let op = &text[byte("from")..byte("to")];
+        assert!(op.contains("literal-code") && op.contains("#/components/parameters/missing"));
+        assert!(result["warnings"].as_array().unwrap().iter().any(|w| w["pointer"]=="/paths/~1notes~1{id}/get/parameters/0"));
+        assert_eq!(run(&source.to_string(),text)["result"]["content"],text);
+    }
+    #[test]
     fn inherited_parameters_references_and_public_security() {
         let result = run(&fixture(), "");
         let content = result["result"]["content"].as_str().unwrap();
@@ -1725,6 +1521,22 @@ mod tests {
             "",
         );
         assert_eq!(result["warnings"][0]["code"], "external_reference");
+    }
+    #[test]
+    fn incoming_webhooks_and_unreferenced_components_survive_projection() {
+        let mut source=json!({"openapi":"3.1.1","info":{"title":"示例","version":"1"},"components":{"examples":{"unused":{"value":"keep example"}}}});
+        assert!(run(&source.to_string(),"")["result"]["content"].as_str().unwrap().contains("keep example"));
+        source["webhooks"]=json!({"收件/~😀":{"summary":"Incoming event","post":{"operationId":"notify"}},"draft":{"description":"Design notes"}});
+        let result=run(&source.to_string(),"😀");
+        let content=result["result"]["content"].as_str().unwrap();
+        assert!(content.contains("Incoming event") && content.contains("Design notes"));
+        let entry=&result["source_map"][0];
+        assert_eq!(entry["pointer"],"/webhooks/收件~1~0😀/post");
+        let offset=document_transaction::byte_offset(content,entry["from"].as_u64().unwrap() as usize).unwrap();
+        assert!(content[offset..].starts_with("## "));
+        source["openapi"]=json!("3.0.4");
+        source["paths"]=json!({"/notify":{"post":{}}});
+        assert!(project(&source.to_string(),"api.json","",&document_transaction::revision(""),&json!({})).is_err());
     }
     #[test]
     fn yaml_30_31_aliases_duplicates_tags_and_limits() {

@@ -1,0 +1,151 @@
+{
+  "schema": 2,
+  "id": "whisper",
+  "version": "1.9.5",
+  "platform": "macos-arm64",
+  "files": [
+    {
+      "path": "bin/whisper-cli",
+      "size": 2263800,
+      "sha256": "bc1d9288d95858f05728e88bd25eb8ce4590e3dba982d3c3404f4f0f4c75d33a",
+      "executable": true,
+      "compressedSize": 960586
+    },
+    {
+      "path": "models/ggml-base-q5_1.bin",
+      "size": 59707625,
+      "sha256": "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
+      "executable": false,
+      "compressedSize": 56713209
+    },
+    {
+      "path": "LICENSE",
+      "size": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "executable": false,
+      "compressedSize": 655
+    },
+    {
+      "path": "SOURCE",
+      "size": 809,
+      "sha256": "91d4e756df0a9c8bd318522309e767c5cfcd762d7f572259a054dea0fda49594",
+      "executable": false,
+      "compressedSize": 487
+    },
+    {
+      "path": "NOTICE",
+      "size": 255,
+      "sha256": "68aa12b57a792cba0f6674fe48098dd8ab2f3a2e7c5e2f87c4d3ff8a83bd8c39",
+      "executable": false,
+      "compressedSize": 209
+    },
+    {
+      "path": "licenses/WHISPER-MODEL.txt",
+      "size": 1608,
+      "sha256": "951f472818d27001f889f5c69214a49e402cf019e83d2cbc3cd1e41578276334",
+      "executable": false,
+      "compressedSize": 970
+    },
+    {
+      "path": "licenses/GGML.txt",
+      "size": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "executable": false,
+      "compressedSize": 655
+    },
+    {
+      "path": "licenses/MINIAUDIO.txt",
+      "size": 2676,
+      "sha256": "9707780afcf0fbc4e77091697877f8c5a708acb4aa2aecda257435c25d4f42d6",
+      "executable": false,
+      "compressedSize": 1134
+    },
+    {
+      "path": "licenses/STB-VORBIS.txt",
+      "size": 2668,
+      "sha256": "b399090912ef07b103c95b9cb62beb1d855e8340444526ba0af0e9d479718c6a",
+      "executable": false,
+      "compressedSize": 1160
+    }
+  ],
+  "review": {
+    "license": "MIT (whisper.cpp, GGML, OpenAI Whisper model, stb_vorbis); MIT-0 (miniaudio)",
+    "minimumPlatform": "macOS 11.0 or later; Apple arm64",
+    "portable": true,
+    "redistributionApproved": true,
+    "sourceDeliveryReviewed": true,
+    "sources": [
+      {
+        "component": "whisper.cpp and bundled GGML source",
+        "url": "https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/d1be6fde11ac6e0407606b4e42fe72d34add8037",
+        "sha256": "645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4"
+      },
+      {
+        "component": "Whisper ggml-base-q5_1 model",
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin",
+        "sha256": "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898"
+      },
+      {
+        "component": "OpenAI Whisper model license",
+        "url": "https://raw.githubusercontent.com/openai/whisper/86098128c0b4f24f0e2aa2994de830614b474227/LICENSE",
+        "sha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d"
+      }
+    ],
+    "buildConfiguration": [
+      "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+      "cmake version 4.4.5",
+      "-S",
+      "../source",
+      "-B",
+      ".",
+      "-G",
+      "Unix Makefiles",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DCMAKE_MAKE_PROGRAM=/usr/bin/make",
+      "-DCMAKE_C_COMPILER=/usr/bin/clang",
+      "-DCMAKE_CXX_COMPILER=/usr/bin/clang++",
+      "-DCMAKE_OSX_ARCHITECTURES=arm64",
+      "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
+      "-DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF",
+      "-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF",
+      "-DFETCHCONTENT_FULLY_DISCONNECTED=ON",
+      "-DBUILD_SHARED_LIBS=OFF",
+      "-DWHISPER_BUILD_IS_DEV=OFF",
+      "-DWHISPER_BUILD_TESTS=OFF",
+      "-DWHISPER_BUILD_SERVER=OFF",
+      "-DWHISPER_BUILD_EXAMPLES=ON",
+      "-DWHISPER_BUILD_NUMBER=0",
+      "-DWHISPER_BUILD_COMMIT=d1be6fde",
+      "-DWHISPER_CURL=OFF",
+      "-DWHISPER_SDL2=OFF",
+      "-DWHISPER_COREML=OFF",
+      "-DWHISPER_OPENVINO=OFF",
+      "-DWHISPER_USE_SYSTEM_GGML=OFF",
+      "-DWHISPER_USE_SYSTEM_LLAMA=OFF",
+      "-DGGML_NATIVE=OFF",
+      "-DGGML_CPU_ARM_ARCH=armv8-a",
+      "-DGGML_BACKEND_DL=OFF",
+      "-DGGML_CCACHE=OFF",
+      "-DGGML_OPENMP=OFF",
+      "-DGGML_ACCELERATE=OFF",
+      "-DGGML_BLAS=OFF",
+      "-DGGML_METAL=OFF",
+      "-DGGML_CUDA=OFF",
+      "-DGGML_VULKAN=OFF",
+      "-DGGML_SYCL=OFF",
+      "-DGGML_RPC=OFF",
+      "-DGGML_LLAMAFILE=OFF",
+      "-DGGML_CPU_KLEIDIAI=OFF",
+      "-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG -ffile-prefix-map=/readmd/whisper-build=/readmd/whisper-build",
+      "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -ffile-prefix-map=/readmd/whisper-build=/readmd/whisper-build",
+      "cmake --build . --target whisper-cli --parallel 2"
+    ],
+    "inputLockSha256": "71a9fa027f09d4cbb2bb211d3718e85662de97cfdbe7d322eef7e3cba3cf38e8",
+    "compression": {
+      "node": "24.22.1",
+      "zlib": "1.2.12",
+      "gzipOS": 255
+    }
+  }
+}

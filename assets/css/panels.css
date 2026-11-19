@@ -1350,6 +1350,9 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
 #convert-box { width: min(680px, calc(100vw - 32px)); box-sizing: border-box; max-height: calc(100dvh - 32px); }
 #convert-box .convert-body { overflow: auto; overscroll-behavior: contain; }
 #convert-box .convert-options { margin: 0; }
+.convert-output-settings { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+#convert-output-parent { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; color: var(--fg2); }
+#batch-history { min-width: 0; flex: 1 1 160px; }
 #convert-box .panel-options-body { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; }
 #convert-box .convert-speech-setting { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 #convert-box .convert-list:empty { display: none; }
@@ -1362,6 +1365,8 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
 #convert-status { min-width: 0; overflow-wrap: anywhere; }
 .batch-item { flex-wrap: wrap; row-gap: var(--space-1); }
 .batch-name { flex: 1 1 140px; }
+.batch-output-name { display: block; white-space: normal; color: var(--fg2); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.batch-output-name:empty { display: none; }
 .batch-state { white-space: normal; overflow-wrap: anywhere; }
 
 /* Sharing: stable header/actions, a clear QR empty state and a real copy link. */
@@ -1527,6 +1532,7 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
 .pdf-context{padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0}
 .pdf-context[hidden]{display:none}
 .pdf-context textarea{width:100%;box-sizing:border-box;resize:vertical;max-height:120px;min-height:52px;background:transparent;color:inherit;border:0;padding:6px;font:inherit}
+.pdf-context>select{width:100%;min-height:44px;box-sizing:border-box;font:inherit;margin-bottom:8px}
 .pdf-context-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pdf-context-actions label{margin-inline-end:auto;display:flex;align-items:center;min-height:44px}
 .pdf-context-actions .tb-btn{min-height:44px}
@@ -1775,3 +1781,23 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
 .document-refactor-actions { display:flex; justify-content:flex-end; gap:8px; }
 .document-refactor-actions button { min-width:72px; min-height:44px; }
 /* READMD_DOCUMENT_REFACTOR_END */
+
+#export-preview-action { align-self: flex-start; }
+#export-preview-action[hidden], #export-preview-full-action[hidden] { display: none; }
+
+/* Read-only structural extraction receipts, shared by single and batch results. */
+.conversion-fidelity { flex: 1 0 100%; min-width: 0; color: var(--fg); cursor: default; }
+.conversion-fidelity > summary { cursor: pointer; padding-block: var(--space-1); color: var(--accent); font-size: var(--text-sm); }
+.conversion-fidelity-body { min-width: 0; font-size: var(--text-sm); line-height: 1.6; }
+.conversion-fidelity-body > p { margin: var(--space-2) 0; color: var(--fg2); }
+.conversion-fidelity-body ul { padding-inline-start: var(--space-4); margin-block: var(--space-2); }
+.conversion-fidelity-body li { padding-block: 3px; overflow-wrap: anywhere; }
+.conversion-fidelity-state { margin-inline-start: var(--space-3); color: var(--fg2); }
+.conversion-fidelity-count { margin-inline-start: var(--space-2); font-variant-numeric: tabular-nums; }
+.conversion-fidelity-warning .conversion-fidelity-state { color: var(--warning, var(--fg2)); }
+#conversion-fidelity-modal { position: fixed; inset: 0; display: grid; place-items: center; z-index: var(--z-modal); }
+#conversion-fidelity-modal.hidden { display: none; }
+.conversion-fidelity-box { display: flex; flex-direction: column; width: min(42rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); background: var(--bg2); color: var(--fg); }
+.conversion-fidelity-box .modal-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex: none; }
+#conversion-fidelity-source { padding-inline: var(--space-5); margin-block: var(--space-2) 0; overflow-wrap: anywhere; }
+#conversion-fidelity-content { min-height: 0; overflow: auto; padding: 0 var(--space-5) var(--space-4); }

@@ -71,6 +71,321 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 ;
 'use strict';
 
+// A matched typographic quote can be wrapped in ** without spaces in CJK
+// prose. Use Marked's inline mask so escaped characters, links, and code
+// cannot supply the closing quote. The token's raw slice stays byte-for-byte.
+(function (markdown) {
+  if (!markdown?.use || !markdown.Tokenizer) return;
+  const quotes = new Map([['“','”'], ['‘','’'], ['「','」'], ['『','』'], ['《','》'], ['〈','〉'], ['【','】'], ['（','）']]);
+  const eastAsian = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  markdown.use({ tokenizer: {
+    emStrong(src, mask, previous) {
+      const open = src.startsWith('**') && src[2];
+      const close = quotes.get(open);
+      if (!close) return false;
+      const visible = mask.slice(-src.length);
+      if (!visible.startsWith('**' + open)) return false;
+      let depth = 1;
+      for (let i = 3; i < Math.min(visible.length, 4096); i++) {
+        if (visible[i] === '\n' || visible[i] === '\r') break;
+        if (visible[i] === open) depth++;
+        if (visible[i] !== close || --depth !== 0) continue;
+        const end = i + 3;
+        if (visible.slice(i + 1, end) !== '**' || visible[end] === '*' ||
+            !eastAsian.test(previous || '') && !eastAsian.test(String.fromCodePoint(src.codePointAt(end) ?? 0))) break;
+        const text = src.slice(2, i + 1);
+        return { type: 'strong', raw: src.slice(0, end), text, tokens: this.lexer.inlineTokens(text) };
+      }
+      return false;
+    },
+  } });
+})(globalThis.marked);
+
+;
+'use strict';
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory();
+  else root.ReadMDTableAttributes = factory();
+})(typeof window !== 'undefined' ? window : null, () => {
+  const maxColumns = 16, maxRows = 32;
+  const dimensions = Object.freeze({
+    width: Object.freeze({ min: 32, max: 1200 }),
+    height: Object.freeze({ min: 20, max: 600 }),
+  });
+  const keys = ['colspan', 'rowspan', 'align', 'valign', 'width', 'height'];
+  const recognized = /(?:^|[ \t])(?:colspan|rowspan|align|valign|width|height)=/;
+  const validDimension = (axis, value) => {
+    const bounds = dimensions[axis];
+    return Boolean(bounds && Number.isInteger(value) && value >= bounds.min && value <= bounds.max);
+  };
+  const valid = {
+    colspan: value => Number.isInteger(value) && value >= 1 && value <= maxColumns,
+    rowspan: value => Number.isInteger(value) && value >= 1 && value <= maxRows,
+    align: value => ['left', 'center', 'right'].includes(value),
+    valign: value => ['top', 'middle', 'bottom'].includes(value),
+    width: value => validDimension('width', value),
+    height: value => validDimension('height', value),
+  };
+
+  // Cell text is Markdown source. Remove precisely the one space that belongs
+  // to the suffix, even if more spaces precede it in the original cell.
+  function parseCell(source) {
+    const match = /\{([^{}\r\n]*)\}([ \t]*)$/.exec(source);
+    if (!match || !recognized.test(match[1])) return null;
+    const prefix = source.slice(0, match.index);
+    const hasText = !/^[ \t]*$/.test(prefix);
+    if (hasText && !prefix.endsWith(' ')) return null;
+    const beforeBrace = match[1].match(/\\*$/)[0].length;
+    if (beforeBrace % 2) return null;
+    const attributes = {};
+    for (const assignment of match[1].split(/ +/)) {
+      const pair = /^(colspan|rowspan|align|valign|width|height)=([a-z0-9]+)$/.exec(assignment);
+      if (!pair || Object.hasOwn(attributes, pair[1])) return { invalid: true };
+      const [, name, raw] = pair;
+      const numeric = name.endsWith('span') || Object.hasOwn(dimensions, name);
+      const value = numeric && /^[1-9][0-9]*$/.test(raw) ? Number(raw) : raw;
+      if (!valid[name](value)) return { invalid: true };
+      attributes[name] = value;
+    }
+    const from = match.index - (hasText ? 1 : 0);
+    return { from, to: source.length - match[2].length, text: source.slice(0, from) + match[2], attributes };
+  }
+
+  // Owners are shared by all slots of a rectangle, including its origin.
+  // Alignment alone leaves a slot free for a span and survives a later split.
+  function layout(rows) {
+    const width = rows[0]?.length;
+    if (!width || rows.some(row => row.length !== width)) return null;
+    const cells = rows.map(row => row.map(parseCell));
+    const hasAttributes = cells.some(row => row.some(Boolean));
+    const owners = cells.map(row => row.map(() => null));
+    let hasSpans = false;
+    for (let row = 0; row < cells.length; row++) {
+      for (let column = 0; column < width; column++) {
+        const cell = cells[row][column];
+        if (!cell) continue;
+        if (cell.invalid) return null;
+        const { rowspan = 1, colspan = 1, width: authoredWidth, height } = cell.attributes;
+        if (row > 0 && authoredWidth !== undefined || column > 0 && height !== undefined) return null;
+        if (rowspan === 1 && colspan === 1) continue;
+        if (row === 0 && rowspan > 1 || row + rowspan > rows.length || column + colspan > width) return null;
+        hasSpans = true;
+        const owner = { row, column, rowspan, colspan };
+        for (let r = row; r < row + rowspan; r++) {
+          for (let c = column; c < column + colspan; c++) {
+            if (owners[r][c]) return null;
+            owners[r][c] = owner;
+          }
+        }
+      }
+    }
+    const widths = cells[0].map(cell => cell?.attributes.width ?? null);
+    const heights = cells.map(row => row[0]?.attributes.height ?? null);
+    return { cells, owners, hasAttributes, hasSpans, widths, heights };
+  }
+
+  function suffix(attributes, afterText) {
+    const names = Object.keys(attributes);
+    if (names.some(name => !keys.includes(name) || !valid[name](attributes[name]))) return null;
+    if (!names.length) return '';
+    return (afterText ? ' ' : '') + '{' + keys.filter(name => Object.hasOwn(attributes, name))
+      .map(name => name + '=' + attributes[name]).join(' ') + '}';
+  }
+
+  return { parseCell, layout, suffix, maxColumns, maxRows, dimensions, validDimension };
+});
+
+;
+'use strict';
+// Reuse Marked's resolved inline tokens, including document-level reference
+// links. Rendering must not reparse a cell as an independent document.
+(function (root) {
+  const attributes = root.ReadMDTableAttributes;
+  const measured = new WeakMap();
+  const sizedColumns = 'table.readmd-table-geometry--columns';
+
+  function fitColumns(widths, available) {
+    const minimum = Math.min(attributes.dimensions.width.min, available / widths.length);
+    const fixed = widths.filter(width => width !== null);
+    const flexible = widths.length - fixed.length;
+    let room = available - flexible * minimum;
+    let total = fixed.reduce((sum, width) => sum + width, 0);
+    let scale = Math.min(1, room / total);
+    if (scale < 1 && fixed.length > 1) {
+      fixed.sort((a, b) => a - b);
+      for (const width of fixed.slice(0, -1)) {
+        if (width * scale >= minimum) break;
+        room -= minimum;
+        total -= width;
+        scale = room / total;
+      }
+    }
+    const fixedWidth = width => Math.max(minimum, width * scale);
+    const remaining = available - fixed.reduce((sum, width) => sum + fixedWidth(width), 0);
+    const autoWidth = flexible ? Math.max(minimum, remaining / flexible) : 0;
+    return widths.map(width => width === null ? autoWidth : fixedWidth(width));
+  }
+
+  function observe(scope, owner = scope, widthFraction = 1) {
+    if (!owner) return;
+    measured.get(owner)?.disconnect();
+    measured.delete(owner);
+    const byContainer = new Map();
+    for (const table of scope?.querySelectorAll?.(sizedColumns) || []) {
+      const cols = Array.from(table.querySelectorAll(':scope > colgroup > col'));
+      const widths = cols.map(col => {
+        const raw = col.dataset.tableWidth;
+        const value = Number(raw);
+        return /^[1-9]\d*$/.test(raw) && attributes.validDimension('width', value) ? value : null;
+      });
+      if (!widths.some(width => width !== null) || !table.parentElement) continue;
+      const parent = table.parentElement;
+      if (!byContainer.has(parent)) byContainer.set(parent, []);
+      byContainer.get(parent).push({ table, cols, widths });
+    }
+    if (!byContainer.size) return;
+
+    function measure(parent, width) {
+      if (width <= 0) return;
+      for (const { table, cols, widths } of byContainer.get(parent)) {
+        if (table.parentElement !== parent) continue;
+        const style = root.getComputedStyle(table);
+        const border = (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.borderRightWidth) || 0);
+        const gap = style.borderCollapse === 'separate' ? (parseFloat(style.borderSpacing) || 0) * (cols.length + 1) : 0;
+        const sizes = fitColumns(widths, Math.max(1, width * widthFraction - border - gap));
+        table.style.width = (sizes.reduce((sum, size) => sum + size, 0) + border + gap) + 'px';
+        cols.forEach((col, index) => { col.style.width = sizes[index] + 'px'; });
+      }
+    }
+    for (const parent of byContainer.keys()) {
+      const style = root.getComputedStyle(parent);
+      measure(parent, parent.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0));
+    }
+    if (typeof root.ResizeObserver === 'function') {
+      const observer = new root.ResizeObserver(entries => {
+        for (const entry of entries) measure(entry.target, entry.contentRect.width);
+      });
+      for (const parent of byContainer.keys()) observer.observe(parent);
+      measured.set(owner, observer);
+    }
+  }
+
+  function render(token, renderer) {
+    const rows = [token.header, ...token.rows];
+    if (!rows.some(row => row.some(cell => cell.text.endsWith('}')))) return false;
+    const layout = attributes.layout(rows.map(row => row.map(cell => cell.text)));
+    if (!layout?.hasAttributes) return false;
+    function content(row, column) {
+      const cell = rows[row][column];
+      const parsed = layout.cells[row][column];
+      if (!parsed) return renderer.parser.parseInline(cell.tokens);
+      const tokens = cell.tokens.slice();
+      const tail = tokens.at(-1);
+      const suffix = cell.text.slice(parsed.from, parsed.to);
+      // The suffix is ordinary trailing text. Never replace the first matching
+      // string in a rich cell or discard a token belonging to an inline object.
+      if (!tail || tail.type !== 'text' || !tail.text.endsWith(suffix)) return renderer.parser.parseInline(cell.tokens);
+      const text = tail.text.slice(0, -suffix.length);
+      if (text) tokens[tokens.length - 1] = { ...tail, text, raw: tail.raw.slice(0, -suffix.length) };
+      else tokens.pop();
+      return renderer.parser.parseInline(tokens);
+    }
+    function renderRow(row, index) {
+      const tag = index ? 'td' : 'th';
+      const height = layout.heights[index];
+      let result = height ? '<tr height="' + height + '" data-table-height="' + height + '">' : '<tr>';
+      for (let column = 0; column < row.length; column++) {
+        const owner = layout.owners[index][column];
+        if (owner && (owner.row !== index || owner.column !== column)) continue;
+        const spanRows = owner?.rowspan || 1, spanCols = owner?.colspan || 1;
+        const props = layout.cells[index][column]?.attributes || {};
+        const align = props.align || row[column].align;
+        const fragments = [];
+        for (let y = index; y < index + spanRows; y++) {
+          for (let x = column; x < column + spanCols; x++) {
+            const html = content(y, x);
+            if (html) fragments.push(html);
+          }
+        }
+        let attrs = spanRows > 1 ? ' rowspan="' + spanRows + '"' : '';
+        if (spanCols > 1) attrs += ' colspan="' + spanCols + '"';
+        if (align) attrs += ' align="' + align + '"';
+        if (props.valign) attrs += ' valign="' + props.valign + '"';
+        result += '<' + tag + attrs + '>' + fragments.join('<br>') + '</' + tag + '>';
+      }
+      return result + '</tr>';
+    }
+    const sized = layout.widths.some(Boolean);
+    const colgroup = sized ? '<colgroup>' + layout.widths.map(width =>
+      width ? '<col width="' + width + '" data-table-width="' + width + '">' : '<col>').join('') + '</colgroup>' : '';
+    return '<table class="readmd-table-geometry' + (sized ? ' readmd-table-geometry--columns' : '') + '">' +
+      colgroup + '<thead>' + renderRow(rows[0], 0) + '</thead><tbody>' +
+      rows.slice(1).map((row, i) => renderRow(row, i + 1)).join('') + '</tbody></table>';
+  }
+  root.ReadMDTableView = { render, observe };
+  root.marked.use({ renderer: { table(token) { return render(token, this); } } });
+})(window);
+
+;
+'use strict';
+
+globalThis.ReadMDExportHtmlLayout = (() => {
+  const layouts = new Set(['reading', 'docs', 'magazine']);
+  let nextAnchor = 0;
+  function mount(root, layout, { links = true, contentsLabel, tone = "light" } = {}) {
+    if (!root || !layouts.has(layout)) return;
+    const doc = root.ownerDocument;
+    const wrap = doc.createElement('div');
+    wrap.className = 'readmd-html-layout';
+    wrap.dataset.layout = layout;
+    wrap.dataset.tone = tone;
+    const article = doc.createElement('div');
+    article.className = 'readmd-layout-article';
+    while (root.firstChild) article.appendChild(root.firstChild);
+    if (layout === 'docs') {
+      const headings = [...article.querySelectorAll('h2,h3,h4')].slice(0, 200);
+      if (headings.length) {
+        const navigation = doc.createElement('nav');
+        navigation.className = 'readmd-layout-nav';
+        const label = contentsLabel || (/^zh/i.test(doc.documentElement.lang) ? '目录' : 'Contents');
+        navigation.setAttribute('aria-label', label);
+        const title = doc.createElement('strong');
+        title.textContent = label;
+        const list = doc.createElement('ul');
+        const ids = new Set();
+        for (const heading of headings) {
+          const item = doc.createElement('li');
+          item.dataset.level = heading.localName;
+          const link = doc.createElement(links ? 'a' : 'span');
+          if (links) {
+            if (!heading.id || ids.has(heading.id) || doc.getElementById(heading.id)) {
+              do { heading.id = 'readmd-section-' + ++nextAnchor; }
+              while (ids.has(heading.id) || doc.getElementById(heading.id));
+            }
+            ids.add(heading.id);
+            link.href = '#' + encodeURIComponent(heading.id);
+            if (!doc.body.dataset.readmdHtmlLayout) link.addEventListener('click', event => {
+              event.preventDefault();
+              heading.scrollIntoView({ block: 'start' });
+            });
+          }
+          link.textContent = heading.textContent;
+          item.appendChild(link);
+          list.appendChild(item);
+        }
+        navigation.append(title, list);
+        wrap.appendChild(navigation);
+      }
+    }
+    wrap.appendChild(article);
+    root.replaceChildren(wrap);
+  }
+  return Object.freeze({ mount });
+})();
+
+;
+'use strict';
+
 /*
  * Modal layer manager.
  *
@@ -610,6 +925,8 @@ const state = {
   readingFont: 'sans',      // reader lane: sans | serif
   readingWidth: 'normal',   // narrow | normal | wide
   readingLeading: 'normal', // compact | normal | relaxed
+  readingHeadingColor: 'default',
+  readingBoldColor: 'default',
   aiPanelWidth: 432,
   autoReload: true,
   closeToTray: true,
@@ -685,6 +1002,8 @@ function apiMessage(d, fallbackKey) {
   }
   if (d.note_code) { const s = tr('note.' + d.note_code); if (s) return s; }
   const documentOperationErrors = {
+    office_preview_expired: 'error.preview_expired',
+    office_preview_changed: 'mediaTranscribe.sourceChanged',
     document_operation_busy: 'error.review_save_in_progress',
     document_operation_missing: 'error.file_not_found',
     document_operation_identity_changed: 'error.review_save_conflict',
@@ -836,6 +1155,11 @@ window.i18n = {
     'app.loading': '加载中...',
     'app.success': '成功',
     'app.failed': '失败',
+    'theme.auto': '跟随系统',
+    'theme.light': '浅色',
+    'theme.dark': '深色',
+    'theme.sepia': '护眼',
+    'theme.current': '主题：{name}',
     'pet.bubbleOpening': '正在为你打开 {name}...',
     'pet.bubbleOpened': '{name} 已打开！',
     'pet.bubbleConverting': '正在为你转换并打开 {name}...',
@@ -941,41 +1265,23 @@ window.i18n = {
       preferred = await this.detectSystemLanguage();
     }
     if ((this.languageEpoch || 0) !== generation) return;
-    preferred = preferred || 'zh-CN';
-
-    // 如果是默认简体中文，DOM 本身即为中文，直接初始化并载入词库
-    if (preferred === 'zh-CN') {
-      this.currentLang = 'zh-CN';
-      document.documentElement.setAttribute('dir', 'ltr');
-      document.documentElement.setAttribute('lang', 'zh-CN');
-      const currentLabel = document.getElementById('lang-current-label');
-      if (currentLabel) currentLabel.textContent = '简体中文';
-      const d = await this.fetchDict('zh-CN');
-      if ((this.languageEpoch || 0) !== generation) return;
-      if (d) {
-        this.dict = d;
-        // zh-CN is the canonical complete dictionary. Reusing it as the
-        // fallback avoids a second 50+ KB English request during startup.
-        // Other languages still load English lazily after the first paint.
-        this.fallbackDict = d;
-        this.translateDOM();
-        window.dispatchEvent(new CustomEvent('readmd:language-changed', { detail: { lang: 'zh-CN' } }));
-      }
-      return;
+    let language = this.matchLanguage(preferred) || 'zh-CN';
+    let dict = await this.fetchDict(language);
+    if (!dict && language !== 'zh-CN' && (this.languageEpoch || 0) === generation) {
+      language = 'zh-CN';
+      dict = await this.fetchDict(language);
     }
-
-    // 非中文环境快速载入目标语言并翻译
-    await this.setLanguage(preferred, false);
-    setTimeout(() => this.loadFallback(), 500);
+    if (dict && (this.languageEpoch || 0) === generation) this.applyLanguage(language, dict, false);
   },
 
   /** 异步载入第一兜底英文词库 */
-  async loadFallback() {
-    if (Object.keys(this.fallbackDict).length > 0) return;
-    try {
-      const d = await this.fetchDict('en');
-      if (d) this.fallbackDict = d;
-    } catch (e) {}
+  loadFallback() {
+    if (Object.keys(this.fallbackDict).length || this.fallbackRequest) return;
+    this.fallbackRequest = this.fetchDict('en').then(dict => {
+      if (!dict || Object.keys(this.fallbackDict).length) return;
+      this.fallbackDict = dict;
+      if (this.currentLang !== 'zh-CN' && this.currentLang !== 'en') this.translateDOM(document, true);
+    }).finally(() => { this.fallbackRequest = null; });
   },
 
   /** 高效获取语言词库 JSON */
@@ -983,56 +1289,54 @@ window.i18n = {
     // Cache-bust: older builds served locale JSON as immutable, so a WebView
     // upgrade could keep serving a stale dictionary missing newer keys.
     const bust = `?v=${Date.now()}`;
-    try {
-      const resp = await fetch(`/assets/i18n/${langCode}.json${bust}`);
-      if (resp.ok) return await resp.json();
-    } catch (e) {}
-    try {
-      const resp = await fetch(`assets/i18n/${langCode}.json${bust}`);
-      if (resp.ok) return await resp.json();
-    } catch (e) {}
+    for (const base of ['/assets', 'assets']) {
+      try {
+        const resp = await fetch(`${base}/i18n/${langCode}.json${bust}`);
+        if (!resp.ok) continue;
+        const dict = await resp.json();
+        if (dict && typeof dict === 'object' && !Array.isArray(dict) && Object.keys(dict).length) return dict;
+      } catch (e) {}
+    }
     return null;
+  },
+
+  matchLanguage(code) {
+    if (typeof code !== 'string') return null;
+    const [primary, ...parts] = code.toLowerCase().split(/[-_]/);
+    if (primary === 'zh') {
+      if (parts.includes('hk') || parts.includes('mo')) return 'zh-HK';
+      return parts.includes('tw') || parts.includes('hant') ? 'zh-TW' : 'zh-CN';
+    }
+    return Object.hasOwn(this.meta, primary) ? primary : null;
   },
 
   /** 侦测宿主操作系统语言 */
   async detectSystemLanguage() {
+    const browserLangs = navigator.languages?.length ? navigator.languages : [navigator.language];
+    const browserLanguage = browserLangs.map(code => this.matchLanguage(code)).find(Boolean);
     try {
       if (typeof hasPy !== 'undefined' && hasPy && py.get_system_language) {
-        const pyLang = await py.get_system_language();
-        if (pyLang && this.meta[pyLang]) return pyLang;
+        const pyLang = this.matchLanguage(await py.get_system_language());
+        if (pyLang) return pyLang;
       }
     } catch (e) {}
-
-    const browserLangs = navigator.languages || [navigator.language || 'zh-CN'];
-    for (const l of browserLangs) {
-      if (!l) continue;
-      if (this.meta[l]) return l;
-      const lower = l.toLowerCase();
-      if (lower.startsWith('zh-tw') || lower.startsWith('zh-hk') || lower.includes('hant')) {
-        return lower.includes('hk') ? 'zh-HK' : 'zh-TW';
-      }
-      if (lower.startsWith('zh')) return 'zh-CN';
-      const prefix = l.split('-')[0];
-      if (this.meta[prefix]) return prefix;
-    }
-    return 'zh-CN';
+    return browserLanguage || 'zh-CN';
   },
 
   /** 切换语言 */
   async setLanguage(langCode, save = true) {
     const generation = this.languageEpoch = (this.languageEpoch || 0) + 1;
-    if (!langCode || (!this.meta[langCode] && langCode !== 'zh-CN' && langCode !== 'en')) {
-      langCode = 'zh-CN';
-    }
-
+    langCode = this.matchLanguage(langCode) || 'zh-CN';
     const dict = await this.fetchDict(langCode);
-    if (generation !== this.languageEpoch) return false;
-    if (dict) {
-      this.dict = dict;
-      this.currentLang = langCode;
-    } else if (langCode === 'zh-CN') {
-      this.currentLang = 'zh-CN';
-    }
+    if (!dict || generation !== this.languageEpoch) return false;
+    this.applyLanguage(langCode, dict, save);
+    return true;
+  },
+
+  applyLanguage(langCode, dict, save) {
+    this.dict = dict;
+    this.currentLang = langCode;
+    if (langCode === 'en') this.fallbackDict = dict;
 
     if (save) {
       try {
@@ -1058,76 +1362,68 @@ window.i18n = {
 
     // 派发切换事件
     window.dispatchEvent(new CustomEvent('readmd:language-changed', { detail: { lang: this.currentLang } }));
+    if (save && window.READMD_ENGINE === 'rust' && typeof hasPy !== 'undefined' && hasPy) this.persistDesktopLanguage(langCode);
+    if (langCode !== 'en' && langCode !== 'zh-CN') this.loadFallback();
+  },
+
+  persistDesktopLanguage(langCode) {
+    // Keep the native profile used by desktop surfaces in the same order as
+    // the renderer's language choices, even when HTTP replies are delayed.
+    this.languageWrite = (this.languageWrite || Promise.resolve()).then(async () => {
+      if (this.currentLang !== langCode) return;
+      try {
+        const response = await apiFetch('/api/system/language', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language: langCode }),
+        });
+        if (!response.ok || (await response.json()).applied !== true) throw new Error('language_write_failed');
+      } catch (_) {
+        if (this.currentLang === langCode && typeof showToast === 'function') showToast(this.t('toast.saveFailed'));
+      }
+    });
   },
 
 
   /** 获取翻译词条，支持 {count}, {name} 占位符替换 */
   t(key, params = {}) {
-    let str = this.dict ? this.dict[key] : undefined;
-    if (str === undefined || str === null || str === '') {
-      str = this.fallbackDict ? this.fallbackDict[key] : undefined;
-    }
-    if ((str === undefined || str === null || str === '') && this.zhDefaults && this.zhDefaults[key]) {
-      str = this.zhDefaults[key];
-    }
-    if ((str === undefined || str === null || str === '') && this.browserDefaults && this.browserDefaults[key]) {
-      str = this.browserDefaults[key];
-    }
-    if (str === undefined || str === null || str === '') {
-      str = key;
-    }
-    if (typeof str === 'string' && params) {
-      for (const [k, v] of Object.entries(params)) {
-        str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
-      }
-    }
-    return str;
+    const str = [this.dict[key], this.fallbackDict[key], this.zhDefaults[key], this.browserDefaults[key]]
+      .find(value => typeof value === 'string' && value.trim() && value !== key);
+    if (str === undefined) return key;
+    return params ? str.replace(/\{([\w.-]+)\}/g, (match, name) => Object.hasOwn(params, name) ? String(params[name]) : match) : str;
   },
 
   /** 全局扫描并翻译带有 data-i18n 属性的 DOM */
-  translateDOM(root = document) {
+  translateDOM(root = document, fallbackOnly = false) {
+    const readLabel = key => {
+      if (!key || fallbackOnly && typeof this.dict[key] === 'string' && this.dict[key].trim() && this.dict[key] !== key) return null;
+      const label = this.t(key);
+      return label === key ? null : label;
+    };
     root.querySelectorAll('[data-i18n]').forEach(el => {
-      const key = el.getAttribute('data-i18n');
-      if (!key) return;
+      const key = el.dataset.i18n, label = readLabel(key);
+      if (!label) return;
       if (el.children.length === 0) {
-        el.textContent = this.t(key);
+        if (el.textContent !== label) el.textContent = label;
       } else {
-        const span = el.querySelector(':scope > span[data-i18n="' + key + '"]');
-        if (!span) {
-          let updatedText = false;
-          for (let i = 0; i < el.childNodes.length; i++) {
-            if (el.childNodes[i].nodeType === Node.TEXT_NODE && el.childNodes[i].textContent.trim()) {
-              el.childNodes[i].textContent = this.t(key);
-              updatedText = true;
-              break;
-            }
-          }
-          if (!updatedText) {
-            el.textContent = this.t(key);
-          }
-        }
+        if (Array.from(el.children).some(child => child.dataset.i18n === key)) return;
+        const text = Array.from(el.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+        if (!text) el.appendChild(document.createTextNode(label));
+        else if (text.textContent !== label) text.textContent = label;
       }
     });
 
     root.querySelectorAll('[data-i18n-html]').forEach(el => {
-      const key = el.getAttribute('data-i18n-html');
-      if (key) el.innerHTML = this.t(key);
+      const label = readLabel(el.dataset.i18nHtml);
+      if (label && el.innerHTML !== label) el.innerHTML = label;
     });
 
-    root.querySelectorAll('[data-i18n-title]').forEach(el => {
-      const key = el.getAttribute('data-i18n-title');
-      if (key) el.setAttribute('title', this.t(key));
-    });
-
-    root.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-      const key = el.getAttribute('data-i18n-placeholder');
-      if (key) el.setAttribute('placeholder', this.t(key));
-    });
-
-    root.querySelectorAll('[data-i18n-aria]').forEach(el => {
-      const key = el.getAttribute('data-i18n-aria');
-      if (key) el.setAttribute('aria-label', this.t(key));
-    });
+    for (const [suffix, attribute] of [['title', 'title'], ['placeholder', 'placeholder'], ['aria', 'aria-label'], ['label', 'label']]) {
+      const source = 'data-i18n-' + suffix;
+      root.querySelectorAll(`[${source}]`).forEach(el => {
+        const label = readLabel(el.getAttribute(source));
+        if (label && el.getAttribute(attribute) !== label) el.setAttribute(attribute, label);
+      });
+    }
   },
 
 
@@ -1183,7 +1479,11 @@ window.i18n = {
         ${isActive ? '<div class="lang-item-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' : ''}
       `;
       item.addEventListener('click', async () => {
-        await this.setLanguage(code, true);
+        const switching = this.setLanguage(code, true), generation = this.languageEpoch;
+        if (!await switching) {
+          if (generation === this.languageEpoch && typeof showToast === 'function') showToast(this.t('ux.loadFailed'));
+          return;
+        }
         this.closeModal();
         if (typeof showToast === 'function') {
           showToast(this.t('lang.autoDetected', { name: native }) || `Language switched to ${native}`);
@@ -1221,14 +1521,23 @@ document.addEventListener('keydown', event => {
 let activeConfirmFinish = null;
 
 function confirmAction({ title, message = '', confirmText, cancelText, danger = false, signal } = {}) {
+  return showDecisionDialog({ title, message, confirmText, cancelText, danger, signal });
+}
+
+function promptText({ title, value = '', maxLength = 80, confirmText, cancelText } = {}) {
+  return showDecisionDialog({ title, confirmText, cancelText, input: { value, maxLength } });
+}
+
+function showDecisionDialog({ title, message = '', confirmText, cancelText, danger = false, signal, input }) {
   const modal = $('confirm-modal');
-  if (!modal || signal?.aborted) return Promise.resolve(false);
-  if (activeConfirmFinish) activeConfirmFinish(false);
+  const canceled = input ? null : false;
+  if (!modal || signal?.aborted) return Promise.resolve(canceled);
+  activeConfirmFinish?.();
 
   return new Promise(resolve => {
-    const opener = document.activeElement;
     const confirmButton = $('confirm-action');
     const cancelButton = $('confirm-cancel');
+    const field = $('confirm-input');
     let finished = false;
     const finish = value => {
       if (finished) return;
@@ -1236,43 +1545,41 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
       activeConfirmFinish = null;
       confirmButton.removeEventListener('click', onConfirm);
       cancelButton.removeEventListener('click', onCancel);
-      modal.removeEventListener('keydown', onKeyDown);
-      modal.removeEventListener('click', onClick);
+      field.removeEventListener('keydown', onInputKey);
       signal?.removeEventListener('abort', onAbort);
-      modal.classList.add('hidden');
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+      window.ReadMDModal.close(modal);
       resolve(value);
     };
-    const onKeyDown = event => {
-      if (event.key !== 'Escape') return;
+    const onConfirm = () => finish(input ? field.value : true);
+    const onCancel = () => finish(canceled);
+    const onAbort = onCancel;
+    const onInputKey = event => {
+      if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
-      event.stopPropagation();
-      finish(false);
-    };
-    const onConfirm = () => finish(true);
-    const onCancel = () => finish(false);
-    const onAbort = () => finish(false);
-    const onClick = event => {
-      if (event.target === modal) finish(false);
+      onConfirm();
     };
 
-    activeConfirmFinish = () => finish(false);
+    activeConfirmFinish = onCancel;
 
     $('confirm-title').textContent = title || '';
     $('confirm-message').textContent = message;
-    confirmButton.textContent = confirmText || 'OK';
-    cancelButton.textContent = cancelText || 'Cancel';
+    confirmButton.textContent = confirmText || window.i18n.t('dialog.confirm');
+    cancelButton.textContent = cancelText || window.i18n.t('dialog.cancel');
     confirmButton.className = danger ? 'tb-btn danger' : 'tb-btn accent';
+    modal.classList.toggle('text-entry', Boolean(input));
+    field.classList.toggle('hidden', !input);
+    field.toggleAttribute('data-modal-initial', Boolean(input));
+    cancelButton.toggleAttribute('data-modal-initial', !input);
+    field.value = input?.value || '';
+    field.maxLength = input?.maxLength || 80;
 
     confirmButton.addEventListener('click', onConfirm);
     cancelButton.addEventListener('click', onCancel);
-    modal.addEventListener('keydown', onKeyDown);
-    modal.addEventListener('click', onClick);
+    if (input) field.addEventListener('keydown', onInputKey);
     signal?.addEventListener('abort', onAbort, { once: true });
     // An abort may have been triggered while another confirmation was closed.
-    if (signal?.aborted) { finish(false); return; }
-    modal.classList.remove('hidden');
-    setTimeout(() => { if (!finished) cancelButton.focus({ preventScroll: true }); }, 0);
+    if (signal?.aborted) { onAbort(); return; }
+    window.ReadMDModal.open(modal);
   });
 }
 
@@ -1529,11 +1836,12 @@ function updateModuleUi() {
     const status=v==='ready'?'status.ready':v==='error'||v==='unavailable'?'plugin.native.unavailable':v==='disabled'?'status.win7UnsupportedShort':v==='idle'?'convert.statusPending':'status.loading';
     parts.push(label+' · '+_t(status));
   }
-  const el = $('status-mods');
-  if (el) {
-    const details=parts.length?_t('status.modulePrefix')+'\n'+parts.join('\n'):'';
-    el.textContent=details?'●':'';el.title=details;el.setAttribute('role','img');el.setAttribute('aria-label',details);
-    el.dataset.moduleState=Object.values(m).some(v=>['error','unavailable','disabled'].includes(v))?'unavailable':Object.values(m).some(v=>v==='loading')?'loading':Object.values(m).some(v=>v==='idle')?'idle':'ready';
+  const pluginMenu = $('btn-plugin-menu');
+  if (pluginMenu) {
+    const details = parts.length ? _t('status.modulePrefix') + '\n' + parts.join('\n') : '';
+    pluginMenu.title = details;
+    if (details) pluginMenu.setAttribute('aria-description', details);
+    else pluginMenu.removeAttribute('aria-description');
   }
 }
 window.addEventListener('readmd:language-changed',updateModuleUi);
@@ -1591,7 +1899,33 @@ async function ensureModule(name, timeoutMs) {
   const t=(key,params)=>window.i18n.t(key,params);
   let active=null;
   function failure(error){const code=error?.message,key='error.'+code,result=Error(typeof code==='string'&&/^[a-z_0-9]+$/.test(code)&&t(key)!==key?code:'capability_install_failed');result.retryable=Boolean(error?.retryable||error instanceof TypeError||error instanceof SyntaxError);return result;}
-  async function request(body){try{const r=await apiFetch('/api/capabilities/packs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error_code||'capability_install_failed');return d;}catch(error){throw failure(error);}}
+  const catalogEntries = new Map();
+  function translated(key) {
+    if (!key) return '';
+    const value = t(key);
+    return value && value !== key ? value : '';
+  }
+  function label(value) {
+    const entry = typeof value === 'string' ? catalogEntries.get(value) || {id:value} : value;
+    return translated(entry.labelKey) || entry.name || translated('capability.' + entry.id + '.name') || entry.id;
+  }
+  function description(entry) {
+    return translated(entry.descriptionKey) || entry.description || '';
+  }
+  async function request(body) {
+    try {
+      const r = await apiFetch('/api/capabilities/packs', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw Error(data.error_code || 'capability_install_failed');
+      if (body.action === 'catalog' && Array.isArray(data.packs)) {
+        catalogEntries.clear();
+        for (const entry of data.packs) catalogEntries.set(entry.id, entry);
+      }
+      return data;
+    } catch (error) { throw failure(error); }
+  }
   const size=n=>new Intl.NumberFormat(window.i18n.currentLang,{maximumFractionDigits:1}).format(n/1048576)+' MiB';
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   async function retryNetwork(action,cancelled=()=>false){
@@ -1615,7 +1949,7 @@ async function ensureModule(name, timeoutMs) {
   async function upload(file,id='',hooks={}){
     if(!Number.isSafeInteger(file.size)||file.size<=0||file.size>2*1024*1024*1024)throw Error('capability_pack_invalid');
     const prefix=new Uint8Array(await file.slice(0,12).arrayBuffer()),stream=prefix.length===12&&new TextDecoder().decode(prefix.slice(0,8))==='RMDPKG2\n';
-    if(stream){const length=new DataView(prefix.buffer).getUint32(8,true);if(!length||length>8*1024*1024||length+12>file.size)throw Error('capability_pack_invalid');let manifest;try{manifest=JSON.parse(await file.slice(12,12+length).text());}catch(_){throw Error('capability_pack_invalid');}if(manifest.schema!==2||!['pdfium','typst','ocr','fonts','latex'].includes(manifest.id)||(id&&manifest.id!==id))throw Error('capability_pack_invalid');id=manifest.id;}
+    if(stream){const length=new DataView(prefix.buffer).getUint32(8,true);if(!length||length>8*1024*1024||length+12>file.size)throw Error('capability_pack_invalid');let manifest;try{manifest=JSON.parse(await file.slice(12,12+length).text());}catch(_){throw Error('capability_pack_invalid');}if(manifest.schema!==2||!['pdfium','typst','ocr','fonts','latex','node','whisper','media-ffmpeg'].includes(manifest.id)||(id&&manifest.id!==id))throw Error('capability_pack_invalid');id=manifest.id;}
     // Old generic JSON imports retain their existing contract; feature-entry
     // imports know their engine ID and use bounded chunks for either format.
     if(!id){if(file.size>128*1024*1024)throw Error('capability_pack_invalid');
@@ -1652,15 +1986,18 @@ async function ensureModule(name, timeoutMs) {
     let resolve;const promise=new Promise(r=>{resolve=r;});active={id,promise};
     const modal=document.createElement('div');modal.id='capability-install-modal';modal.className='modal hidden';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','capability-install-title');
     const box=document.createElement('section');box.className='capability-install-box';
-    const title=document.createElement('h2');title.id='capability-install-title';title.textContent=t('capability.installTitle',{name:t(entry.labelKey)});
-    const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);
-    const summary=document.createElement('p');summary.className='capability-install-summary';summary.textContent=t('capability.sizes',{download:size(entry.downloadBytes),installed:size(entry.installedBytes)});
-    const details=document.createElement('details'),about=document.createElement('summary'),license=document.createElement('p');about.textContent=t('capability.details');license.textContent=entry.version+' · '+entry.platform+' · '+entry.license;details.append(about,license);
-    const hint=document.createElement('p');hint.className='capability-install-hint';hint.textContent=t('capability.installHint');
+    const title=document.createElement('h2');title.id='capability-install-title';title.textContent=t('capability.installTitle',{name:label(entry)});
+    const purpose=document.createElement('p');purpose.textContent=description(entry);purpose.hidden=!purpose.textContent;
+    const bundled=entry.delivery==='bundled';
+    const summary=document.createElement('p');summary.className='capability-install-summary';summary.textContent=bundled?t('capability.core.name')+' · '+size(entry.installedBytes):t('capability.sizes',{download:size(entry.downloadBytes),installed:size(entry.installedBytes)});
+    const details=document.createElement('details'),about=document.createElement('summary'),license=document.createElement('p');about.textContent=t('capability.details');license.textContent=entry.version+' · '+entry.platform+' · '+entry.license+(entry.minimumPlatform?' · '+entry.minimumPlatform:'');details.append(about,license);
+    const hint=document.createElement('p');hint.className='capability-install-hint';hint.textContent=t(entry.delivery==='offline-only'?'capability.offlineImport':'capability.installHint');
     const status=document.createElement('p');status.id='capability-install-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     const progress=document.createElement('progress');progress.hidden=true;progress.max=100;progress.setAttribute('aria-label',t('plugin.installing'));
     const actions=document.createElement('div');actions.className='capability-install-actions';
     const cancel=document.createElement('button'),offline=document.createElement('button'),install=document.createElement('button');for(const b of [cancel,offline,install]){b.type='button';b.className='tb-btn';}cancel.textContent=t('common.cancel');offline.textContent=t('capability.offlineImport');install.textContent=t('capability.installContinue');install.classList.add('accent');actions.append(cancel,offline,install);
+    install.hidden=entry.delivery==='offline-only';install.classList.toggle('hidden',install.hidden);
+    offline.hidden=bundled;offline.classList.toggle('hidden',bundled);
     box.append(title,purpose,summary,details,hint,progress,status,actions);modal.append(box);document.body.append(modal);
     let busy=false,job=null,finished=false,cancelRequested=false,abortUpload=null;
     function finish(value){if(finished)return;finished=true;window.ReadMDModal.close(modal);window.ReadMDModal.setGuard(modal.id,null);modal.remove();active=null;if(value)ready(id);resolve(value);}
@@ -1712,7 +2049,7 @@ async function ensureModule(name, timeoutMs) {
       :needsFonts(content+JSON.stringify(options||{}));
     return !required||await ensure('fonts');
   }
-  window.ReadMDCapabilities={ensure,request,size,upload,uninstall,ensurePublication};
+  window.ReadMDCapabilities={ensure,request,size,upload,uninstall,ensurePublication,label,description};
 })();
 
 ;
@@ -1747,9 +2084,9 @@ function syncStateFromActiveTab() {
   state.mtime = tab.mtime || 0;
   state.revision = tab.revision || '';
   state.size = tab.size || 0;
-  state.encoding = tab.encoding || 'utf-8';
+  state.encoding = tab.mode === 'office-preview' ? '' : (tab.encoding || 'utf-8');
   state.fixed = tab.content || '';
-  state.original = tab._restoreUnavailable ? null : (tab.original ?? tab.content ?? '');
+  state.original = tab._restoreUnavailable || tab.mode === 'office-preview' ? null : (tab.original ?? tab.content ?? '');
   state.fixes = tab.fixes || [];
   state.stats = tab.stats || {};
   state.webAssets = tab.webAssets || [];
@@ -1765,6 +2102,7 @@ function captureReaderState(tab) {
   tab.scrollPos = $('content')?.scrollTop || 0;
   const scrollKey = normalizePath(tab.title || tab.name || state.file || '');
   if (scrollKey) state.scrollPos[scrollKey] = tab.scrollPos;
+  if (tab.mode === 'office-preview') return;
   tab.readerMode = pagination.enabled ? pagination.mode : 'paged';
   tab.readerPage = pagination.enabled && pagination.mode === 'paged'
     ? pagination.currentPage
@@ -1774,32 +2112,76 @@ function captureReaderState(tab) {
     : (tab.scrollPos || 0);
 }
 
+function revealTabInTrack(container, tab) {
+  if (!container || !tab) return;
+  const vertical = container.getAttribute('aria-orientation') === 'vertical';
+  const size = vertical ? container.clientHeight : container.clientWidth;
+  if (!size) return;
+  const containerRect = container.getBoundingClientRect(), tabRect = tab.getBoundingClientRect();
+  const scroll = vertical ? 'scrollTop' : 'scrollLeft';
+  const start = (vertical ? tabRect.top - containerRect.top : tabRect.left - containerRect.left) + container[scroll];
+  const end = start + (vertical ? tab.offsetHeight : tab.offsetWidth);
+  if (start < container[scroll] + 8) container[scroll] = Math.max(0, start - 8);
+  else if (end > container[scroll] + size - 8) container[scroll] = end - size + 8;
+}
+
+// Update chrome in place: changing language must not rebuild a live rename
+// input, change the active identity or persist a new document revision.
+function localizeOpenTabs() {
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+  const tabs = new Map((state.tabs || []).map(tab => [tab.id, tab]));
+  for (const row of document.querySelectorAll('#doc-tabs-bar .tab-item')) {
+    const tab = tabs.get(row.dataset.tabId); if (!tab) continue;
+    const close = t('tabs.closeTab');
+    row.title = tab.title || tab.name || t('tabs.untitled');
+    const button = row.querySelector('.tab-close'); if (button) button.title = close;
+    const reason = tab.externalChanged ? t('toast.saveConflict') : tab.isDirty ? t('tabs.dirty') : '';
+    const dot = row.querySelector('.tab-dirty'); if (dot) dot.title = reason;
+    if (reason) row.setAttribute('aria-description', reason); else row.removeAttribute('aria-description');
+    if (!tab.title && !tab.name && !row.querySelector('.tab-title-input')) {
+      const title = row.querySelector('.tab-title'); if (title) title.textContent = t('tabs.untitled');
+    }
+  }
+}
+
+function syncTopTabOverflow({ reveal = false } = {}) {
+  const bar = $('doc-tabs-bar'), container = $('doc-tabs-container'), wrap = $('doc-tabs-overflow-wrap');
+  if (!container?.clientWidth || !bar || !wrap) return;
+  const overflow = bar.scrollWidth > container.clientWidth + 2;
+  if (!overflow && !$('doc-tabs-dropdown').classList.contains('hidden')) {
+    const focused = wrap.contains(document.activeElement);
+    setTopTabMenu(false);
+    if (focused) focusVisibleTab(state.activeTabId);
+  }
+  wrap.classList.toggle('hidden', !overflow);
+  if (reveal) revealTabInTrack(bar, bar.querySelector('.tab-item.active'));
+}
+
+function setTopTabMenu(open, { focus = false } = {}) {
+  const menu = $('doc-tabs-dropdown'), button = $('doc-tabs-overflow-btn');
+  if (!menu || !button) return;
+  menu.classList.toggle('hidden', !open);
+  button.setAttribute('aria-expanded', String(open));
+  if (open && focus) menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+}
+
 function renderTabsBar() {
   window.ReadMDSession?.persist();
+  if (typeof syncFileSidebar === 'function') syncFileSidebar();
   const bar = $('doc-tabs-bar');
-  const secBar = $('doc-tabs-secondary-bar');
   const dropdown = $('doc-tabs-dropdown');
   const overflowWrap = $('doc-tabs-overflow-wrap');
-  const btnHome = $('btn-home');
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 
   if (state.tabs.length === 0) {
     if (bar) bar.innerHTML = '';
-    if (secBar) { secBar.innerHTML = ''; secBar.classList.add('hidden'); }
     if (overflowWrap) overflowWrap.classList.add('hidden');
-    if (btnHome) btnHome.classList.add('hidden');
+    if (dropdown) dropdown.replaceChildren();
+    setTopTabMenu(false);
     if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
       window.ReadMDGraph.updateVisibility(false);
     }
     return;
-  }
-
-  if (btnHome) {
-    if (state.mode === 'welcome') {
-      btnHome.classList.add('hidden');
-    } else {
-      btnHome.classList.remove('hidden');
-    }
   }
 
   if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
@@ -1810,18 +2192,18 @@ function renderTabsBar() {
     }
   }
 
-  const createTabEl = (tab) => {
+  const createTabEl = (tab, container) => {
     const el = document.createElement('div');
     el.className = 'tab-item' + (tab.id === state.activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.setAttribute('role', 'tab');
     el.setAttribute('aria-selected', tab.id === state.activeTabId ? 'true' : 'false');
     el.setAttribute('aria-controls', 'content');
-    el.setAttribute('aria-keyshortcuts', 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
+    el.setAttribute('aria-keyshortcuts', (container?.getAttribute('aria-orientation') === 'vertical' ? 'ArrowUp ArrowDown ' : '') + 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
     el.tabIndex = tab.id === state.activeTabId ? 0 : -1;
     el.draggable = true;
 
-    el.title = `${tab.path || tab.title || tab.name} (${_t('tabs.closeTab')}: Delete)`;
+    el.title = tab.title || tab.name || _t('tabs.untitled');
     if (tab.isDirty) {
       const dot = document.createElement('span');
       const reason = tab.externalChanged
@@ -1843,6 +2225,7 @@ function renderTabsBar() {
 
     const titleSpan = document.createElement('span');
     titleSpan.className = 'tab-title';
+    titleSpan.dir = 'auto';
     titleSpan.textContent = tab.title || tab.name || (_t('tabs.untitled') || '未命名');
     el.appendChild(titleSpan);
 
@@ -1854,12 +2237,18 @@ function renderTabsBar() {
     closeBtn.setAttribute('aria-hidden', 'true');
     closeBtn.addEventListener('click', e => {
       e.stopPropagation();
-      closeTab(tab.id, false, 'button');
+      requestTabClose(tab.id, 'button');
     });
     el.appendChild(closeBtn);
 
     el.addEventListener('click', () => switchTab(tab.id));
     el.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (el.parentElement?.getAttribute('aria-orientation') !== 'vertical' || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        e.preventDefault();
+        moveTabFocus(tab.id, e.key === 'ArrowUp' ? 'ArrowLeft' : 'ArrowRight');
+        return;
+      }
       if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault();
         const index = state.tabs.findIndex(item => item.id === tab.id);
@@ -1884,7 +2273,7 @@ function renderTabsBar() {
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        closeTab(tab.id, false, e.key === 'Backspace' ? 'key_backspace' : 'key_delete');
+        requestTabClose(tab.id, e.key === 'Backspace' ? 'key_backspace' : 'key_delete');
       }
       if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
         e.preventDefault();
@@ -1917,8 +2306,9 @@ function renderTabsBar() {
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
       const rect = el.getBoundingClientRect();
-      const mid = rect.left + rect.width / 2;
-      const isRight = e.clientX > mid;
+      const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+      const mid = vertical ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+      const isRight = (vertical ? e.clientY : e.clientX) > mid;
       el.classList.toggle('tab-drag-over-left', !isRight);
       el.classList.toggle('tab-drag-over-right', isRight);
     });
@@ -1932,7 +2322,8 @@ function renderTabsBar() {
       const srcId = e.dataTransfer.getData('application/x-readmd-tab') || e.dataTransfer.getData('text/plain');
       if (srcId && srcId !== tab.id) {
         const rect = el.getBoundingClientRect();
-        const isRight = e.clientX > (rect.left + rect.width / 2);
+        const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+        const isRight = vertical ? e.clientY > rect.top + rect.height / 2 : e.clientX > rect.left + rect.width / 2;
         reorderTabs(srcId, tab.id, isRight);
       }
     });
@@ -1946,9 +2337,16 @@ function renderTabsBar() {
   };
 
 
+  // Snapshot only the row that owns focus now, immediately before rebuilding.
+  // Async rendering must not restore focus captured before its await.
+  const focusedTab = document.activeElement;
+  const focusedTabId = focusedTab?.classList?.contains('tab-item') &&
+    focusedTab.parentElement === bar
+    ? focusedTab.dataset.tabId : null;
+
   if (bar) {
     bar.innerHTML = '';
-    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab)));
+    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab, bar)));
   }
 
   if (dropdown) {
@@ -1959,66 +2357,45 @@ function renderTabsBar() {
       item.tabIndex = -1;
       item.className = 'doc-tabs-dropdown-item' + (tab.id === state.activeTabId ? ' active' : '');
       item.type = 'button';
-      item.setAttribute('role', 'menuitem');
-      item.tabIndex = -1;
       const label = document.createElement('span');
       label.textContent = (tab.title || tab.name) + (tab.isDirty ? ' •' : '');
+      label.dir = 'auto';
       const meta = document.createElement('small');
       meta.textContent = tab.path || (tab.isVirtual ? (_t('tabs.virtual') || '虚拟') : '');
       item.append(label, meta);
-      item.addEventListener('click', () => {
-        switchTab(tab.id);
-        dropdown.classList.add('hidden');
+      item.addEventListener('click', async () => {
+        setTopTabMenu(false);
+        await switchTab(tab.id);
+        if (document.activeElement === document.body) focusVisibleTab(state.activeTabId);
       });
       dropdown.appendChild(item);
     });
 
   }
 
-  if (bar && overflowWrap) {
-    const syncOverflow = () => {
-      if (!bar.isConnected || !overflowWrap.isConnected) return;
-      overflowWrap.classList.toggle('hidden', !(bar.scrollWidth > bar.clientWidth + 6));
-    };
-    syncOverflow();
-    requestAnimationFrame(syncOverflow);
-  }
-
-  const revealActiveTab = (container) => {
-    const active = container?.querySelector('.tab-item.active');
-    if (!active) return;
-    const containerRect = container.getBoundingClientRect();
-    const activeRect = active.getBoundingClientRect();
-    const left = activeRect.left - containerRect.left + container.scrollLeft;
-    const right = left + active.offsetWidth;
-    if (left < container.scrollLeft + 8) {
-      container.scrollLeft = Math.max(0, left - 8);
-    } else if (right > container.scrollLeft + container.clientWidth - 8) {
-      container.scrollLeft = right - container.clientWidth + 8;
-    }
-  };
-  revealActiveTab(bar);
-  revealActiveTab(secBar);
-
-  if (secBar) {
-    if (window.innerWidth < 650 && state.tabs.length > 0) {
-      secBar.innerHTML = '';
-      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab)));
-      secBar.classList.remove('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.add('hidden');
-    } else {
-      secBar.classList.add('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.remove('hidden');
+  syncTopTabOverflow({ reveal: true });
+  requestAnimationFrame(() => syncTopTabOverflow({ reveal: true }));
+  // Rebuilds retire the old focused row. Preserve its identity without taking
+  // focus from an editor/menu, including focus moved by a synchronous blur.
+  if (focusedTabId && (document.activeElement === document.body || document.activeElement === focusedTab)) {
+    const replacement = Array.from(bar.children).find(item => item.dataset.tabId === focusedTabId);
+    if (replacement?.offsetParent && !replacement.closest('[inert], [hidden]')) {
+      replacement.focus({ preventScroll: true });
     }
   }
+
 }
 
-function focusVisibleTab(tabId) {
-  requestAnimationFrame(() => {
-    const matches = Array.from(document.querySelectorAll(`[data-tab-id="${CSS.escape(tabId)}"]`));
-    const next = matches.find(item => item.offsetParent !== null) || matches[0];
-    if (next && document.activeElement !== next) next.focus({ preventScroll: true });
-  });
+function focusVisibleTab(tabId, { immediate = false } = {}) {
+  const focus = () => {
+    const bar = $('doc-tabs-bar');
+    const next = Array.from(bar?.children || []).find(row => row.dataset.tabId === tabId);
+    if (!next || next.offsetParent === null) return;
+    revealTabInTrack(bar, next);
+    if (document.activeElement !== next) next.focus({ preventScroll: true });
+  };
+  if (immediate) focus();
+  else requestAnimationFrame(focus);
 }
 
 function moveTabFocus(activeTabId, key) {
@@ -2087,8 +2464,15 @@ function startTabInlineRename(tab, titleSpan, tabEl) {
   };
 
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    else if (e.key === 'Escape') { e.preventDefault(); committed = true; cleanup(); }
+    if (e.isComposing || !['Enter', 'Escape'].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Enter') commit();
+    else {
+      committed = true;
+      cleanup();
+      tabEl.focus({ preventScroll: true });
+    }
   });
   input.addEventListener('blur', () => { setTimeout(() => { if (!committed) commit(); }, 120); });
 }
@@ -2097,6 +2481,7 @@ function startTabInlineRename(tab, titleSpan, tabEl) {
 function renameBlocked(tab) {
   if (!tab) return true;
   const t = key => window.i18n?.t(key) || key;
+  if (tab.mode === 'office-preview') { showToast(t('toast.noEditableContent')); return true; }
   if (window.ReadMDSession?.busy?.() || tab._renameInFlight || tab._reviewRestorePending) { showToast(t('review.busy')); return true; }
   if (tab.mode === 'file' && (tab.isDirty || (state.editing && state.activeTabId === tab.id))) {
     showToast(t('toast.renameBlockedEdit')); return true;
@@ -2221,6 +2606,7 @@ async function renameTab(tabId, newTitle) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab || !newTitle || newTitle === (tab.title || tab.name)) return;
+  if (tab.mode === 'office-preview') { showToast(_t('toast.noEditableContent')); return; }
   if (tab.mode === 'file' && tab.path) {
     if (!hasPy || !py.rename_file) { showToast(_t('review.persistenceFailed')); return; }
     if (tab._renamePending) {
@@ -2305,13 +2691,15 @@ function openTabContextMenu(e, tabId) {
   if (!menu) return;
   menu.dataset.tabId = tabId;
   const tabIndex = state.tabs.findIndex(tab => tab.id === tabId);
+  const rename = menu.querySelector('[data-action="rename"]');
+  if (rename) rename.disabled = state.tabs[tabIndex]?.mode === 'office-preview';
   menu.querySelector('[data-action="move-left"]').disabled = tabIndex <= 0;
   menu.querySelector('[data-action="move-right"]').disabled = tabIndex < 0 || tabIndex >= state.tabs.length - 1;
   menu.style.left = Math.min(window.innerWidth - 180, e.clientX) + 'px';
   menu.style.top = Math.min(window.innerHeight - 200, e.clientY) + 'px';
   menu.classList.remove('hidden');
   menu.dataset.returnFocus = tabId;
-  setTimeout(() => menu.querySelector('button:not([disabled])')?.focus(), 20);
+  menu.querySelector('button:not([disabled])')?.focus();
 }
 
 function closeTabContextMenu({ restoreFocus = false } = {}) {
@@ -2320,15 +2708,27 @@ function closeTabContextMenu({ restoreFocus = false } = {}) {
   menu.classList.add('hidden');
   if (!restoreFocus) return;
   const tabId = menu.dataset.returnFocus;
-  if (tabId) focusVisibleTab(tabId);
+  if (tabId) focusVisibleTab(tabId, { immediate: true });
 }
 
 async function renderActiveTab({ restoreScroll = false } = {}) {
   const nextTab = getActiveTab();
+  if (!window.ReadMDOffice?.isTab(nextTab)) void window.ReadMDOffice?.releaseView();
   if (!nextTab) return;
   await window.ReadMDReview?.restore(nextTab);
   if (getActiveTab() !== nextTab) return;
   syncStateFromActiveTab();
+  if (window.ReadMDOffice?.isTab(nextTab)) {
+    ++tabRenderEpoch;
+    setFixes([], {});
+    document.title = (nextTab.title || nextTab.name) + ' - ReadMD';
+    setFileTitle(nextTab.title || nextTab.name, false, nextTab.path);
+    updateStatus(); renderTabsBar();
+    if (typeof updateAiContextStrip === 'function') updateAiContextStrip();
+    // Opening the source identity must not fence close/switch behind rendering.
+    void window.ReadMDOffice.render(nextTab);
+    return;
+  }
   if (nextTab._restoreUnavailable) {
     ++tabRenderEpoch;
     if (typeof beginReaderRender === 'function') beginReaderRender();
@@ -2348,7 +2748,7 @@ async function renderActiveTab({ restoreScroll = false } = {}) {
         else await loadFile(nextTab.path, { force: true });
       } finally { retry.disabled = false; } };
       const close = document.createElement('button'); close.className = 'tb-btn'; close.type = 'button'; close.textContent = t('tabs.closeTab');
-      close.onclick = () => closeTab(nextTab.id, false, 'button');
+      close.onclick = () => requestTabClose(nextTab.id, 'button');
       if (nextTab._restoreDescriptor) { close.disabled = true; close.title = t('error.review_needs_recovery'); }
       actions.append(retry, close); box.append(title, message, actions); pane.replaceChildren(box); pane.classList.remove('hidden');
       if (nextTab._restoreDescriptor) {
@@ -2517,7 +2917,7 @@ function promptDirtyClose(tabName, owner = typeof getActiveTab === 'function' ? 
     promptDirtyClose.active = true;
     let settled = false, focusTimer;
     const titleEl = $('close-confirm-title');
-    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '是否保存对文档的修改？';
+    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '未保存';
     const descEl = $('close-confirm-desc');
     if (descEl) descEl.textContent = _t('dialog.unsavedMsgDesc', { name: tabName || (_t('tabs.untitled') || '文档') }) || `「${tabName || '文档'}」已被修改，如果直接关闭，未保存的内容将会丢失。`;
     modal.classList.remove('hidden');
@@ -2609,14 +3009,39 @@ function askChoice(title, desc, choices) {
 }
 
 
+function requestTabClose(tabId, trigger = 'button') {
+  const tab = state.tabs.find(item => item.id === tabId);
+  if (!tab) return Promise.resolve(false);
+  const requests = requestTabClose.pending ||= new Map();
+  if (requests.has(tab)) return requests.get(tab);
+  const lifecycle = window.ReadMDLifecycle, owner = lifecycle?.owner?.();
+  if (owner?.name !== 'close-tab' || !owner.tabCloseCommitted) return closeTab(tabId, false, trigger);
+  // The previous close has its durable ACK and the next tab is already
+  // clickable, but detaching/rendering can still own the lifecycle. Keep this
+  // exact tab request until that work finishes instead of silently dropping it.
+  // A pending confirmation or an unacknowledged close never enters this queue.
+  const pending = (requestTabClose.tail || Promise.resolve()).catch(() => false).then(async () => {
+    while (lifecycle.busy() || window.ReadMDSession?.busy?.()) {
+      if (lifecycle.busy()) await lifecycle.whenIdle();
+      else await window.ReadMDSession.whenIdle();
+    }
+    if (!state.tabs.includes(tab)) return false;
+    return closeTab(tab.id, false, trigger);
+  }).finally(() => requests.delete(tab));
+  requests.set(tab, pending);
+  requestTabClose.tail = pending;
+  return pending;
+}
+
 async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (window.ReadMDSession?.busy?.()) return;
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  const lifecycleOwner = window.ReadMDLifecycle?.owner?.();
   if (tab._restoreDescriptor) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (tab._renamePending || tab._renameInFlight) { showToast(window.i18n.t('review.busy')); return; }
   if(state.activeTabId===tabId&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab)) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab, { park: true })) return;
   if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   let discardShared=false;
   if (tab.isDirty && !force) {
@@ -2638,6 +3063,7 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
     closedIndex = state.tabs.indexOf(tab);
     if (closedIndex < 0) return;
     state.tabs.splice(closedIndex, 1);
+    if (lifecycleOwner?.name === 'close-tab') lifecycleOwner.tabCloseCommitted = true;
     wasActive = state.activeTabId === tabId;
     if (wasActive) {
       exitEdit();
@@ -2650,6 +3076,9 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (window.ReadMDSession?.closeTabs) {
     if (!await window.ReadMDSession.closeTabs([tab], remove, accepted, trigger)) return;
   } else remove();
+  // Replace the old close buttons as soon as the session acknowledges removal.
+  // Detaching a shared page or rendering its neighbour may take another frame.
+  renderTabsBar();
   // The confirmed session no longer references this page. Until that ACK,
   // its only draft and visible source must survive a failed close.
   if (discardShared && window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
@@ -2658,7 +3087,6 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
     await renderActiveTab({ restoreScroll: true });
     focusVisibleTab(state.activeTabId);
   }
-  renderTabsBar();
   if (focusedTabId === tabId) {
     const fallbackTab = state.tabs[Math.min(idx, state.tabs.length - 1)];
     focusVisibleTab(fallbackTab ? fallbackTab.id : state.activeTabId);
@@ -2672,7 +3100,7 @@ async function closeOtherTabs(keepTabId) {
   if (!keepTab) return;
   if (state.tabs.some(tab => tab !== keepTab && (tab._renamePending || tab._renameInFlight || tab._restoreDescriptor))) { showToast(window.i18n.t('error.review_needs_recovery')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -2718,7 +3146,7 @@ async function closeAllTabs() {
   if (state.tabs.some(tab => tab._restoreDescriptor)) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (state.tabs.some(tab => tab._renamePending || tab._renameInFlight)) { showToast(window.i18n.t('review.busy')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -2904,15 +3332,15 @@ async function closeAllTabs() {
     });
     return settingsSaveQueue;
   }
-  async function recoveryBarrier(allowClose = false) {
+  async function recoveryBarrier(allowClose = false, park = false) {
     if (!ready) await window.__readmdSessionReady;
-    if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+    if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park })) return false;
     if (await window.ReadMDRecovery?.flush() === false) return false;
     captureReaderState(getActiveTab());
     return !closing || allowClose;
   }
-  async function flush(allowClose = false) {
-    if (!await recoveryBarrier(allowClose)) return false;
+  async function flush(allowClose = false, park = false) {
+    if (!await recoveryBarrier(allowClose, park)) return false;
     const value = snapshot();
     if (!value) return false;
     try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch (_) {}
@@ -2937,14 +3365,14 @@ async function closeAllTabs() {
     const reserved = [], flags = new Map();
     const body = document.body, inert = body?.inert;
     try {
-      if (!await flush(true)) return false;
+      if (!await flush(true, true)) return false;
       const owners = [...state.tabs];
       for (const tab of owners) { flags.set(tab, tab._renameInFlight); tab._renameInFlight = true; }
       if (body) body.inert = true;
       // Existing review reservations defer completed AI receipts as well as
       // writes. A large/unseen reader without a review snapshot needs no CAS.
       for (const tab of owners) if (window.ReadMDReview?.snapshot(tab)) {
-        if (!await window.ReadMDReview.beginRename(tab)) return false;
+        if (!await window.ReadMDReview.beginRename(tab, { park: true })) return false;
         reserved.push(tab);
       }
       if (tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending)) return false;
@@ -2967,6 +3395,9 @@ async function closeAllTabs() {
         await write(true, snapshot(), 'close_compensation');
         return failed();
       }
+      // Mark cancellation before ending review reservations: queued generated
+      // output must not mutate a page whose close was just acknowledged.
+      window.ReadMDCodeRuns?.cancelTabs?.(tabs);
       apply(); // No await between the verified acknowledgement and UI removal.
       fence++;
       try { localStorage.setItem(storageKey, JSON.stringify(snapshot())); } catch (_) {}
@@ -2993,7 +3424,7 @@ async function closeAllTabs() {
       name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
       content, fixed: content, original: file?.original ?? file?.content ?? (dirty || descriptor.unsavedCreation ? '' : content),
       revision: dirty ? descriptor.revision : (file?.revision || ''), mtime: file?.mtime || 0,
-      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fixes || [], stats: file?.stats || {},
+      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fix_details ?? file?.fixes ?? [], stats: file?.stats || {},
       is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
       isVirtual: !file, isDirty: dirty, unsavedCreation: !file && (descriptor.unsavedCreation || dirty),
       originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,
@@ -3098,7 +3529,7 @@ async function closeAllTabs() {
         // Reconcile each group before ANY member is opened. Parallel source /
         // reference reads could otherwise drop a descriptor while rollback owns it.
         const refactors = new Map();
-        for (const descriptor of session.tabs.filter(item => item.renamePending?.refactor)) {
+        for (const descriptor of session.tabs.filter(item => item.renamePending?.refactor && !window.ReadMDOffice?.isPath(item.path))) {
           let result;
           do {
             result = await window.ReadMDRefactor?.restoreDescriptor(descriptor);
@@ -3114,6 +3545,10 @@ async function closeAllTabs() {
         for (let offset = 0; offset < session.tabs.length; offset += 4) {
           const group = await Promise.all(session.tabs.slice(offset, offset + 4).map(async descriptor => {
             let file, receipt, pending = descriptor.renamePending, unavailableStatus = 0;
+            if (window.ReadMDOffice?.isPath(descriptor.path))
+              return !pending && !descriptor.dirty && !descriptor.unsavedCreation
+                ? window.ReadMDOffice.createTab(descriptor)
+                : protectedTab(descriptor, originalRows.get(descriptor.key));
             const open = async path => {
               try { const response = await apiFetch('/api/file?p=' + encodeURIComponent(path)); unavailableStatus = response.status; return response.ok ? await response.json() : null; }
               catch (_) { return null; }
@@ -3176,12 +3611,12 @@ async function closeAllTabs() {
         state.activeTabId = active?.id || null;
         if (active) {
           syncStateFromActiveTab();
-          if (!active._restoreUnavailable) await prepareDocCitations(active.path || active.originPath || '', active.content);
+          if (!active._restoreUnavailable && !window.ReadMDOffice?.isTab(active)) await prepareDocCitations(active.path || active.originPath || '', active.content);
           if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
           await renderActiveTab({ restoreScroll: true });
           if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
           if (!active._restoreUnavailable && state.pagination.enabled && state.pagination.mode === 'paged') renderPage(active.readerPage || 0, null, true);
-          if (!active._restoreUnavailable && (active.isDirty || (await window.ReadMDRecovery.mathDrafts(active)).length)) await toggleEdit();
+          if (!active._restoreUnavailable && !window.ReadMDOffice?.isTab(active) && (active.isDirty || (await window.ReadMDRecovery.mathDrafts(active)).length)) await toggleEdit();
         } else resetHome();
       }
       // An explicit OS/file URL open becomes active after restoring older pages.
@@ -3227,7 +3662,7 @@ async function closeAllTabs() {
 /* ---------------- 最近文件与历史记录 ---------------- */
 
 async function getRecentEntries() {
-  if (hasPy && py.get_recent) {
+  if (window.READMD_ENGINE !== 'rust' && hasPy && py.get_recent) {
     try { return await py.get_recent() || []; } catch (e) { return []; }
   }
   try {
@@ -3242,33 +3677,43 @@ async function getRecentEntries() {
 
 async function removeRecent(path) {
   if (!path) return false;
-  let ok = true;
-  if (hasPy && py.remove_recent) {
-    try { ok = (await py.remove_recent(path)) !== false; } catch (e) { ok = false; }
-  } else {
-    try {
+  try {
+    if (window.READMD_ENGINE !== 'rust' && hasPy && py.remove_recent) {
+      if ((await py.remove_recent(path)) === false) return false;
+    } else {
       const response = await apiFetch('/api/recent/remove', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path })
       });
-      ok = !!(response && response.ok);
-    } catch (e) { ok = false; }
-  }
-  if (!ok) return false;
-  await refreshRecent();
-  const historyModal = $('history-modal');
-  if (historyModal && !historyModal.classList.contains('hidden')) {
-    const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-    const rec = await getRecentEntries();
-    const list = $('history-list');
-    if (!rec.length) {
-      if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
-    } else {
-      renderRecentList(list, rec, p => { historyModal.classList.add('hidden'); loadFile(p); });
+      if (!response.ok || !(await response.json()).ok) return false;
     }
-  }
+  } catch (_) { return false; }
+  await animateRecentExit(row => row.dataset.recentPath === path);
+  await refreshRecent({ slide: true });
   return true;
+}
+
+function recentMotionAllowed() {
+  return typeof Element.prototype.animate === 'function' &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+async function animateRecentExit(choose) {
+  if (!recentMotionAllowed()) return;
+  const animations = [];
+  for (const id of ['side-recent-list', 'recent-list', 'history-list']) {
+    const list = $(id);
+    if (!list?.getClientRects().length) continue;
+    const rows = [...list.querySelectorAll('.recent-item')].filter(choose);
+    rows.forEach((row, index) => {
+      animations.push(row.animate(
+        [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-5px) scale(.985)' }],
+        { duration: 135, delay: Math.min(index, 5) * 14, easing: 'ease-in', fill: 'forwards' }
+      ));
+    });
+  }
+  await Promise.allSettled(animations.map(animation => animation.finished));
 }
 
 async function checkRecentStatus(paths) {
@@ -3298,17 +3743,21 @@ async function checkRecentStatus(paths) {
   }));
 }
 
-function renderRecentList(list, rec, onOpen) {
+function renderRecentList(list, rec, onOpen, slide = false) {
   if (!list) return;
-  list.innerHTML = '';
+  const oldRows = [...list.querySelectorAll('.recent-item')];
+  const motion = slide && recentMotionAllowed() && list.getClientRects().length;
+  const first = new Map(motion ? oldRows.map(row => [row.dataset.recentPath, row.offsetTop]) : []);
+  const focusIndex = oldRows.findIndex(row => row.contains(document.activeElement));
+  const focusRemove = document.activeElement?.classList.contains('recent-remove');
+  const fragment = document.createDocumentFragment();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const slice = rec.slice(0, 24);
-  if (!slice.length) return;
-
   const itemMap = new Map();
   slice.forEach(p => {
     const li = document.createElement('li');
     li.className = 'recent-item';
+    li.dataset.recentPath = p;
 
     const card = document.createElement('div');
     card.className = 'recent-card';
@@ -3352,18 +3801,36 @@ function renderRecentList(list, rec, onOpen) {
     removeBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      li.classList.add('removing');
-      if (!(await removeRecent(p))) li.classList.remove('removing');
+      if (removeBtn.getAttribute('aria-busy') === 'true') return;
+      removeBtn.setAttribute('aria-busy', 'true');
+      try {
+        if (!await removeRecent(p)) showToast(_t('error.internal_error'));
+      } finally {
+        removeBtn.removeAttribute('aria-busy');
+      }
     });
 
     card.appendChild(btn);
     card.appendChild(removeBtn);
     li.appendChild(card);
-    list.appendChild(li);
+    fragment.appendChild(li);
 
     itemMap.set(p, { li, card, btn, nm, dp });
   });
 
+  list.replaceChildren(fragment);
+  for (const { li } of itemMap.values()) {
+    if (!first.has(li.dataset.recentPath)) continue;
+    const dy = first.get(li.dataset.recentPath) - li.offsetTop;
+    if (dy) li.animate([{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }],
+      { duration: 230, easing: 'cubic-bezier(.2,.72,.24,1)' });
+  }
+  if (slide && focusIndex >= 0 && slice.length) {
+    list.children[Math.min(focusIndex, slice.length - 1)]
+      ?.querySelector(focusRemove ? '.recent-remove' : '.recent-card-btn')?.focus({ preventScroll: true });
+  }
+
+  if (!slice.length) return;
   checkRecentStatus(slice).then(items => {
     (items || []).forEach(item => {
       const entry = itemMap.get(item.path);
@@ -3384,51 +3851,70 @@ function renderRecentList(list, rec, onOpen) {
   }).catch(() => {});
 }
 
-async function refreshRecent() {
-  const box = $('recent-box');
-  if (!box) return;
+function renderSidebarRecent(rec, slide = false) {
+  const list = $('side-recent-list');
+  $('side-recent-clear').disabled = !rec.length;
+  renderRecentList(list, rec, loadFile, slide);
+  if (!rec.length) showEmptyRecent(list, 'side-empty');
+}
+
+function showEmptyRecent(list, className) {
+  const row = document.createElement('li');
+  row.className = className;
+  row.textContent = window.i18n?.t('history.noRecentFiles') || '暂无记录';
+  list.replaceChildren(row);
+}
+
+function renderHistoryRecent(rec, slide = false) {
+  const modal = $('history-modal');
+  const list = $('history-list');
+  renderRecentList(list, rec, path => { modal.classList.add('hidden'); loadFile(path); }, slide);
+  if (!rec.length) showEmptyRecent(list, 'empty');
+}
+
+let recentRequest = 0;
+async function refreshRecent({ slide = false } = {}) {
+  const request = ++recentRequest;
   const rec = await getRecentEntries();
-  if (!rec.length) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden');
-  renderRecentList($('recent-list'), rec, loadFile);
+  if (request !== recentRequest) return;
+  renderSidebarRecent(rec, slide);
+  const box = $('recent-box');
+  if (box) {
+    box.classList.toggle('hidden', !rec.length);
+    renderRecentList($('recent-list'), rec, loadFile, slide);
+  }
+  if ($('history-modal')?.classList.contains('hidden') === false) renderHistoryRecent(rec, slide);
 }
 
 async function openHistoryModal() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const rec = await getRecentEntries();
-  const modal = $('history-modal');
-  const list = $('history-list');
-  list.innerHTML = '';
-  if (!rec.length) {
-    const li = document.createElement('li');
-    li.className = 'empty'; li.textContent = _t('history.noRecentFiles'); list.appendChild(li);
-  } else {
-    renderRecentList(list, rec, p => { modal.classList.add('hidden'); loadFile(p); });
-  }
-  modal.classList.remove('hidden');
+  renderHistoryRecent(rec);
+  $('history-modal').classList.remove('hidden');
 }
 
 async function clearRecent() {
-  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: 'history-clear' });
+  const cleared = await window.ReadMDTask.run('clear-recent', runClearRecent, {
+    trigger: ['history-clear', 'recent-clear', 'side-recent-clear']
+  });
+  if (cleared) await refreshRecent({ slide: true });
+  return cleared;
 }
 
 async function runClearRecent() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   try {
-  if (hasPy && py.clear_recent) {
-    const result = await py.clear_recent();
-    if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
-  } else {
-    const response = await apiFetch('/api/recent/clear', { method: 'POST' });
-    const result = await response.json();
-    if (!response.ok || result?.ok === false) throw new Error(result?.error || 'HTTP ' + response.status);
-  }
-  await refreshRecent();
-  const list = $('history-list');
-  if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
-  return true;
-  } catch (e) {
-    showToast(_t('audit.clearFailed', { error: e.message }));
+    if (window.READMD_ENGINE !== 'rust' && hasPy && py.clear_recent) {
+      const result = await py.clear_recent();
+      if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
+    } else {
+      const response = await apiFetch('/api/recent/clear', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'HTTP ' + response.status);
+    }
+    await animateRecentExit(() => true);
+    return true;
+  } catch (error) {
+    showToast(_t('audit.clearFailed', { error: error.message }));
     return false;
   }
 }
@@ -3494,8 +3980,24 @@ function setUnavailableReason(element, reason) {
   }
 }
 
+function updateSidebarSummaryTitle(summary) {
+  summary.title = Array.from(summary.children, item => item.textContent).filter(Boolean).join(' · ');
+}
+
+function updateSidebarStatistics(stats) {
+  const summary = $('status-summary');
+  if (!summary) return;
+  summary.dataset.tab = state.activeTabId || '';
+  const locale = window.i18n?.currentLang;
+  const count = value => Number(value).toLocaleString(locale || undefined);
+  $('status-words').textContent = stats ? window.i18n.t('reader.wordCount', { count: count(stats.words) }) : '';
+  $('status-reading-time').textContent = stats ? window.i18n.t('reader.readingTime', { minutes: count(stats.minutes) }) : '';
+  updateSidebarSummaryTitle(summary);
+}
+
 function updateStatus() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const isOfficePreview = state.mode === 'office-preview';
   const srcLabels = {
     convert: _t('menu.convert'),
     ocr: _t('menu.ocr'),
@@ -3504,7 +4006,7 @@ function updateStatus() {
   };
   $('status-left').textContent = (state.mode === 'virtual' ? '[' + (srcLabels[state.source] || state.source) + '] ' : '') + (state.sourceName || state.file || '');
   const parts = [];
-  if (state.stats) {
+  if (state.stats && !isOfficePreview) {
     const s = state.stats;
     const p2 = [];
     if (s.table) p2.push(_t('editor.table') + ' ' + s.table);
@@ -3519,25 +4021,33 @@ function updateStatus() {
   $('status-right').textContent = state.mode === 'unavailable' ? _t('toast.openFailed') : parts.join(' · ');
   const isWelcome = state.mode === 'welcome';
   const hasDoc = (state.mode === 'file' || state.mode === 'virtual') && state.original != null;
+  const summary = $('status-summary');
+  if (summary) {
+    if (summary.dataset.tab !== (state.activeTabId || '') || !hasDoc) updateSidebarStatistics(null);
+    const ext = String(state.ext || state.sourceName?.match(/\.([a-z\d]{1,8})$/i)?.[1] || 'md').replace(/^\./, '').toUpperCase();
+    $('status-format').textContent = /^(?:MARKDOWN|MDOWN|MKD|MKDN)$/.test(ext) ? 'MD' : ext;
+    $('status-encoding').textContent = (state.encoding || '').toUpperCase();
+    updateSidebarSummaryTitle(summary);
+    $('statusbar').classList.toggle('hidden', !hasDoc && !isOfficePreview);
+  }
   const canEdit = hasDoc && !state.editing;
-  const canReload = state.mode === 'file';
+  const canReload = state.mode === 'file' || isOfficePreview;
   const canSaveas = hasDoc;
   // 没有打开文档时禁用编辑；新建文档走 newDocument()。
   $('btn-edit').disabled = !hasDoc && !state.editing;
-  setUnavailableReason($('btn-edit'), _t('toast.openDocumentToUse'));
+  setUnavailableReason($('btn-edit'), _t(isOfficePreview ? 'toast.noEditableContent' : 'toast.openDocumentToUse'));
   $('btn-reload').disabled = !canReload;
   $('btn-saveas').disabled = !canSaveas;
   if ($('btn-document-copy')) $('btn-document-copy').disabled = !hasDoc;
-  setUnavailableReason($('btn-saveas'), _t('toast.openDocumentToUse'));
+  setUnavailableReason($('btn-saveas'), _t(isOfficePreview ? 'toast.noEditableContent' : 'toast.openDocumentToUse'));
   if ($('btn-print')) {
     const canExport = hasPy || window.READMD_ENGINE === 'rust';
-    $('btn-print').disabled = isWelcome || state.mode === 'unavailable' || !canExport;
-    const exportHint = _t('toolbar.export') + ' (Ctrl+P)';
-    $('btn-print').title = exportHint;
-    $('btn-print').setAttribute('aria-label', exportHint);
+    $('btn-print').disabled = isWelcome || state.mode === 'unavailable' || isOfficePreview || !canExport;
+    $('btn-print').title = _t('toolbar.export');
+    $('btn-print').setAttribute('aria-label', _t('toolbar.export'));
     if (!canExport) setUnavailableReason($('btn-print'), _t('toast.exportBrowserNotice'));
   }
-  if ($('btn-search')) $('btn-search').disabled = isWelcome || state.mode === 'unavailable';
+  if ($('btn-search')) $('btn-search').disabled = isWelcome || state.mode === 'unavailable' || isOfficePreview;
   setUnavailableReason($('btn-search'), _t('toast.searchNeedsDocument'));
   if ($('btn-presentation-menu')) $('btn-presentation-menu').disabled = !hasDoc;
   if ($('btn-run-all-chunks')) {
@@ -3567,10 +4077,7 @@ function updateStatus() {
   }
 
   const btnHome = $('btn-home');
-  if (btnHome) {
-    if (isWelcome) btnHome.classList.add('hidden');
-    else btnHome.classList.remove('hidden');
-  }
+  if (btnHome) btnHome.disabled = isWelcome;
 }
 
 let goingHome = false;
@@ -3588,6 +4095,7 @@ async function goHome(options = {}) {
 }
 
 function resetHome() {
+  void window.ReadMDOffice?.releaseView();
   window.invalidateDocumentLoads?.();
   state.mode = 'welcome';
   state.file = null;
@@ -3717,11 +4225,13 @@ function stopAutoReload() {
 }
 
 function syncBuildVersionLabels() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const version = document.documentElement.dataset.version;
+  syncVersionLabels(document.documentElement.dataset.version);
+}
+
+function syncVersionLabels(version) {
   if (!version) return;
-  if ($('status-version')) $('status-version').textContent = 'v' + version;
-  if ($('menu-version-label')) $('menu-version-label').textContent = _t('app.currentVersion') + version;
+  const label = 'v' + version.replace(/^[vV]/, '');
+  for (const id of ['status-version', 'menu-version-label']) if ($(id)) $(id).textContent = label;
 }
 
 ;
@@ -3735,11 +4245,13 @@ function syncBuildVersionLabels() {
 let dragCounter = 0;
 let lastNativeDropAt = 0;
 
-/** 拖放条目的分类：zip / folder / binary（走转换） / text（直接打开）。 */
+/** Office/PDF 先读原排版；其余条目保留已有直接打开/显式转换行为。 */
 function classifyDroppedEntry(entry) {
   const name = entry.name || '';
   if (entry.isDir) return 'folder';
   if (/\.zip$/i.test(name)) return 'zip';
+  if (/\.pdf$/i.test(name)) return 'pdf';
+  if (/\.(docx|pptx)$/i.test(name)) return 'office';
   const binary = (typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(name))
     || (typeof IMG_RE !== 'undefined' && IMG_RE.test(name));
   return binary ? 'binary' : 'text';
@@ -3784,7 +4296,7 @@ async function extractDroppedZip(entry) {
  */
 async function handleDroppedEntries(entries) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const groups = { zip: [], folder: [], binary: [], text: [] };
+  const groups = { zip: [], folder: [], pdf: [], office: [], binary: [], text: [] };
   for (const en of entries || []) groups[classifyDroppedEntry(en)].push(en);
 
   if (groups.folder.length && typeof listFolder === 'function') {
@@ -3807,6 +4319,11 @@ async function handleDroppedEntries(entries) {
   for (const f of groups.text) {
     const path = f.path ? f.path : await uploadFile(f.file);
     if (path) await loadFile(path, { browserCopy: !f.path });
+  }
+
+  for (const f of [...groups.pdf, ...groups.office]) {
+    const path = f.path ? f.path : await uploadFile(f.file);
+    if (path) await openDocumentPath(path, { browserCopy: !f.path });
   }
 
   if (groups.binary.length) {
@@ -3834,7 +4351,7 @@ window.__readmdNativeDrop = function (payload) {
       const title = $('drag-title');
       const desc = $('drag-desc');
       if (title) title.textContent = _t('dialog.dropTitle') || '松开以导入文档';
-      if (desc) desc.textContent = _t('dialog.dropDesc') || 'Markdown 文件将在新标签页中打开；Word/PDF 等将自动导入转换';
+      if (desc) desc.textContent = _t('dialog.dropOriginalPdf');
     }
     return;
   }
@@ -3870,7 +4387,7 @@ function bindGlobalDragAndDrop() {
       if (title && desc) {
         if (types.includes('Files')) {
           title.textContent = _t('dialog.dropTitle') || '松开以导入文档';
-          desc.textContent = _t('dialog.dropDesc') || 'Markdown 文件将在新标签页中打开；Word/PDF 等将自动导入转换';
+          desc.textContent = _t('dialog.dropOriginalPdf');
         } else if (types.includes('text/uri-list')) {
           title.textContent = _t('dialog.dropUrlTitle') || '松开以抓取网页';
           desc.textContent = _t('dialog.dropUrlDesc') || '自动解析 URL 网页并提取为 Markdown 文档';
@@ -3919,7 +4436,7 @@ function bindGlobalDragAndDrop() {
     const dt = e.dataTransfer;
     if (!dt) return;
 
-    // 1. 处理文件拖拽（万物皆可开：代码/配置/脚本/文本直接开，Office/PDF 走转换，ZIP 自动解压）
+    // 1. Office/PDF 读原排版，代码/配置/脚本/文本直接开，ZIP 自动解压。
     if (dt.files && dt.files.length > 0) {
       // 桌面端的原生拖放会直接送来真实路径（__readmdNativeDrop），DOM 这里只是兜底。
       if (Date.now() - lastNativeDropAt < 1500) return;
@@ -3964,37 +4481,18 @@ function bindTabOverflowEvents() {
   const overflowWrap = $('doc-tabs-overflow-wrap');
   if (!overflowBtn || !dropdown || !overflowWrap) return;
 
-  let isPinned = false;
-
-  const setOverflowMenu = visible => {
-    isPinned = visible;
-    dropdown.classList.toggle('hidden', !visible);
-    overflowBtn.setAttribute('aria-expanded', visible ? 'true' : 'false');
-    if (visible) setTimeout(() => dropdown.querySelector('[role="menuitem"]')?.focus(), 20);
-  };
-
-  overflowWrap.addEventListener('mouseenter', () => {
-    if (!isPinned) setOverflowMenu(true);
-  });
-  overflowWrap.addEventListener('mouseleave', () => {
-    if (!isPinned) setOverflowMenu(false);
-  });
-
-  overflowBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    setOverflowMenu(!isPinned);
+  overflowBtn.addEventListener('click', () => {
+    setTopTabMenu(dropdown.classList.contains('hidden'), { focus: true });
   });
 
   overflowBtn.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowDown' && event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.key !== 'ArrowDown') return;
     event.preventDefault();
-    setOverflowMenu(true);
+    setTopTabMenu(true, { focus: true });
   });
 
   document.addEventListener('click', e => {
-    if (!overflowWrap.contains(e.target)) {
-      setOverflowMenu(false);
-    }
+    if (!overflowWrap.contains(e.target)) setTopTabMenu(false);
   });
 
   dropdown.addEventListener('keydown', event => {
@@ -4008,7 +4506,8 @@ function bindTabOverflowEvents() {
       (event.key === 'Home' ? items[0] : items[items.length - 1])?.focus();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      setOverflowMenu(false);
+      event.stopPropagation();
+      setTopTabMenu(false);
       overflowBtn.focus();
     }
   });
@@ -4044,7 +4543,7 @@ function bindTabContextMenuEvents() {
       if (!tab) return;
 
       if (action === 'close') {
-        closeTab(tabId, false, 'tab_menu');
+        requestTabClose(tabId, 'tab_menu');
       } else if (action === 'close-others') {
         closeOtherTabs(tabId);
       } else if (action === 'close-all') {
@@ -4675,12 +5174,12 @@ function renderMath(body) {
     }
   }
 
-  if (window.MathJax) {
-    if (typeof MathJax.typesetPromise === 'function') { try { doTypeset(); } catch (_) {} }
-    else if (mathReadyPromise) mathReadyPromise.then(doTypeset).catch(() => {});
-    return;
-  }
+  void ensureMathRenderer().then(doTypeset).catch(() => {});
+}
 
+function ensureMathRenderer() {
+  if (typeof window.MathJax?.typesetPromise === 'function') return Promise.resolve();
+  if (mathReadyPromise) return mathReadyPromise;
   window.MathJax = {
     // html is already used by the formula tools; load the pinned local
     // component before TeX configuration, rather than a missing lazy URL.
@@ -4708,8 +5207,8 @@ function renderMath(body) {
     s.onload = () => Promise.resolve(MathJax.startup?.promise).then(resolve, reject);
     s.onerror = () => reject(Error('Local math renderer unavailable'));
   });
-  mathReadyPromise.then(doTypeset).catch(() => {});
   document.head.appendChild(s);
+  return mathReadyPromise;
 }
 
 ;
@@ -4721,24 +5220,51 @@ function renderMath(body) {
 /* ---------------- 修正详情 ---------------- */
 
 let documentInspectionGeneration = 0;
+let documentFixOwner = null;
+const fixLabels = new WeakMap();
+
+function fixLabel(element, text) {
+  if (!element) return;
+  fixLabels.set(element, text);
+  element.textContent = text();
+}
+
+function describeReaderFix(fix) {
+  if (typeof fix === 'string') return fix;
+  const messages = {
+    heading_space: 'fixes.headingSpace', table_separator: 'fixes.tableSeparator',
+    table_alignment: 'fixes.tableAlignment', inline_delimiter: 'fixes.closedDelimiter',
+    inline_math: 'fixes.closedDelimiter',
+  };
+  const line = fix.end_line ? `${fix.line}–${fix.end_line}` : fix.line;
+  const position = i18n.t('inspection.atLine', { line });
+  const message = messages[fix.code];
+  return message ? `${position} · ${i18n.t(message, { ...fix, delimiter: `\u2068${fix.delimiter ?? '$'}\u2069` })}` : position;
+}
+
+function localizeFixReport() {
+  if ($('fix-modal')?.classList.contains('hidden')) return;
+  for (const element of [$('fix-count'), ...($('fix-list')?.children || [])]) {
+    const text = element && fixLabels.get(element);
+    if (text) element.textContent = text();
+  }
+}
+
 function showFixModal() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  documentFixOwner = captureDocumentFixOwner();
   const list = $('fix-list');
   if (list) list.innerHTML = '';
   const fixes = state.fixes || [];
-  const fixCount = $('fix-count');
-  if (fixCount) {
-    fixCount.textContent = fixes.length ? (_t('fixes.countTotal', { count: fixes.length }) || ('（共 ' + fixes.length + ' 处）')) : '';
-  }
+  fixLabel($('fix-count'), () => fixes.length ? i18n.t('fixes.countTotal', { count: fixes.length }) : '');
   if (!fixes.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = _t('fixes.noFixes') || '本篇文档未发现需要修正的内容';
+    fixLabel(li, () => i18n.t('fixes.noFixes'));
     if (list) list.appendChild(li);
   } else {
     fixes.forEach(f => {
       const li = document.createElement('li');
-      li.textContent = f;
+      fixLabel(li, () => describeReaderFix(f));
       if (list) list.appendChild(li);
     });
   }
@@ -4754,7 +5280,7 @@ async function inspectCurrentDocument(generation) {
   const list = $('fix-list');
   const status = document.createElement('li');
   status.className = 'document-inspection-summary';
-  status.textContent = i18n.t('inspection.loading');
+  fixLabel(status, () => i18n.t('inspection.loading'));
   list?.appendChild(status);
   try {
     const response = await apiFetch('/api/document/analyze', {
@@ -4764,119 +5290,154 @@ async function inspectCurrentDocument(generation) {
     const result = await response.json();
     if (generation !== documentInspectionGeneration || tabId !== state.activeTabId || $('fix-modal').classList.contains('hidden')) return;
     if (text !== (state.editing ? getEditContent() : (state.original ?? state.fixed ?? ''))) {
-      status.textContent = i18n.t('inspection.changed'); return;
+      fixLabel(status, () => i18n.t('inspection.changed')); return;
     }
     if (!response.ok || !result.ok) throw new Error('inspection_failed');
-    status.textContent = i18n.t('inspection.summary', { count: result.diagnostics.length });
+    fixLabel(status, () => i18n.t('inspection.summary', { count: result.diagnostics.length }));
     for (const issue of result.diagnostics) {
       const row = document.createElement('li');
       row.className = 'document-inspection-issue';
       const key = 'inspection.' + issue.code;
-      row.textContent = i18n.t('inspection.atLine', { line: issue.position.line }) + ' · ' + i18n.t(key) + ' · ' + issue.target;
+      fixLabel(row, () => i18n.t('inspection.atLine', { line: issue.position.line }) + ' · ' + i18n.t(key) + ' · ' + issue.target);
       list?.appendChild(row);
     }
     if (result.truncated) {
-      const row = document.createElement('li'); row.textContent = i18n.t('inspection.limited'); list?.appendChild(row);
+      const row = document.createElement('li');
+      fixLabel(row, () => i18n.t('inspection.limited'));
+      list?.appendChild(row);
     }
   } catch (_) {
-    if (generation === documentInspectionGeneration && tabId === state.activeTabId && status.isConnected) status.textContent = i18n.t('inspection.failed');
+    if (generation === documentInspectionGeneration && tabId === state.activeTabId && status.isConnected) fixLabel(status, () => i18n.t('inspection.failed'));
   }
 }
 
+function documentFixText(key, fallback = 'review.persistenceFailed') {
+  const value = window.i18n?.t(key);
+  const alternative = window.i18n?.t(fallback);
+  return value && value !== key ? value : alternative && alternative !== fallback ? alternative : '';
+}
+function documentFixFailure(code) { const error = new Error(code); error.code = code; return error; }
+function documentFixSource(tab) {
+  const text = tab === getActiveTab() && state.editing ? getEditContent() : tab?.isDirty ? tab.content : (tab?.original ?? tab?.content ?? '');
+  return window.ReadMDReview?.lf ? window.ReadMDReview.lf(text) : String(text ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+}
+function captureDocumentFixOwner() {
+  const tab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  return tab ? { tab, path: tab.path, generation: tab.editGeneration || 0, source: documentFixSource(tab), view: state.editing ? window.cmView : null } : null;
+}
+function ownsDocumentFix(owner, active = true) {
+  return Boolean(owner && documentFixOwner === owner && state.tabs.includes(owner.tab) && owner.tab.path === owner.path &&
+    (owner.tab.editGeneration || 0) === owner.generation && documentFixSource(owner.tab) === owner.source &&
+    (!active || getActiveTab() === owner.tab && (!owner.view || window.cmView === owner.view)));
+}
+function sameDocumentFixStamp(left, right) {
+  return Boolean(left && right && left.document_id === right.document_id && left.generation === right.generation &&
+    left.review_revision === right.review_revision && left.content === right.content && left.editGeneration === right.editGeneration);
+}
+function notifyDocumentFix(error) {
+  const code = error?.code || '';
+  showToast(documentFixText('error.' + code, code === 'cancelled' ? 'ai.stopped' : /stale|conflict/.test(code) ? 'review.conflict' : 'review.persistenceFailed'));
+}
+function showDocumentFixTask(owner, task) {
+  // A fast legitimate proposal may already have advanced the draft. This is
+  // status presentation only; keep its original tab identity, not old text.
+  if (!owner || documentFixOwner !== owner || !state.tabs.includes(owner.tab) || owner.tab.path !== owner.path || getActiveTab() !== owner.tab) return;
+  $('fix-modal')?.classList.add('hidden');
+  if ($('ai-panel')?.classList.contains('hidden') && typeof toggleAiPanel === 'function') toggleAiPanel();
+  window.ReadMDAiHarness.render();
+  const key = ['queued', 'running'].includes(task.state) ? 'ai.taskRunning' : task.state === 'completed' ? 'ai.taskCompleted' : 'ai.taskPaused';
+  showToast(documentFixText(key));
+}
 async function handleAiDocumentFix() {
   return window.ReadMDTask.run('document-ai-fix', runAiDocumentFix, { trigger: 'fix-ai-btn' });
 }
-
 async function runAiDocumentFix() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const rawContent = state.editing ? getEditContent() : (state.fixed ?? state.original ?? '');
-  const origin = { tabId: state.activeTabId, editor: window.cmView, name: state.sourceName || state.file, path: state.file, dir: state.dir };
-  if (!rawContent || !rawContent.trim()) {
-    showToast(_t('fixes.noDocContent') || '当前没有可修复的文档内容');
-    return;
-  }
-
+  const owner = documentFixOwner || (documentFixOwner = captureDocumentFixOwner());
   try {
-    const connection = typeof ensureAiConfigured === 'function'
-      ? await ensureAiConfigured()
-      : (typeof resolveSharedAiConnection === 'function' ? await resolveSharedAiConnection() : null);
-    if (!connection) return;
-    const fixModal = $('fix-modal');
-    if (fixModal) fixModal.classList.add('hidden');
-    showToast(_t('fixes.aiFixing') || '正在进行 AI 深度格式排版自愈...', 2500);
-    const resp = await apiFetch('/api/ai/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: connection.provider,
-        credential_id: connection.credential_id,
-        model: connection.model,
-        base_url: connection.base_url,
-        mode: connection.mode,
-        endpoint_mode: connection.endpoint_mode,
-        headers: connection.headers,
-        skill_id: 'readmd-format-fix',
-        skill_variables: {
-          document: rawContent,
-          selection: rawContent,
-          request: '',
-          language: (window.i18n && window.i18n.locale) || document.documentElement.lang || 'en',
-          context: '',
-          output_format: 'Markdown'
-        },
-        messages: [{ role: 'user', content: rawContent }],
-        stream: false
-      })
-    });
-
-    const data = await resp.json();
-    if (!resp.ok || !data || !data.ok || typeof data.content !== 'string' || !data.content.trim()) {
-      showToast((_t('fixes.aiFixFail') || 'AI 修复失败：') + ((data && data.error) || '未返回有效内容'));
-      return;
+    if (!ownsDocumentFix(owner)) throw documentFixFailure('review_stale_generation');
+    if (window.READMD_ENGINE !== 'rust' || !window.ReadMDReview || !window.ReadMDAiHarness) throw documentFixFailure('review_persistence_failed');
+    if (!owner.source.trim()) { showToast(documentFixText('fixes.noDocContent')); return false; }
+    const stamp = await window.ReadMDReview.capture(owner.tab);
+    if (!stamp || !ownsDocumentFix(owner)) throw documentFixFailure('review_stale_generation');
+    if (!await window.ReadMDAiHarness.init()) throw documentFixFailure('ai_task_failed');
+    if (!ownsDocumentFix(owner)) throw documentFixFailure('review_stale_generation');
+    const existing = window.ReadMDAiHarness.list().find(task => task.document_id === stamp.document_id && ['queued', 'running'].includes(task.state));
+    if (existing) { showDocumentFixTask(owner, existing); return existing; }
+    // Reading enters the existing editor on the same document. Its source is
+    // the Review draft/original, not the reader's corrected display projection.
+    if (!state.editing) await toggleEdit();
+    if (!state.editing || !ownsDocumentFix(owner)) throw documentFixFailure('review_stale_generation');
+    const view = window.cmView;
+    const connection = typeof ensureAiConfigured === 'function' ? await ensureAiConfigured() : null;
+    if (!connection) return false;
+    if (!ownsDocumentFix(owner) || window.cmView !== view || !state.editing) throw documentFixFailure('review_stale_generation');
+    if ($('fix-modal')?.classList.contains('hidden')) throw documentFixFailure('cancelled');
+    // start performs a second capture, including editGeneration and both Rust
+    // revisions. An edit followed by undo cannot validate an old equal string.
+    const task = await window.ReadMDAiHarness.start({ request: documentFixText('fixes.aiFix'), skill_id: 'readmd-format-fix',
+      provider: connection.provider, credential_id: connection.credential_id, model: connection.model,
+      task_id: window.ReadMDTask.newTaskId('document-fix'), ranges: [{ from: 0, to: stamp.content.length }] }, stamp, owner.tab);
+    showDocumentFixTask(owner, task);
+    return task;
+  } catch (error) { notifyDocumentFix(error); return false; }
+}
+async function handleSaveDocumentFix() {
+  return window.ReadMDTask.run('document-fix-save', runSaveDocumentFix, { trigger: 'fix-save' });
+}
+async function runSaveDocumentFix() {
+  const owner = documentFixOwner || (documentFixOwner = captureDocumentFixOwner());
+  const editing = Boolean(state.editing), projection = editing ? null : state.fixed;
+  let copy = null;
+  try {
+    if (!ownsDocumentFix(owner) || !window.ReadMDReview) throw documentFixFailure('review_stale_generation');
+    const stamp = await window.ReadMDReview.capture(owner.tab);
+    if (!stamp || !ownsDocumentFix(owner) || Boolean(state.editing) !== editing) throw documentFixFailure('review_stale_generation');
+    if (editing) {
+      // saveAs captures the actual editor/Review draft, resources and target.
+      // It preserves pending decisions; a save is not an accept operation.
+      $('fix-modal')?.classList.add('hidden');
+      if (window.ReadMDReview.snapshot(owner.tab)?.changes?.some(change => change.decision === 'pending')) showToast(documentFixText('fixes.savePending', 'review.pending'));
+      return await saveAs();
     }
-
-    let fixedMd = data.content.trim();
-    // 剥离可能存在的 markdown 代码块包裹
-    if (fixedMd.startsWith('```markdown') && fixedMd.endsWith('```')) {
-      fixedMd = fixedMd.slice(11, -3).trim();
-    } else if (fixedMd.startsWith('```md') && fixedMd.endsWith('```')) {
-      fixedMd = fixedMd.slice(5, -3).trim();
-    } else if (fixedMd.startsWith('```') && fixedMd.endsWith('```') && !rawContent.startsWith('```')) {
-      fixedMd = fixedMd.slice(3, -3).trim();
+    if (!window.ReadMDAiHarness || !await window.ReadMDAiHarness.init()) {
+      showToast(documentFixText('fixes.copyLimited', 'storage.copyDraft')); return false;
     }
-
-    if (!fixedMd) throw new Error(_t('audit.emptyAiResult'));
-    const unchangedEditor = origin.editor && state.activeTabId === origin.tabId && state.editing && window.cmView === origin.editor &&
-      window.cmView.state.doc.toString() === rawContent;
-    if (unchangedEditor) {
-      if (!await window.ReadMDRecovery?.checkpoint('ai_repair')) return;
-      if (state.activeTabId !== origin.tabId || window.cmView !== origin.editor || getEditContent() !== rawContent) {
-        await renderVirtual('ai', getNextAiCopyTabName(origin.name), origin.dir || '', fixedMd, [], { originPath: origin.path });
-        return;
-      }
-      window.cmView.dispatch({
-        annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.repair'),
-        changes: { from: 0, to: window.cmView.state.doc.length, insert: fixedMd }
-      });
-      if (typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
-      if (typeof updateEditorPreview === 'function') updateEditorPreview();
-    } else {
-      await renderVirtual('ai', getNextAiCopyTabName(origin.name), origin.dir || '', fixedMd, [], { originPath: origin.path });
-      showToast(_t('toast.appliedVirtualNotice') || '已创建副本标签页');
-      return;
+    if (!ownsDocumentFix(owner) || state.editing || state.fixed !== projection) throw documentFixFailure('review_stale_generation');
+    const snapshot = window.ReadMDReview.snapshot(owner.tab);
+    const activeTask = window.ReadMDAiHarness?.list().some(task => task.document_id === stamp.document_id && ['queued', 'running'].includes(task.state));
+    // A display projection has no authority to erase review provenance. Only
+    // a clean, history-free source can become an independent corrected copy.
+    if (owner.tab.isDirty || !snapshot || !Array.isArray(snapshot.changes) || snapshot.changes.length || snapshot.can_undo !== false || snapshot.can_redo !== false || snapshot.recovery || snapshot.save_intent || snapshot.rename || activeTask) {
+      showToast(documentFixText('fixes.copyLimited', 'storage.copyDraft')); return false;
     }
-
-    showToast(_t('fixes.aiFixed') || 'AI 深度排版修复完成', 1800);
-  } catch (err) {
-    showToast((_t('fixes.aiFixFail') || 'AI 修复失败：') + err.message);
+    if (typeof projection !== 'string' || !projection.trim()) return false;
+    const tabs = new Set(state.tabs), name = (owner.tab.name || state.sourceName || 'document.md').replace(/\.(?:md|markdown|mkd)$/i, '') + ' ' + documentFixText('storage.copySuffix') + '.md';
+    $('fix-modal')?.classList.add('hidden');
+    // No resource is copied here. The normal Save As writer owns staging and
+    // publication only after the explicit picker/transaction boundary.
+    await renderVirtual('fix', name, owner.tab.dir || state.dir || '', projection, [], {
+      originPath: owner.path || owner.tab.originPath || null, assets: (owner.tab.webAssets || []).map(asset => ({ ...asset })) });
+    const added = state.tabs.filter(tab => !tabs.has(tab) && tab.source === 'fix' && tab.content === projection);
+    copy = added.length === 1 ? added[0] : null;
+    if (!copy || !ownsDocumentFix(owner, false) || getActiveTab() !== copy || copy.path || (copy.editGeneration || 0)) throw documentFixFailure('review_stale_generation');
+    const latest = await window.ReadMDReview.capture(owner.tab);
+    if (!sameDocumentFixStamp(stamp, latest) || !ownsDocumentFix(owner, false) || getActiveTab() !== copy || copy.path || copy.content !== projection || (copy.editGeneration || 0)) throw documentFixFailure('review_stale_generation');
+    // The original tab remains open and is therefore already in the normal
+    // Save As blocked_paths list. Never compute or overwrite a .readmd sidecar.
+    const saved = await saveAs();
+    if (!saved || !copy.path) { showToast(documentFixText('fixes.copyKept', 'storage.draftKept')); return false; }
+    return true;
+  } catch (error) {
+    // A cancelled picker, failed save or later user edit owns this dirty copy.
+    // Do not remove a tab or resources as a rollback shortcut.
+    if (copy) showToast(documentFixText('fixes.copyKept', 'storage.draftKept'));
+    else notifyDocumentFix(error);
+    return false;
   }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const aiFixBtn = $('fix-ai-btn');
-  if (aiFixBtn) {
-    aiFixBtn.addEventListener('click', handleAiDocumentFix);
-  }
+  $('fix-ai-btn')?.addEventListener('click', handleAiDocumentFix);
 });
 
 ;
@@ -5002,7 +5563,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if(!explicit)heading.dataset.readmdAutoId='true';
     }
   }
-  return {slug,createIds,attributes,heading,fromMarkdown,applyDom};
+  return {slug,createIds,attributes,inlineText,heading,fromMarkdown,applyDom};
 });
 
 ;
@@ -5033,7 +5594,7 @@ function buildToc() {
   const list = $('toc-list');
   if (!list) return;
 
-  if (state.mode === 'welcome' || state.mode === 'unavailable' || (!state.file && !state.original && !state.fixed && (!state.tabs || !state.tabs.length))) {
+  if (state.mode === 'welcome' || state.mode === 'unavailable' || state.mode === 'office-preview' || (!state.file && !state.original && !state.fixed && (!state.tabs || !state.tabs.length))) {
     list.innerHTML = `
       <div class="side-empty">
         <p>${_t('sidebar.emptyToc') || '（当前文档暂无标题大纲）'}</p>
@@ -5321,42 +5882,73 @@ function updateActiveTocHeading() {
    ReadMD Reader - In-Document Search & Highlighting
    ============================================================ */
 
-/* ---------------- 搜索 ---------------- */
-
-let globalSearchState = {
-  query: '',
-  matches: [],       // [{ pageIndex, matchIdxInPage }]
-  globalIndex: 0,
-};
-let enterAdvancePending = false;
+let globalSearchState = { query: '', matches: [], globalIndex: 0 };
 let editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
+let readerMarkGroups = [];
+let activeMarkGroup = null;
+const pageSearchIndexes = new WeakMap();
+const searchHeadingSelector = 'h1,h2,h3,h4,h5,h6';
+const searchBlockSelector = `${searchHeadingSelector},article,blockquote,div,p,li,td,th,pre,dt,dd,summary,figcaption`;
+const searchRowBatchSize = 120;
+let searchResultRows = [];
+let searchResultFrame = 0;
+let activeSearchRow = null;
+let readerSearchObserver;
+let readerSearchRefresh = 0;
+
+function findSearchMatches(text, query, limit = Infinity) {
+  const matches = [];
+  if (!query) return { matches, capped: false };
+  const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  let match;
+  while ((match = re.exec(text)) && matches.length < limit) {
+    matches.push({ from: match.index, to: match.index + match[0].length, text });
+  }
+  return { matches, capped: !!match };
+}
 
 function searchEditor(query, { jump = true, index } = {}) {
   const view = window.cmView;
   const fallback = $('edit-area');
   if (!state.editing || (!view && !fallback)) return false;
-  const text = view ? view.state.doc : fallback.value;
-  if (editorFindState.doc !== text || editorFindState.query !== query) {
-    const matches = [];
-    if (query) {
-      const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
-      const source = text.toString();
-      let match;
-      while ((match = re.exec(source)) && matches.length < 10000) matches.push({ from: match.index, to: match.index + match[0].length });
-      editorFindState.capped = !!match;
-    } else editorFindState.capped = false;
+  const doc = view ? view.state.doc : fallback.value;
+  if (editorFindState.doc !== doc || editorFindState.query !== query) {
+    const source = doc.toString();
+    const { matches, capped } = findSearchMatches(source, query, 10000);
+    if (matches.length) {
+      const headings = state.is_code ? [] : window.ReadMDHeadings.fromMarkdown(source);
+      let line = 1, nextBreak = source.indexOf('\n'), nextHeading = 0, section = '';
+      for (const match of matches) {
+        while (nextBreak !== -1 && nextBreak < match.from) {
+          line += 1;
+          nextBreak = source.indexOf('\n', nextBreak + 1);
+        }
+        while (headings[nextHeading]?.sourceLine <= line) section = headings[nextHeading++].text;
+        Object.assign(match, { line, section });
+      }
+    }
     const cursor = view ? view.state.selection.main.from : fallback.selectionStart;
-    editorFindState = { query, doc: text, matches, index: Math.max(0, matches.findIndex(match => match.from >= cursor)), capped: editorFindState.capped };
+    editorFindState = { query, doc, matches, index: Math.max(0, matches.findIndex(match => match.from >= cursor)), capped };
   }
-  if (index !== undefined && editorFindState.matches.length) editorFindState.index = (index + editorFindState.matches.length) % editorFindState.matches.length;
+  if (index !== undefined && editorFindState.matches.length) {
+    editorFindState.index = (index + editorFindState.matches.length) % editorFindState.matches.length;
+  }
   globalSearchState.query = query;
   state.lastQuery = query;
   const match = editorFindState.matches[editorFindState.index];
   if (jump && match) {
     if (view) view.dispatch({ selection: { anchor: match.from, head: match.to }, effects: window.ReadMDCodeMirror.EditorView.scrollIntoView(match.from, { y: 'center' }) });
-    else { fallback.focus(); fallback.setSelectionRange(match.from, match.to); }
+    else {
+      // Native textarea selection scrolls the draft to the match on focus.
+      // Return focus to the search control so repeated Enter still works.
+      const searchControl = document.activeElement?.closest('#side-search');
+      const previousFocus = searchControl && document.activeElement;
+      fallback.focus();
+      fallback.setSelectionRange(match.from, match.to);
+      previousFocus?.focus({ preventScroll: true });
+    }
   }
-  updateSearchCount();
+  updateSearchCount({ reveal: jump });
   return true;
 }
 
@@ -5403,301 +5995,475 @@ function syncSearchMode() {
   if (!bar.classList.contains('hidden')) doSearch($('search-input').value, undefined, { jump: false });
 }
 
-function clearMarks() {
-  state.currentMarks.forEach(m => {
-    const p = m.parentNode;
-    if (!p) return;
-    p.replaceChild(document.createTextNode(m.textContent), m);
-    p.normalize();
-  });
+function clearReaderSearchMarks() {
+  const parents = new Set();
+  for (const group of readerMarkGroups) {
+    for (const mark of group) {
+      if (!mark.isConnected) continue;
+      parents.add(mark.parentNode);
+      mark.replaceWith(...mark.childNodes);
+    }
+  }
+  for (const parent of parents) parent.normalize();
+  readerMarkGroups = [];
+  activeMarkGroup = null;
   state.currentMarks = [];
   state.searchIndex = 0;
-  globalSearchState = { query: '', matches: [], globalIndex: 0 };
-  updateSearchCount();
-  if (window.ReadMDReader) window.ReadMDReader.flushPendingHighlight();
+  if (parents.size) window.ReadMDReader?.flushPendingHighlight();
 }
 
-function pageSearchText(page) {
-  if (typeof page.searchText === 'string') return page.searchText;
-  const transformed = transformAcademicCallouts(page.content);
-  const prot = protectMath(transformed);
-  const html = marked.parse(prot.src, { gfm: true, breaks: false });
-  const probe = document.createElement('div');
-  probe.innerHTML = restoreMath(html, prot.saved);
-  // Mirror the reader's DOM: callout markers such as "[!NOTE]" become
-  // non-searchable chrome labels, so they must not count as matches here.
-  page.searchText = (probe.textContent || '')
-    .replace(/\[![A-Za-z][\w-]*\][+-]?/g, '')
-    .toLowerCase();
-  return page.searchText;
-}
-
-function highlightTextMatches(body, query) {
+function readSearchText(body, retainNodes = false) {
   const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => {
-      const parent = node.parentNode;
-      if (!parent || parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE') return NodeFilter.FILTER_REJECT;
-      if (parent.nodeName === 'MARK' && parent.classList.contains('hl')) return NodeFilter.FILTER_REJECT;
-      // Reader chrome (code headers, line numbers, reading time) is not document text.
-      if (parent.closest && parent.closest('[data-rd-chrome]')) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    },
+    acceptNode: node => !node.nodeValue || node.parentElement?.closest('script,style,[data-rd-chrome]')
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
-  const nodes = [];
-  let node;
-  while ((node = walker.nextNode())) nodes.push(node);
-  const segments = nodes.map(textNode => textNode.textContent);
-  const haystack = segments.join('').toLowerCase();
-  const needle = query.toLowerCase();
-  if (!needle) return;
-
-  const positionAt = offset => {
-    for (let index = 0; index < nodes.length; index += 1) {
-      const length = segments[index].length;
-      if (offset <= length) return { node: nodes[index], start: offset };
-      offset -= length;
+  const chunks = [], segments = [];
+  let offset = 0, section = '', lastHeading = null, node;
+  while ((node = walker.nextNode())) {
+    const parent = node.parentElement;
+    const heading = parent?.closest(searchHeadingSelector);
+    if (heading && heading !== lastHeading) {
+      section = heading.dataset.readmdHeadingText ?? heading.textContent.trim();
+      lastHeading = heading;
     }
-    return null;
+    const text = node.nodeValue;
+    segments.push({ end: offset + text.length, section, node: retainNodes ? node : null });
+    chunks.push(text);
+    offset += text.length;
+  }
+  return { text: chunks.join(''), segments };
+}
+
+function searchSegmentAt(segments, position) {
+  let first = 0, end = segments.length;
+  while (first < end) {
+    const middle = Math.floor((first + end) / 2);
+    if (segments[middle].end <= position) first = middle + 1;
+    else end = middle;
+  }
+  return first;
+}
+
+function pageSearchIndex(page) {
+  const reader = window.ReadMDReader;
+  const cached = pageSearchIndexes.get(page);
+  if (cached && cached.reader === reader) return cached;
+  const transformed = transformAcademicCallouts(transformWikilinks(readerPrepare(page.content)));
+  const protectedMath = protectMath(transformed);
+  const html = marked.parse(protectedMath.src, { gfm: true, breaks: false });
+  const template = document.createElement('template');
+  template.innerHTML = sanitizeRenderedHtml(restoreMath(html, protectedMath.saved));
+  window.ReadMDHeadings.applyDom(template.content);
+  reader?.enhanceSearchProjection?.(template.content);
+  const index = { reader, ...readSearchText(template.content) };
+  pageSearchIndexes.set(page, index);
+  return index;
+}
+
+function readerSearchMatches(index, query, pageIndex = null) {
+  if (index.query === query) return index.matches;
+  const { matches } = findSearchMatches(index.text, query);
+  matches.forEach((match, matchIdxInPage) => Object.assign(match, {
+    section: index.segments[searchSegmentAt(index.segments, match.from)].section,
+    pageIndex, matchIdxInPage,
+  }));
+  Object.assign(index, { query, matches });
+  return matches;
+}
+
+function surroundInlineSearchMatch(segments, first, last, match) {
+  const start = segments[first].node, end = segments[last].node;
+  const block = start.parentElement.closest(searchBlockSelector);
+  if (!block || end.parentElement.closest(searchBlockSelector) !== block) return null;
+  const from = match.from - (segments[first - 1]?.end || 0);
+  const to = match.to - (segments[last - 1]?.end || 0);
+  const edge = (node, sibling) => {
+    while (node.parentNode !== block && !node[sibling]) node = node.parentNode;
+    return node;
   };
-
-  const ranges = [];
-  let position = haystack.indexOf(needle);
-  while (position !== -1) {
-    const start = positionAt(position);
-    const end = positionAt(position + needle.length);
-    if (!start || !end) break;
-    const range = document.createRange();
-    range.setStart(start.node, start.start);
-    range.setEnd(end.node, end.start);
-    ranges.push(range);
-    position = haystack.indexOf(needle, position + needle.length);
-  }
-
-  for (let index = ranges.length - 1; index >= 0; index -= 1) {
-    const range = ranges[index];
-    const mark = document.createElement('mark');
-    mark.className = 'hl';
-    mark.appendChild(range.extractContents());
-    range.insertNode(mark);
-    state.currentMarks.unshift(mark);
+  const range = document.createRange();
+  if (from === 0) range.setStartBefore(edge(start, 'previousSibling'));
+  else range.setStart(start, from);
+  if (to === end.length) range.setEndAfter(edge(end, 'nextSibling'));
+  else range.setEnd(end, to);
+  if (range.toString() !== match.text.slice(match.from, match.to)) return null;
+  const mark = document.createElement('mark');
+  mark.className = 'hl';
+  try {
+    range.surroundContents(mark);
+    return mark;
+  } catch (error) {
+    if (error.name !== 'InvalidStateError') throw error;
+    return null;
   }
 }
 
-function highlightCurrentPageForSearch(query) {
-  const body = document.querySelector('#content .markdown-body');
-  if (!body) return false;
-  state.currentMarks = [];
-  state.searchIndex = 0;
-  highlightTextMatches(body, query);
-  return true;
-}
-
-function focusPagedSearchMatch(match) {
-  if (!match || match.pageIndex === state.pagination.currentPage) {
-    if (match) jumpToLocalMark(match.matchIdxInPage);
-    return;
-  }
-
-  // Page replacement removes the previous DOM marks synchronously.  Do not
-  // queue the re-highlight behind a frame: low-end devices can starve frames
-  // while laying out a long page, which would leave the search result lost.
-  renderPage(match.pageIndex);
-  if (!highlightCurrentPageForSearch(globalSearchState.query)) return;
-  updateSearchCount();
-  enterAdvancePending = true;
-  jumpToLocalMark(match.matchIdxInPage);
-}
-
-function doSearch(q, jumpToIdx, { jump = true } = {}) {
-  if (searchEditor(q, { jump, index: jumpToIdx })) return;
-  clearMarks();
-  state.lastQuery = q;
-  if (!q) {
-    enterAdvancePending = false;
-    updateSearchCount();
-    return;
-  }
-
-  // 1. 分页模式下：在内存中预先对所有页进行关键词索引
-  const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && state.pagination.pages && state.pagination.pages.length;
-  if (isPaged) {
-    const ql = q.toLowerCase();
-    if (!Array.isArray(state.pagination.searchText) || state.pagination.searchText.length !== state.pagination.pages.length) {
-      state.pagination.searchText = state.pagination.pages.map(pageSearchText);
-    }
-    const allMatches = [];
-    state.pagination.pages.forEach((pg, pIdx) => {
-      const text = state.pagination.searchText[pIdx];
-      let pos = 0;
-      let countInPage = 0;
-      while ((pos = text.indexOf(ql, pos)) !== -1) {
-        allMatches.push({ pageIndex: pIdx, matchIdxInPage: countInPage });
-        countInPage++;
-        pos += ql.length;
+function highlightReaderSearchMatches(index, matches) {
+  const { segments } = index;
+  readerMarkGroups = new Array(matches.length);
+  // Work from the end so splitting a text node leaves earlier offsets intact.
+  // A partially selected inline element stays intact inside its own mark.
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const match = matches[i];
+    const { from, to } = match;
+    const first = searchSegmentAt(segments, from), last = searchSegmentAt(segments, to - 1);
+    if (first !== last) {
+      const mark = surroundInlineSearchMatch(segments, first, last, match);
+      if (mark) {
+        readerMarkGroups[i] = [mark];
+        continue;
       }
-    });
-    globalSearchState = {
-      query: q,
-      matches: allMatches,
-      globalIndex: typeof jumpToIdx === 'number' ? jumpToIdx : 0,
-    };
+    }
+    const group = [];
+    for (let pos = last; pos >= first; pos -= 1) {
+      const { node, end } = segments[pos];
+      const start = segments[pos - 1]?.end || 0;
+      const left = Math.max(0, from - start);
+      const length = Math.min(to, end) - start - left;
+      const found = left ? node.splitText(left) : node;
+      if (length < found.length) found.splitText(length);
+      const mark = document.createElement('mark');
+      mark.className = 'hl';
+      found.replaceWith(mark);
+      mark.append(found);
+      group.unshift(mark);
+    }
+    readerMarkGroups[i] = group;
   }
+  state.currentMarks = readerMarkGroups.map(group => group[0]);
+}
 
-  // 2. 在当前页 DOM 中生成实际的高亮 mark 标签
-  if (!isPaged) {
-    globalSearchState = { query: q, matches: [], globalIndex: 0 };
+function currentSearchPages() {
+  const pagination = state.pagination;
+  return pagination?.enabled && pagination.mode === 'paged' && pagination.pages?.length ? pagination.pages : null;
+}
+
+function currentReaderSearch() {
+  return globalSearchState.tabId === state.activeTabId && globalSearchState.pages === currentSearchPages() &&
+    globalSearchState.body === document.querySelector('#content .markdown-body');
+}
+
+function searchResultSnippet(match) {
+  const { text, from, to } = match;
+  const before = text.slice(Math.max(0, from - 28), from);
+  const after = text.slice(to, to + 80);
+  const lineBefore = before.slice(before.lastIndexOf('\n') + 1);
+  const lineAfter = after.split('\n', 1)[0];
+  const excerpt = part => part.replace(/\s+/g, ' ');
+  return [
+    (from > before.length && before === lineBefore ? '…' : '') + excerpt(lineBefore),
+    excerpt(text.slice(from, Math.min(to, from + 110))) + (to - from > 110 ? '…' : ''),
+    excerpt(lineAfter) + (to + after.length < text.length && after === lineAfter ? '…' : ''),
+  ];
+}
+
+function locateReaderSearchMatch(matches, previous) {
+  if (!previous) return -1;
+  const candidates = matches.filter(match => match.pageIndex === previous.pageIndex);
+  const exact = candidates.find(match => match.from === previous.from && match.text === previous.text);
+  if (exact) return matches.indexOf(exact);
+  const snippet = searchResultSnippet(previous);
+  const nearby = candidates.filter(match => match.section === previous.section &&
+    searchResultSnippet(match).every((part, index) => part === snippet[index]));
+  if (nearby.length === 1) return matches.indexOf(nearby[0]);
+  return -1;
+}
+
+function refreshReaderSearch(query, previous, revealed = false) {
+  clearReaderSearchMarks();
+  const body = document.querySelector('#content .markdown-body');
+  const pages = currentSearchPages();
+  let matches = [];
+  if (body && query) {
+    const currentPage = pages ? state.pagination.currentPage : null;
+    const index = readSearchText(body, true);
+    const local = readerSearchMatches(index, query, currentPage);
+    if (pages) {
+      // Cache only text and offsets; marks and elements belong to the live page.
+      pageSearchIndexes.set(pages[currentPage], {
+        text: index.text, segments: index.segments.map(({ end, section }) => ({ end, section })),
+        reader: window.ReadMDReader, query, matches: local,
+      });
+      matches = pages.flatMap((page, pageIndex) => readerSearchMatches(pageSearchIndex(page), query, pageIndex));
+    } else matches = local;
+    highlightReaderSearchMatches(index, local);
   }
-  if (!highlightCurrentPageForSearch(q)) return;
-
+  const found = locateReaderSearchMatch(matches, previous);
+  globalSearchState = { query, matches, globalIndex: Math.max(0, found), body, pages, tabId: state.activeTabId, revealed: revealed && found >= 0 };
+  if (globalSearchState.revealed) selectReaderSearchMarks(matches[found]);
+  state.lastQuery = query;
+  readerSearchObserver?.takeRecords();
   updateSearchCount();
-  enterAdvancePending = true;
-
-  if (isPaged && globalSearchState.matches.length > 0) {
-    const curMatch = globalSearchState.matches[globalSearchState.globalIndex];
-    if (!jump) return;
-    if (curMatch && curMatch.pageIndex !== state.pagination.currentPage) {
-      focusPagedSearchMatch(curMatch);
-      return;
-    }
-    if (curMatch && curMatch.pageIndex === state.pagination.currentPage) {
-      jumpToLocalMark(curMatch.matchIdxInPage);
-    }
-  } else if (jump && state.currentMarks.length > 0) {
-    jumpToLocalMark(0);
-  }
+  return found;
 }
 
-function focusCurrentSearchMatch() {
-  const isPaged = state.pagination?.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
-  if (isPaged) {
-    const match = globalSearchState.matches[globalSearchState.globalIndex];
-    if (!match) return;
-    focusPagedSearchMatch(match);
-    return;
-  }
-  jumpToLocalMark(0);
+function doSearch(query, index, { jump = true } = {}) {
+  if ($('search-bar').classList.contains('hidden')) return;
+  clearTimeout(readerSearchRefresh);
+  if (searchEditor(query, { jump, index })) return;
+  const current = globalSearchState;
+  const sameDocument = current.tabId === state.activeTabId && current.pages === currentSearchPages() &&
+    (current.pages || current.body === document.querySelector('#content .markdown-body'));
+  const previous = query === current.query && sameDocument ? current.matches[current.globalIndex] : null;
+  refreshReaderSearch(query, previous, current.revealed);
+  if (jump) jumpToReaderSearchMatch(index ?? globalSearchState.globalIndex);
 }
 
-function jumpToLocalMark(idx) {
-  if (!state.currentMarks.length) return;
-  state.searchIndex = Math.max(0, Math.min(idx, state.currentMarks.length - 1));
-  state.currentMarks.forEach((m, i) => m.classList.toggle('cur', i === state.searchIndex));
-  revealSearchMark(state.currentMarks[state.searchIndex]);
+function selectReaderSearchMarks(match) {
+  if (match.pageIndex !== null && match.pageIndex !== state.pagination.currentPage) return null;
+  const group = readerMarkGroups[match.matchIdxInPage];
+  if (!group?.length) return null;
+  activeMarkGroup?.forEach(mark => mark.classList.remove('cur'));
+  activeMarkGroup = group;
+  state.searchIndex = match.matchIdxInPage;
+  group.forEach(mark => mark.classList.add('cur'));
+  return group[0];
+}
+
+function jumpToReaderSearchMatch(index) {
+  let match = globalSearchState.matches[index];
+  if (!match) return;
+  globalSearchState.globalIndex = index;
+  if (match.pageIndex !== null && match.pageIndex !== state.pagination.currentPage) {
+    renderPage(match.pageIndex);
+    index = refreshReaderSearch(globalSearchState.query, match);
+    if (index < 0) return;
+    match = globalSearchState.matches[index];
+  }
+  const mark = selectReaderSearchMarks(match);
+  if (!mark) return;
+  globalSearchState.revealed = true;
+  let fold = mark.closest('details:not([open])');
+  while (fold) {
+    fold.open = true;
+    fold = fold.parentElement?.closest('details:not([open])');
+  }
+  mark.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
+  updateSearchCount({ reveal: true });
 }
 
 function jumpToMark(dir) {
+  const query = $('search-input').value;
   if (state.editing) {
-    searchEditor($('search-input').value, { jump: false });
-    searchEditor($('search-input').value, { index: editorFindState.index + dir });
+    searchEditor(query, { jump: false });
+    searchEditor(query, { index: editorFindState.index + dir });
     return;
   }
-  const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
+  if (query !== globalSearchState.query || !currentReaderSearch()) doSearch(query, undefined, { jump: false });
+  const total = globalSearchState.matches.length;
+  if (total) jumpToReaderSearchMatch((globalSearchState.globalIndex + dir + total) % total);
+}
 
-  if (isPaged) {
-    const total = globalSearchState.matches.length;
-    const nextGlobal = (globalSearchState.globalIndex + dir + total) % total;
-    globalSearchState.globalIndex = nextGlobal;
-    const targetMatch = globalSearchState.matches[nextGlobal];
+function updateSearchCount({ reveal = false } = {}) {
+  const bar = $('search-bar');
+  if (!bar) return;
+  const editor = state.editing;
+  const { matches, query } = editor ? editorFindState : globalSearchState;
+  const index = editor ? editorFindState.index : globalSearchState.globalIndex;
+  const total = matches.length;
+  const page = !editor ? matches[index]?.pageIndex : null;
+  const capped = editor && editorFindState.capped;
+  $('search-prev').disabled = $('search-next').disabled = !total;
+  $('search-replace-one').disabled = !editor || !total;
+  $('search-replace-all').disabled = !editor || !total || capped;
+  bar.classList.toggle('rd-search-empty', !!query && !total);
+  const label = total ? `${index + 1}/${total}${capped ? '+' : ''}${page == null ? '' : ` (P.${page + 1})`}`
+    : query ? (window.i18n?.t('search.noMatches') || '无匹配结果') : '';
+  const count = $('search-count');
+  if (count.textContent !== label) count.textContent = label;
+  updateSearchResultList(matches, index, reveal);
+}
 
-    if (targetMatch.pageIndex !== state.pagination.currentPage) {
-      focusPagedSearchMatch(targetMatch);
-    } else {
-      updateSearchCount();
-      jumpToLocalMark(targetMatch.matchIdxInPage);
+function appendSearchResultRows(list, end) {
+  const fragment = document.createDocumentFragment();
+  for (let index = list.children.length; index < end; index += 1) {
+    const match = searchResultRows[index];
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.className = 'search-result';
+    button.type = 'button';
+    button.tabIndex = -1;
+    button.dataset.searchResult = String(index);
+    const context = document.createElement('span');
+    context.className = 'search-result-context';
+    context.dir = 'auto';
+    const [before, matched, after] = searchResultSnippet(match);
+    const highlight = document.createElement('mark');
+    highlight.textContent = matched;
+    context.append(before, highlight, after);
+    button.append(context);
+    const location = [];
+    if (match.section) location.push(match.section);
+    if (match.line) location.push(window.i18n?.t('graph.linePrefix', { line: match.line }) || String(match.line));
+    if (match.pageIndex !== null && match.pageIndex !== undefined) {
+      location.push(window.i18n?.t('pagination.pageInfo', { current: match.pageIndex + 1, total: state.pagination.totalPages }) || String(match.pageIndex + 1));
     }
-    return;
+    if (location.length) {
+      const meta = document.createElement('span');
+      meta.className = 'search-result-location';
+      meta.dir = 'auto';
+      meta.textContent = location.join(' · ');
+      button.append(meta);
+    }
+    item.append(button);
+    fragment.append(item);
   }
-
-  // 常规/连续模式单页跳转
-  if (!state.currentMarks.length) return;
-  state.searchIndex = (state.searchIndex + dir + state.currentMarks.length) % state.currentMarks.length;
-  state.currentMarks.forEach((m, i) => m.classList.toggle('cur', i === state.searchIndex));
-  revealSearchMark(state.currentMarks[state.searchIndex]);
-  updateSearchCount();
+  list.append(fragment);
 }
 
-function revealSearchMark(mark) {
-  if (!mark) return;
-  mark.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
+function fillSearchResultList(list) {
+  const remaining = searchResultRows.length - list.children.length;
+  if (remaining <= 0) return;
+  searchResultFrame = requestAnimationFrame(() => {
+    searchResultFrame = 0;
+    appendSearchResultRows(list, Math.min(searchResultRows.length, list.children.length + searchRowBatchSize));
+    fillSearchResultList(list);
+  });
 }
 
-function updateSearchCount() {
-  if (state.editing) {
-    const found = editorFindState;
-    const hasHits = !!found.matches.length;
-    $('search-prev').disabled = $('search-next').disabled = !hasHits;
-    $('search-replace-one').disabled = !hasHits;
-    $('search-replace-all').disabled = !hasHits || found.capped;
-    $('search-bar').classList.toggle('rd-search-empty', !!found.query && !hasHits);
-    $('search-count').textContent = hasHits ? `${found.index + 1}/${found.matches.length}${found.capped ? '+' : ''}` : found.query ? window.i18n.t('search.noMatches') : '';
+function updateSearchResultList(matches, index, reveal) {
+  const list = $('search-results');
+  if (!list) return;
+  const hasRows = matches.length > 0 && !$('search-bar').classList.contains('hidden');
+  let restoreResultFocus = false;
+  if (matches !== searchResultRows) {
+    restoreResultFocus = list.contains(document.activeElement);
+    cancelAnimationFrame(searchResultFrame);
+    searchResultFrame = 0;
+    searchResultRows = matches;
+    activeSearchRow = null;
+    list.replaceChildren();
+    list.scrollTop = 0;
+  }
+  list.hidden = !hasRows;
+  if (!hasRows) {
+    if (restoreResultFocus) $('search-input').focus({ preventScroll: true });
     return;
   }
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const end = Math.min(matches.length, Math.max(searchRowBatchSize, index + 1));
+  if (list.children.length < end) appendSearchResultRows(list, end);
+  if (!searchResultFrame) fillSearchResultList(list);
+  const row = list.children[index]?.firstElementChild;
+  if (row !== activeSearchRow) {
+    if (activeSearchRow) {
+      activeSearchRow.removeAttribute('aria-current');
+      activeSearchRow.tabIndex = -1;
+    }
+    activeSearchRow = row;
+    row?.setAttribute('aria-current', 'true');
+    if (row) row.tabIndex = 0;
+  }
+  if (restoreResultFocus) row?.focus({ preventScroll: true });
+  if (reveal || restoreResultFocus) row?.scrollIntoView({ block: 'nearest' });
+}
+
+function bindSearchResults() {
+  const list = $('search-results');
+  if (!list || readerSearchObserver) return;
+  const input = $('search-input');
+  input.addEventListener('input', () => {
+    if (input.value !== globalSearchState.query) updateSearchResultList([], 0, false);
+  });
+  list.addEventListener('click', event => {
+    const button = event.target.closest('button[data-search-result]');
+    if (!button || input.value !== globalSearchState.query) return;
+    const index = Number(button.dataset.searchResult);
+    if (state.editing) {
+      const doc = window.cmView?.state.doc ?? $('edit-area').value;
+      if (doc === editorFindState.doc) searchEditor(globalSearchState.query, { index });
+    } else if (currentReaderSearch()) {
+      jumpToReaderSearchMatch(index);
+    }
+  });
+  list.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+    const index = Number(event.target.dataset.searchResult);
+    if (!Number.isInteger(index)) return;
+    let next;
+    if (event.key === 'ArrowDown') next = index + 1;
+    else if (event.key === 'ArrowUp') next = index - 1;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = searchResultRows.length - 1;
+    else return;
+    event.preventDefault();
+    next = Math.max(0, Math.min(next, searchResultRows.length - 1));
+    if (list.children.length <= next) appendSearchResultRows(list, next + 1);
+    list.children[next]?.firstElementChild?.focus();
+  });
+  input.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowDown' || event.isComposing || !activeSearchRow) return;
+    event.preventDefault();
+    activeSearchRow.focus();
+  });
+  window.addEventListener('readmd:language-changed', () => {
+    if (!$('search-bar').classList.contains('hidden')) {
+      searchResultRows = [];
+      updateSearchCount();
+    }
+  });
+  readerSearchObserver = new MutationObserver(records => {
+    if (state.editing || !input.value || records.every(record =>
+      (record.target.nodeType === Node.ELEMENT_NODE ? record.target : record.target.parentElement)?.closest('[data-rd-chrome]'))) return;
+    clearTimeout(readerSearchRefresh);
+    readerSearchRefresh = setTimeout(() => doSearch(input.value, undefined, { jump: false }), 24);
+  });
+}
+
+function openSidebarSearch() {
   const bar = $('search-bar');
-  if (bar) {
-    const hasHits = state.currentMarks.length > 0 || globalSearchState.matches.length > 0;
-    bar.classList.toggle('rd-search-empty', !!state.lastQuery && !hasHits);
-    $('search-prev').disabled = !hasHits;
-    $('search-next').disabled = !hasHits;
-  }
-  const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
-
-  if (isPaged) {
-    const total = globalSearchState.matches.length;
-    const cur = globalSearchState.globalIndex + 1;
-    const pIdx = globalSearchState.matches[globalSearchState.globalIndex]?.pageIndex;
-    const pageNum = (typeof pIdx === 'number' ? pIdx + 1 : state.pagination.currentPage + 1);
-    $('search-count').textContent = total ? `${cur}/${total} (P.${pageNum})` : (state.lastQuery ? (_t('search.noMatches') || '无结果') : '');
-    return;
-  }
-
-  const total = state.currentMarks.length;
-  $('search-count').textContent = total ? ((state.searchIndex % total) + 1) + '/' + total : (state.lastQuery ? (_t('search.noMatches') || '无结果') : '');
-}
-
-function toggleSearch() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (state.mode === 'welcome' || (!state.editing && !state.file && state.original == null)) {
-    showToast(_t('toast.searchNeedsDocument') || '请先打开文档，再按 Ctrl+F 搜索');
-    return;
-  }
-  const bar = $('search-bar');
-  syncSearchMode();
   if (bar.classList.contains('hidden')) {
     bar.classList.remove('hidden');
     if (state.editing) {
       const selected = window.cmView ? window.cmView.state.sliceDoc(window.cmView.state.selection.main.from, window.cmView.state.selection.main.to) : $('edit-area').value.slice($('edit-area').selectionStart, $('edit-area').selectionEnd);
       if (selected && selected.length <= 256 && !selected.includes('\n')) $('search-input').value = selected;
-      searchEditor($('search-input').value, { jump: false });
     }
-    $('search-input').focus();
-    $('search-input').select();
-  } else {
-    closeSearch({ restoreFocus: true });
+  }
+  bindSearchResults();
+  readerSearchObserver?.observe($('content'), { childList: true, subtree: true, characterData: true });
+  syncSearchMode();
+}
+
+function toggleSearch() {
+  if ($('btn-search').disabled) {
+    showToast(window.i18n?.t('toast.searchNeedsDocument') || '请打开文档');
+    return;
+  }
+  showSide('search');
+  $('search-input').focus();
+  $('search-input').select();
+}
+
+function closeSearch({ restoreFocus = false, closeSidebar = true } = {}) {
+  $('search-bar').classList.add('hidden');
+  readerSearchObserver?.disconnect();
+  clearTimeout(readerSearchRefresh);
+  clearReaderSearchMarks();
+  globalSearchState = { query: '', matches: [], globalIndex: 0 };
+  editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
+  state.lastQuery = '';
+  updateSearchCount();
+  if (closeSidebar && $('side').dataset.view === 'search') closeSide();
+  if (restoreFocus && state.editing && window.cmView) { window.cmView.focus(); return; }
+  if (restoreFocus && state.editing) { $('edit-area').focus(); return; }
+  if (restoreFocus) {
+    const target = [$('btn-search'), $('btn-toc'), $('content')].find(node => node &&
+      !node.disabled && !node.closest('[inert], [hidden], .hidden') &&
+      node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+    target?.focus({ preventScroll: true });
   }
 }
 
-function closeSearch({ restoreFocus = false } = {}) {
-  $('search-bar').classList.add('hidden');
-  clearMarks();
-  editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
-  if (restoreFocus && state.editing && window.cmView) { window.cmView.focus(); return; }
-  if (restoreFocus && state.editing) { $('edit-area').focus(); return; }
-  if (restoreFocus && $('btn-search')) $('btn-search').focus({ preventScroll: true });
-}
-
 function consumeInitialSearchJump() {
-  if (searchEditor($('search-input').value, { jump: true })) return;
-  focusCurrentSearchMatch();
+  const query = $('search-input').value;
+  if (searchEditor(query, { jump: true })) return;
+  if (!currentReaderSearch()) doSearch(query, undefined, { jump: false });
+  jumpToReaderSearchMatch(globalSearchState.globalIndex);
 }
 
 ;
 'use strict';
 
-const TREE_ICONS = {
-  dir: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8L9 5H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>',
-  file: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>'
-};
+const TREE_FOLDER_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8L9 5H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>';
 /* ============================================================
    ReadMD Reader - Folder Tree Browser
    ============================================================ */
@@ -5714,11 +6480,11 @@ async function openFolder() {
 }
 
 let folderRequestEpoch = 0;
-async function listFolder(dir) {
+async function listFolder(dir, { reveal = true } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const epoch = ++folderRequestEpoch;
   try {
-    const r = await apiFetch('/api/list?p=' + encodeURIComponent(dir));
+    const r = await apiFetch('/api/list?p=' + encodeURIComponent(dir) + '&view=reader');
     const d = await r.json();
     if (epoch !== folderRequestEpoch) return false;
     if (!r.ok || d.ok === false || typeof d.dir !== 'string' || !Array.isArray(d.files) || d.files.some(p => typeof p !== 'string')) {
@@ -5726,8 +6492,8 @@ async function listFolder(dir) {
     }
     state.folder = d.dir;
     state.folderFiles = d.files || [];
-    renderFolderList();
-    showSide('files');
+    if (reveal) showSide('files', { loadFiles: false });
+    else renderFolderList();
     return true;
   } catch (e) {
     if (epoch === folderRequestEpoch) showToast((_t('toast.readFolderFail') || '读取文件夹失败') + ': ' + e.message);
@@ -5739,13 +6505,16 @@ async function listFolder(dir) {
 function renderFolderList() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const box = $('file-list');
-  box.innerHTML = '';
-  if (!state.folder) return;
+  box.replaceChildren();
+  if (!state.folder) {
+    syncFileSidebar(true);
+    return;
+  }
 
   const folderName = state.folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || state.folder;
   const header = document.createElement('div');
   header.className = 'dir-header';
-  header.innerHTML = TREE_ICONS.dir + '<span></span>';
+  header.innerHTML = TREE_FOLDER_ICON + '<span></span>';
   header.querySelector('span').textContent = folderName;
   header.title = state.folder;
   box.appendChild(header);
@@ -5756,12 +6525,13 @@ function renderFolderList() {
     empty.className = 'dir-label';
     empty.textContent = _t('sidebar.emptyFiles') || '（未找到 Markdown 文件）';
     box.appendChild(empty);
+    syncFileSidebar(true);
     return;
   }
 
 
   const normRoot = state.folder.replace(/\\/g, '/').replace(/\/$/, '');
-  const rootNode = { name: folderName, type: 'dir', path: state.folder, children: {} };
+  const rootNode = { name: folderName, type: 'dir', path: state.folder, children: Object.create(null) };
 
   state.folderFiles.forEach(fullPath => {
     const normPath = fullPath.replace(/\\/g, '/');
@@ -5778,7 +6548,7 @@ function renderFolderList() {
           name: part,
           type: isFile ? 'file' : 'dir',
           path: isFile ? fullPath : (normRoot + '/' + parts.slice(0, idx + 1).join('/')),
-          children: isFile ? null : {}
+          children: isFile ? null : Object.create(null)
         };
       }
       if (!isFile) {
@@ -5793,7 +6563,7 @@ function renderFolderList() {
   treeContainer.setAttribute('aria-label', _t('sidebar.files') || '文件');
   renderTreeNodes(treeContainer, rootNode.children, 0);
   box.appendChild(treeContainer);
-  updateTreeTabIndex();
+  syncFileSidebar(true);
 }
 
 function renderTreeNodes(container, childrenObj, depth) {
@@ -5803,7 +6573,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     if (itemA.type !== itemB.type) {
       return itemA.type === 'dir' ? -1 : 1;
     }
-    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    return itemA.name.localeCompare(itemB.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   keys.forEach(key => {
@@ -5818,13 +6588,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     row.setAttribute('role', 'treeitem');
     row.setAttribute('aria-level', String(depth + 1));
     row.tabIndex = -1;
-    if (item.type === 'file' && item.path === state.file) {
-      row.classList.add('active');
-      row.setAttribute('aria-selected', 'true');
-      row.setAttribute('aria-current', 'true');
-    } else {
-      row.setAttribute('aria-selected', 'false');
-    }
+    row.setAttribute('aria-selected', 'false');
 
     const toggle = document.createElement('span');
     toggle.className = 'tree-toggle';
@@ -5839,16 +6603,14 @@ function renderTreeNodes(container, childrenObj, depth) {
         toggle.classList.add('empty');
       }
 
-      const icon = document.createElement('span');
-      icon.className = 'tree-icon';
-      icon.innerHTML = TREE_ICONS.dir;
-      icon.setAttribute('aria-hidden', 'true');
-
       const nameEl = document.createElement('span');
       nameEl.className = 'tree-name';
       nameEl.textContent = item.name;
 
       row.appendChild(toggle);
+      const icon = document.createElement('span');
+      icon.className = 'tree-icon';
+      icon.innerHTML = TREE_FOLDER_ICON;
       row.appendChild(icon);
       row.appendChild(nameEl);
       nodeEl.appendChild(row);
@@ -5875,29 +6637,88 @@ function renderTreeNodes(container, childrenObj, depth) {
     } else {
       toggle.classList.add('empty');
 
-      const icon = document.createElement('span');
-      icon.className = 'tree-icon';
-      icon.innerHTML = TREE_ICONS.file;
-      icon.setAttribute('aria-hidden', 'true');
-
+      row.dataset.filePath = normalizePath(item.path);
       const nameEl = document.createElement('span');
       nameEl.className = 'tree-name';
       nameEl.textContent = item.name;
 
       row.appendChild(toggle);
-      row.appendChild(icon);
       row.appendChild(nameEl);
       row.title = item.path;
       nodeEl.appendChild(row);
 
       row.addEventListener('click', e => {
         e.stopPropagation();
-        loadFile(item.path);
+        openDocumentPath(item.path);
       });
     }
 
     container.appendChild(nodeEl);
   });
+}
+
+let sidebarActivePath = '';
+
+function syncFileSidebar(rebuilt = false) {
+  const box = $('file-list');
+  if (!box) return;
+  const listed = new Set(state.folderFiles.map(normalizePath));
+  const opened = new Map();
+  for (const tab of state.tabs) {
+    if (!tab.path || tab.isVirtual || tab._restoreUnavailable) continue;
+    const key = normalizePath(tab.path);
+    if (!listed.has(key)) opened.set(key, { name: tab.title || tab.name || tab.path.split(/[\\/]/).pop(), path: tab.path, type: 'file' });
+  }
+  const existing = $('file-open-group');
+  const signature = JSON.stringify([...opened.values()]);
+  const refreshed = existing?.dataset.files !== signature && (opened.size > 0 || existing);
+  if (refreshed) {
+    existing?.remove();
+    if (opened.size) {
+      const group = document.createElement('div');
+      group.id = 'file-open-group';
+      group.dataset.files = signature;
+      const header = document.createElement('div');
+      header.id = 'file-open-label';
+      header.className = 'dir-header';
+      header.dataset.i18n = 'tabs.openDocs';
+      header.textContent = window.i18n.t('tabs.openDocs');
+      const tree = document.createElement('div');
+      tree.className = 'tree-children';
+      tree.setAttribute('role', 'tree');
+      tree.setAttribute('aria-labelledby', header.id);
+      renderTreeNodes(tree, Object.fromEntries(opened), 0);
+      group.append(header, tree);
+      box.appendChild(group);
+    }
+  }
+
+  const path = getActiveTab()?.path;
+  const active = path ? normalizePath(path) : '';
+  const changed = active !== sidebarActivePath;
+  if (rebuilt || refreshed || changed) {
+    sidebarActivePath = active;
+    let activeRow = null;
+    for (const row of box.querySelectorAll('.tree-row[data-file-path]')) {
+      const selected = row.dataset.filePath === active;
+      row.classList.toggle('active', selected);
+      row.setAttribute('aria-selected', String(selected));
+      if (selected) {
+        row.setAttribute('aria-current', 'true');
+        activeRow = row;
+      } else row.removeAttribute('aria-current');
+    }
+    if (activeRow && (changed || rebuilt)) {
+      for (let group = activeRow.closest('.tree-children.collapsed'); group; group = group.parentElement.closest('.tree-children.collapsed')) {
+        group.classList.remove('collapsed');
+        const parent = group.parentElement.querySelector(':scope > .tree-row');
+        parent?.setAttribute('aria-expanded', 'true');
+        parent?.querySelector('.tree-toggle')?.classList.add('open');
+      }
+      if (activeRow.offsetParent) activeRow.scrollIntoView({ block: 'nearest' });
+    }
+  }
+  if (rebuilt || refreshed || changed) updateTreeTabIndex();
 }
 
 function visibleTreeRows() {
@@ -5907,7 +6728,8 @@ function visibleTreeRows() {
 
 function updateTreeTabIndex() {
   const rows = visibleTreeRows();
-  rows.forEach((row, index) => { row.tabIndex = index === 0 ? 0 : -1; });
+  const entry = rows.find(row => row === document.activeElement) || rows.find(row => row.classList.contains('active')) || rows[0];
+  rows.forEach(row => { row.tabIndex = row === entry ? 0 : -1; });
 }
 
 function handleTreeKeydown(event, row) {
@@ -5939,65 +6761,10 @@ function handleTreeKeydown(event, row) {
   row.closest('.tree-node')?.parentElement?.closest('.tree-node')?.querySelector(':scope > .tree-row')?.focus();
 }
 
-function showSide(tab) {
-  $('side').classList.remove('hidden');
-  const tabs = { toc: $('tab-toc'), files: $('tab-files') };
-  Object.entries(tabs).forEach(([name, button]) => {
-    const active = name === tab;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-selected', active ? 'true' : 'false');
-    button.tabIndex = active ? 0 : -1;
-  });
-  $('file-list').classList.toggle('hidden', tab !== 'files');
-  $('toc-list').classList.toggle('hidden', tab !== 'toc');
-  if (tab === 'files') {
-    if (state.folderFiles.length) renderFolderList();
-    else listFolder(state.dir || '');
-  } else {
-    buildToc();
-    updateTreeTabIndex();
-  }
-}
-
-(function bindSideTabKeys() {
-  const tablist = $('#side-tabs') || document.getElementById('side-tabs');
-  if (!tablist) return;
-  tablist.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    event.preventDefault();
-    const next = event.key === 'ArrowRight' ? 'files' : 'toc';
-    showSide(next);
-    $(next === 'files' ? 'tab-files' : 'tab-toc').focus();
-  });
-  document.addEventListener('keydown', event => {
-    const row = event.target instanceof Element ? event.target.closest('#file-list .tree-row') : null;
-    if (row) handleTreeKeydown(event, row);
-  });
-})();
-
-function toggleSide(tab) {
-  const side = $('side');
-  if (!side) return;
-  if (!side.classList.contains('hidden')) {
-    const isCurrentTab = (tab === 'files' && !$('file-list').classList.contains('hidden')) ||
-                         (tab === 'toc' && !$('toc-list').classList.contains('hidden'));
-    if (!tab || isCurrentTab) {
-      side.classList.add('hidden');
-      return;
-    }
-  }
-  showSide(tab || 'toc');
-}
-
-(function bindSideClose() {
-  const btn = $('side-close-btn');
-  if (btn) {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      $('side')?.classList.add('hidden');
-    });
-  }
-})();
+document.addEventListener('keydown', event => {
+  const row = event.target instanceof Element ? event.target.closest('#file-list .tree-row') : null;
+  if (row) handleTreeKeydown(event, row);
+});
 
 ;
 'use strict';
@@ -6926,6 +7693,9 @@ function deferSessionOperation(action, alreadyQueued) {
 async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false, _lifecycleOwner = null } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
+  // Original Office/PDF opens must never reach the text-conversion fallback.
+  if (window.ReadMDOffice?.isPath(path)) return window.ReadMDOffice.open(path, { force, browserCopy, _sessionQueued, _sessionRestoring, _lifecycleOwner });
+  if (/\.pdf$/i.test(path)) return openDocumentPath(path, { _sessionQueued, _sessionRestoring, _lifecycleOwner });
   const ownsLifecycle = () => window.ReadMDLifecycle?.isOwner(_lifecycleOwner) || (discardConfirmed && window.ReadMDLifecycle?.saveReload(path));
   const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
@@ -7024,7 +7794,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       original: d.original != null ? d.original : d.content,
       fixed: d.content,
       title: isBrowserCopy ? `${d.name} (${_t('app.browserCopy') || 'browser copy'})` : d.name,
-      fixes: d.fixes || [],
+      fixes: d.fix_details ?? d.fixes ?? [],
       stats: d.stats || {},
       size: d.size,
       mtime: d.mtime,
@@ -7053,7 +7823,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       if (wasActive) {
         await prepareDocCitations(d.path, existingTab.content);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
-        setFixes(d.fixes || [], d.stats || {});
+        setFixes(fileFields.fixes, d.stats || {});
         await renderContent(existingTab.content, d.name);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         if (state.pagination.enabled && state.pagination.mode === 'paged' && previousPage > 0) {
@@ -7089,7 +7859,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       syncStateFromActiveTab();
       await prepareDocCitations(d.path, newTab.content);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
-      setFixes(d.fixes || [], d.stats || {});
+      setFixes(fileFields.fixes, d.stats || {});
       await renderContent(newTab.content, d.name);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (state.pagination.enabled && state.pagination.totalPages > 1) {
@@ -7152,7 +7922,6 @@ function setEditBtn(label) {
   if (!el) return;
   const sp = el.querySelector('span.tb-label');
   if (sp) sp.textContent = label;
-  else el.textContent = label;
   el.setAttribute('aria-pressed', String(Boolean(state.editing)));
   el.setAttribute('aria-label', label);
   el.title = /Ctrl\+E|⌘/.test(label) ? label : `${label} (Ctrl+E)`;
@@ -7488,7 +8257,21 @@ function showPaginationBar(show) {
 
 function updatePaginationBar() {
   const p = state.pagination;
-  if (!p || !p.enabled || !p.pages || !p.pages.length) {
+  const office = state.mode === 'office-preview' && p?.kind === 'office';
+  const toggle = $('pg-mode-toggle');
+  if (toggle) {
+    toggle.hidden = office;
+    toggle.classList.toggle('hidden', office);
+    toggle.disabled = office;
+  }
+  const stBadge = $('status-pagination');
+  if (stBadge) {
+    stBadge.disabled = office;
+    stBadge.dataset.i18nTitle = office ? 'pagination.pagedBadge' : 'pagination.switchModeTitle';
+  }
+  const bar = $('pagination-bar');
+  if (bar) bar.setAttribute('aria-busy', String(office && !!p.loading));
+  if (!p || !p.enabled || !p.pages || (!p.pages.length && !office)) {
     showPaginationBar(false);
     return;
   }
@@ -7502,24 +8285,25 @@ function updatePaginationBar() {
   if (chLabel) chLabel.textContent = curPage.title || '';
 
   const totalLbl = $('pg-total-label');
-  if (totalLbl) totalLbl.textContent = `/ ${total}`;
+  if (totalLbl) totalLbl.textContent = total ? `/ ${total}` : '';
+  const unavailable = office && (p.loading || !total);
 
   const btnFirst = $('pg-first-btn');
-  if (btnFirst) btnFirst.disabled = (cur === 0 || p.mode === 'continuous');
+  if (btnFirst) btnFirst.disabled = unavailable || cur === 0 || p.mode === 'continuous';
 
   const btnPrev = $('pg-prev-btn');
-  if (btnPrev) btnPrev.disabled = (cur === 0 || p.mode === 'continuous');
+  if (btnPrev) btnPrev.disabled = unavailable || cur === 0 || p.mode === 'continuous';
 
   const btnNext = $('pg-next-btn');
-  if (btnNext) btnNext.disabled = (cur >= total - 1 || p.mode === 'continuous');
+  if (btnNext) btnNext.disabled = unavailable || cur >= total - 1 || p.mode === 'continuous';
 
   const btnLast = $('pg-last-btn');
-  if (btnLast) btnLast.disabled = (cur >= total - 1 || p.mode === 'continuous');
+  if (btnLast) btnLast.disabled = unavailable || cur >= total - 1 || p.mode === 'continuous';
 
   const sel = $('pg-page-select');
   if (sel) {
-    sel.disabled = (p.mode === 'continuous');
-    const pageSignature = p.pages.map(page => `${page.pageIndex}:${page.title || ''}`).join('|');
+    sel.disabled = unavailable || p.mode === 'continuous';
+    const pageSignature = (office ? 'office:' : 'markdown:') + p.pages.map(page => `${page.pageIndex}:${page.title || ''}`).join('|');
     if (sel.options.length !== total || sel.dataset.pageSignature !== pageSignature) {
       sel.dataset.pageSignature = pageSignature;
       sel.innerHTML = '';
@@ -7528,11 +8312,11 @@ function updatePaginationBar() {
         opt.value = idx;
         const num = idx + 1;
         const shortTitle = pg.title ? (pg.title.length > 22 ? pg.title.slice(0, 22) + '…' : pg.title) : `${num}`;
-        opt.textContent = `${num}. ${shortTitle}`;
+        opt.textContent = office ? String(num) : `${num}. ${shortTitle}`;
         sel.appendChild(opt);
       });
     }
-    sel.value = cur;
+    sel.value = total ? cur : '';
   }
 
   const iconContinuous = $('pg-mode-icon-continuous');
@@ -7549,9 +8333,8 @@ function updatePaginationBar() {
   $('pg-mode-toggle')?.setAttribute('aria-pressed', p.mode === 'paged' ? 'true' : 'false');
 
   const _t = (k, params) => window.i18n ? window.i18n.t(k, params) : k;
-  const stBadge = $('status-pagination');
   if (stBadge) {
-    stBadge.textContent = p.mode === 'paged'
+    stBadge.textContent = !total ? '—' : p.mode === 'paged'
       ? `${cur + 1} / ${total}`
       : (_t('pagination.continuousBadge') || '全卷');
     stBadge.title = p.mode === 'paged'
@@ -7561,7 +8344,9 @@ function updatePaginationBar() {
 
   const live = $('pagination-live');
   if (live) {
-    live.textContent = p.mode === 'paged'
+    live.textContent = office && p.loading ? _t('audit.loading')
+      : office && p.error ? _t('editor.previewRenderFail')
+      : !total ? '' : p.mode === 'paged'
       ? (_t('pagination.pageInfo', { current: cur + 1, total }) + (curPage.title ? ` · ${curPage.title}` : ''))
       : (_t('pagination.continuousBadge') || '全卷连续');
   }
@@ -7602,6 +8387,7 @@ async function togglePaginationMode() {
   const p = state.pagination;
   if (!p || !p.enabled) return;
   const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  if (window.ReadMDOffice?.isTab(activeTab)) return;
   const navigation = captureNavigationEpoch();
 
   if (p.mode === 'paged') {
@@ -7630,6 +8416,8 @@ async function togglePaginationMode() {
 }
 
 function renderPage(pageIndex, targetHeadingId, preserveScroll) {
+  if (window.ReadMDOffice?.isTab(typeof getActiveTab === 'function' ? getActiveTab() : null))
+    return window.ReadMDOffice.goToPage(pageIndex);
   if (!state.pagination.pages || !state.pagination.pages.length) return;
   pageIndex = Math.max(0, Math.min(pageIndex, state.pagination.pages.length - 1));
   state.pagination.currentPage = pageIndex;
@@ -7815,7 +8603,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
     const renderer = new marked.Renderer();
 
     // 1. 分词并记录顶级 AST 节点的源码起始行号
-    const tokens = marked.lexer(content, { gfm: true, breaks: breaks });
+    const tokens = marked.lexer(content, { ...marked.defaults, gfm: true, breaks });
     let lineCursor = 1;
     tokens.forEach(tok => {
       tok.sourceLine = lineCursor;
@@ -7862,7 +8650,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
     };
 
     renderer.table = function(token) {
-      const html = marked.Renderer.prototype.table.call(this, token);
+      const html = window.ReadMDTableView?.render(token, this) || marked.Renderer.prototype.table.call(this, token);
       const lineAttr = (token && token.sourceLine) ? ` data-source-line="${token.sourceLine}"` : '';
       if (lineAttr && html && html.startsWith('<table')) {
         return '<table' + lineAttr + html.slice(6);
@@ -7980,7 +8768,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
 window.parseMarkdownWithSourceMap = parseMarkdownWithSourceMap;
 
 const MARKDOWN_ALLOWED_TAGS = new Set([
-  'a', 'abbr', 'article', 'b', 'blockquote', 'br', 'caption', 'cite', 'code',
+  'a', 'abbr', 'article', 'b', 'blockquote', 'br', 'caption', 'cite', 'code', 'col', 'colgroup',
   'dd', 'del', 'details', 'div', 'dl', 'dt', 'em', 'figcaption', 'figure',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'input', 'ins',
   'button', 'kbd', 'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'section', 'span',
@@ -8011,6 +8799,7 @@ let readerRenderAborter = null;
 let documentLoadEpoch = 0;
 
 function beginReaderRender() {
+  window.ReadMDOffice?.releaseView();
   const epoch = ++readerRenderEpoch;
   if (readerRenderAborter) readerRenderAborter.abort();
   readerRenderAborter = new AbortController();
@@ -8112,6 +8901,9 @@ function sanitizeRenderedHtml(html, { allowInteractive = true } = {}) {
         node.removeAttribute(attribute.name);
         return;
       }
+      if ((tag === 'td' || tag === 'th') &&
+          ((name === 'align' && ['left', 'center', 'right'].includes(value)) ||
+           (name === 'valign' && ['top', 'middle', 'bottom'].includes(value)))) return;
       if (name.startsWith('data-') || name === 'class' || name.startsWith('aria-') ||
           ['title', 'lang', 'dir', 'alt', 'width', 'height', 'loading',
            'colspan', 'rowspan', 'datetime', 'cite'].includes(name)) return;
@@ -8718,6 +9510,55 @@ function postProcess(container) {
   if (window.ReadMDReader) window.ReadMDReader.afterRender(body);
 }
 
+window.ReadMDCodeRuns = (() => {
+  const active = new Set();
+  const writers = new Set(); let reserved = 0;
+  const wake = () => { for (const resolve of writers) resolve(); writers.clear(); };
+  const id = () => 'code-' + window.crypto.randomUUID();
+  function create(tab, batch = false) {
+    if (reserved || [...active].some(job => job.tab === tab && (batch || job.batch))) return null;
+    const job = { tab, batch, taskId: id(), insertTaskId: id(), controller: new AbortController(), phase: 'preparing', cancelled: false, finished: false };
+    job.done = new Promise(resolve => { job.resolve = resolve; }); active.add(job); return job;
+  }
+  function cancel(job) {
+    if (!job || job.finished) return;
+    job.cancelled = true; job.controller.abort();
+    wake();
+    const taskId = job.phase === 'writing' ? job.insertTaskId : job.taskId;
+    if (job.phase !== 'preparing') void window.ReadMDReview?.cancelAi(taskId, () => !job.finished);
+  }
+  function finish(job) { job.finished = true; active.delete(job); job.resolve(); }
+  function mountEditor(tab) {
+    // Incremental widgets belong to one document. The existing editor mount
+    // runs before its preview; equal Markdown in another page must not reuse
+    // old listeners or task output. In-flight old renders keep their guards.
+    const pane = document.getElementById('preview-pane');
+    if (pane && pane._readmdPreviewOwner !== tab) {
+      // Layout can render the textarea draft before CodeMirror mounts. Its
+      // identical text must not certify a pane we are about to clear.
+      if (typeof pvRenderEpoch !== 'undefined') pvRenderEpoch++;
+      if (typeof pvLast !== 'undefined') pvLast = '';
+      pane._readmdPreviewOwner = tab; pane.replaceChildren();
+    }
+  }
+  function cancelTabs(tabs) { for (const job of active) if (tabs.includes(job.tab)) cancel(job); }
+  function reserveWrites() {
+    reserved++; let released = false;
+    return () => { if (!released) { released = true; reserved--; wake(); } };
+  }
+  async function beforeWrite(job) {
+    while (reserved && !job.cancelled) await new Promise(resolve => writers.add(resolve));
+    if (job.cancelled) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+  }
+  async function cancelAll() {
+    const jobs = [...active]; jobs.forEach(cancel);
+    let timer;
+    const stopped = await Promise.race([Promise.all(jobs.map(job => job.done)).then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 2000); })]);
+    clearTimeout(timer); return stopped;
+  }
+  return { create, cancel, finish, mountEditor, cancelTabs, cancelAll, reserveWrites, beforeWrite, batchFor: tab => [...active].find(job => job.tab === tab && job.batch), busy: () => active.size };
+})();
+
 function renderAllCodeChunks(container) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const cards = (container || document).querySelectorAll('.code-chunk-card');
@@ -8735,6 +9576,8 @@ function renderAllCodeChunks(container) {
     const owner = typeof getActiveTab === 'function' ? getActiveTab() : null;
     if (card._bound && card._readmdCodeOwner === owner) return;
     if (card._bound) {
+      // A reused reading node cannot keep another document's listeners. The
+      // previous task may finish against its detached node and fixed target.
       const fresh = card.cloneNode(true); card.replaceWith(fresh); card = fresh;
     }
     card._bound = true;
@@ -8752,34 +9595,73 @@ function renderAllCodeChunks(container) {
 
     const lang = card.dataset.lang || 'python';
     const code = decodeURIComponent(card.dataset.code || '');
-    let running = false;
+    let currentJob = null;
+    let ensuringRuntime = false;
 
-    const run = async () => {
-      if (running || !owner || getActiveTab() !== owner || !state.tabs.includes(owner) || window.ReadMDLifecycle?.busy()) return;
-      running = true;
-      const context = { tab: owner, wasEditing: Boolean(state.editing), inputGeneration: owner.inputGeneration || 0,
-        sourceLine: Number(card.dataset.sourceLine), code, stamp: null };
+    card._readmdBatchState = (job, phase, result, error) => {
+      const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
+      if (phase === 'start') {
+        currentJob = job; statusEl.className = 'code-chunk-status running'; statusEl.textContent = _t('status.loading');
+        btn.textContent = _t('common.cancel'); if (copy) copy.disabled = true; if (clear) clear.disabled = true;
+        outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren(); timerEl.textContent = '';
+        return;
+      }
+      if (phase === 'pending') { statusEl.textContent = _t('convert.statusPending'); return; }
+      currentJob = null; btn.textContent = `▶ ${_t('reader.runAgain')}`;
+      if (copy) copy.disabled = false; if (clear) clear.disabled = false;
+      const cancelled = job.cancelled || /cancelled/.test(error?.code || '');
+      statusEl.className = 'code-chunk-status ' + (phase === 'success' ? 'success' : 'error');
+      statusEl.textContent = _t(phase === 'success' ? 'convert.statusOk' : cancelled ? 'task.cancelled' : 'reader.callFailed');
+      if (result && String(card.dataset.outputFormat || '').toLowerCase() !== 'none') {
+        outWrap.classList.remove('hidden');
+        stdoutEl.textContent = (result.stdout || '') + (result.stderr ? '\n' + result.stderr : '');
+        if (!stdoutEl.textContent.trim()) stdoutEl.textContent = _t('reader.noConsoleOutput');
+      } else if (phase !== 'success') {
+        outWrap.classList.remove('hidden');
+        stdoutEl.textContent = _t(cancelled ? 'task.cancelled' : error?.code === 'capability_pack_unavailable' ? 'error.capability_pack_unavailable' : /stale|conflict/.test(error?.code || '') ? 'review.conflict' : /budget/.test(error?.code || '') ? 'review.limit' : 'toast.unknownError');
+      }
+    };
+
+    const run = async ({ batch = false } = {}) => {
+      if (currentJob) { if (!batch) window.ReadMDCodeRuns.cancel(currentJob); return currentJob.done; }
+      if (ensuringRuntime || !owner || !state.tabs.includes(owner)) return;
+      if (/^(?:javascript|js|node)$/i.test(lang.trim().replace(/^\.+/, ''))) {
+        const generation = owner.inputGeneration || 0, editing = state.editing;
+        ensuringRuntime = true;
+        try { if (!await window.ReadMDCapabilities.ensure('node')) return; }
+        finally { ensuringRuntime = false; }
+        // Installing is a separate operation. Closing/switching/editing while
+        // its dialog is open must never start a stale code request afterwards.
+        if (currentJob || !card.isConnected || getActiveTab() !== owner || !state.tabs.includes(owner) ||
+            generation !== (owner.inputGeneration || 0) || state.editing !== editing) return;
+      }
+      const job = window.ReadMDCodeRuns.create(owner);
+      if (!job) { showToast(_t('review.busy')); return; }
+      currentJob = job;
+      const wasEditing = Boolean(state.editing && getActiveTab() === owner);
+      const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
       statusEl.className = 'code-chunk-status running';
       statusEl.textContent = _t('reader.codeRunning');
-      btn.disabled = true;
-      btn.textContent = _t('reader.codeRunning');
+      btn.disabled = false;
+      btn.textContent = _t('common.cancel');
+      if (copy) copy.disabled = true; if (clear) clear.disabled = true;
+      outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren();
       const t0 = Date.now();
       const interval = setInterval(() => {
         timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
       }, 100);
 
       try {
-        if (context.wasEditing && (!await window.ReadMDReview.flush(owner) || !state.editing || getActiveTab() !== owner ||
-            context.inputGeneration !== (owner.inputGeneration || 0) || window.ReadMDLifecycle?.busy())) throw Error('code_target_stale');
-        context.stamp = window.ReadMDLifecycle.mark(owner);
+        const context = await window.ReadMDReview.codeTarget(Number(card.dataset.sourceLine), code, owner, job.controller.signal);
+        if (job.cancelled || !state.tabs.includes(owner)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+        job.phase = 'running';
         let res;
-        if (hasPy && py.run_code_chunk) {
-          res = await py.run_code_chunk(lang, code, null, 10, true);
-        } else {
+        // Native and browser hosts share the authenticated cancellable route.
+        {
           const r = await apiFetch('/api/code/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lang: lang, code: code, confirm: true })
+            body: JSON.stringify({ lang, code: context.target.code, confirm: true, task_id: job.taskId })
           });
           res = await r.json();
         }
@@ -8787,6 +9669,7 @@ function renderAllCodeChunks(container) {
         clearInterval(interval);
         timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(2) + 's';
 
+        if (job.cancelled || !state.tabs.includes(owner)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
         if (res && res.ok) {
           const outputFormat = String(card.dataset.outputFormat || 'text').toLowerCase();
           const outputText = (res.stdout || '') + (res.stderr ? ('\n' + res.stderr) : '');
@@ -8816,13 +9699,11 @@ function renderAllCodeChunks(container) {
           // block only renders into the preview; ``output=true`` adds a
           // bounded marker block after the matching fence and persists it
           // through the editor's normal history/save path.
-          if (card.dataset.output === 'true' && outputFormat !== 'none' && context.wasEditing) {
-            statusEl.textContent = _t('convert.statusPending');
-            if (!await persistCodeChunkOutput(card, outputText, context)) {
-              statusEl.className = 'code-chunk-status error';
-              statusEl.textContent = _t('review.conflict');
-              return;
-            }
+          if (card.dataset.output === 'true' && outputFormat !== 'none' && wasEditing) {
+            job.phase = 'waiting-to-write'; statusEl.textContent = _t('convert.statusPending');
+            await window.ReadMDCodeRuns.beforeWrite(job);
+            job.phase = 'writing';
+            await persistCodeChunkOutput(card, outputText, context, job.controller.signal, job.insertTaskId);
           }
           statusEl.className = 'code-chunk-status success';
           statusEl.textContent = _t('convert.statusOk');
@@ -8837,23 +9718,28 @@ function renderAllCodeChunks(container) {
           // the document UI only renders a localized, stable message.  This
           // prevents backend paths, subprocess output or untranslated text
           // from leaking into a document preview.
-          stdoutEl.textContent = _t('toast.unknownError');
+          stdoutEl.textContent = _t(res?.error_code === 'execution_cancelled' ? 'task.cancelled' : 'toast.unknownError');
         }
       } catch (err) {
         clearInterval(interval);
         statusEl.className = 'code-chunk-status error';
-        statusEl.textContent = _t('reader.callFailed');
+        const cancelled = job.cancelled || err?.code === 'cancelled' || err?.code === 'execution_cancelled';
+        statusEl.textContent = _t(cancelled ? 'task.cancelled' : 'reader.callFailed');
         outWrap.classList.remove('hidden');
-        stdoutEl.textContent = _t('toast.unknownError');
+        plotEl.replaceChildren();
+        stdoutEl.textContent = _t(cancelled ? 'task.cancelled' : /stale|conflict/.test(err?.code || '') ? 'review.conflict' : 'toast.unknownError');
       } finally {
         clearInterval(interval);
-        running = false;
+        timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(2) + 's';
+        window.ReadMDCodeRuns.finish(job); currentJob = null;
         btn.disabled = false;
         btn.textContent = `▶ ${_t('reader.runAgain')}`;
+        if (copy) copy.disabled = false; if (clear) clear.disabled = false;
       }
     };
 
-    if (btn) btn.addEventListener('click', run);
+    card._readmdRunCode = run;
+    if (btn) btn.addEventListener('click', () => { void run(); });
 
     // 绑定输出区复制与清空交互
     const copyBtn = card.querySelector('.code-chunk-copy-btn');
@@ -8883,76 +9769,67 @@ function renderAllCodeChunks(container) {
 }
 window.renderAllCodeChunks = renderAllCodeChunks;
 
-async function persistCodeChunkOutput(card, outputText, context) {
-  // Stay outside the review FIFO while a close/save decision is pending.
-  // Its nested save must never wait for this result to release that decision.
-  await window.ReadMDLifecycle.whenIdle();
-  if (!context?.stamp || !context.wasEditing || !state.tabs.includes(context.tab) || getActiveTab() !== context.tab ||
-      !state.editing || context.inputGeneration !== (context.tab.inputGeneration || 0) ||
-      !window.ReadMDLifecycle.matches(context.stamp)) return false;
-  const sourceLine = context.sourceLine;
-  if (!Number.isInteger(sourceLine) || sourceLine < 1) return false;
-  // Editor offsets count normalized newlines; preserve file line endings
-  // only when obtaining the save snapshot, not when calculating positions.
-  const current = cmView ? cmView.state.doc.toString() : ($('edit-area')?.value || '');
-  const lines = String(current || '').split('\n');
-  if (sourceLine > lines.length) return false;
-  const fenceStart = sourceLine - 1;
-  if (!/^\s*```/.test(lines[fenceStart] || '')) return false;
-  let fenceEnd = fenceStart + 1;
-  while (fenceEnd < lines.length && !/^\s*```\s*$/.test(lines[fenceEnd])) fenceEnd += 1;
-  if (fenceEnd >= lines.length) return false;
-  if (lines.slice(fenceStart + 1, fenceEnd).join('\n') !== context.code.replace(/\r\n?/g, '\n').replace(/\n$/, '')) return false;
-
-  const markerStart = '<!-- code_chunk_output -->';
-  const markerEnd = '<!-- /code_chunk_output -->';
-  let outputStart = -1;
-  for (let index = fenceEnd + 1; index < Math.min(lines.length, fenceEnd + 7); index += 1) {
-    if (lines[index].trim() === markerStart) { outputStart = index; break; }
-    if (lines[index].trim()) break;
+async function persistCodeChunkOutput(card, outputText, context, signal, taskId) {
+  const tab = context?.tab || (typeof getActiveTab === 'function' ? getActiveTab() : null);
+  if (!tab || !state.tabs.includes(tab)) return false;
+  if (!context) {
+    const sourceLine = Number(card?.dataset?.sourceLine);
+    if (!Number.isInteger(sourceLine) || sourceLine < 1 || !state.editing || typeof card?.dataset?.code !== 'string') return false;
+    context = await window.ReadMDReview.codeTarget(sourceLine, decodeURIComponent(card.dataset.code), tab, signal);
   }
-  let replaceFrom;
-  let replaceTo;
-  if (outputStart >= 0) {
-    let outputEnd = outputStart + 1;
-    while (outputEnd < lines.length && lines[outputEnd].trim() !== markerEnd) outputEnd += 1;
-    if (outputEnd >= lines.length) return false;
-    replaceFrom = outputStart;
-    replaceTo = outputEnd + 1;
-  } else {
-    replaceFrom = fenceEnd + 1;
-    replaceTo = fenceEnd + 1;
+  const snapshot = await window.ReadMDReview.codeOutput(outputText, context, signal, taskId);
+  if (snapshot.code_output_unchanged) return false;
+  // Only the original visible editor can trigger its existing explicit save
+  // path. An inactive target remains a durable draft until its own save.
+  if (getActiveTab() === tab && state.editing && typeof saveEdit === 'function') {
+    if (await saveEdit() === false) throw Object.assign(new Error('review_persistence_failed'), { code: 'review_persistence_failed' });
   }
-  const safeText = String(outputText || '').replace(/\r\n?/g, '\n');
-  const block = [
-    '', markerStart, '', safeText, '', markerEnd, ''
-  ].join('\n');
-  const offsets = [0];
-  for (const line of lines) offsets.push(offsets[offsets.length - 1] + line.length + 1);
-  const from = offsets[replaceFrom];
-  const to = offsets[replaceTo];
-  const existing = lines.slice(replaceFrom, replaceTo).join('\n');
-  if (existing === block.replace(/^\n/, '').replace(/\n$/, '')) return typeof saveEdit === 'function' && await saveEdit() === true;
-  if (cmView) cmView.dispatch({ changes: { from, to, insert: block } });
-  else if ($('edit-area')) $('edit-area').setRangeText(block, from, to, 'end');
-  return typeof saveEdit === 'function' && await saveEdit() === true;
+  return true;
 }
 window.persistCodeChunkOutput = persistCodeChunkOutput;
 
 async function runAllCodeChunks() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const cards = (state.editing ? $('preview-pane') : $('content'))?.querySelectorAll('.code-chunk-card') || [];
-  if (!cards.length) {
-    showToast(_t('toast.noRunnableChunks'));
-    return;
-  }
-  showToast(_t('toast.batchRunStarted', { count: cards.length }), 1500);
-  for (const card of cards) {
-    const btn = card.querySelector('.code-chunk-run-btn');
-    if (btn) {
-      btn.click();
-      await new Promise(r => setTimeout(r, 150));
+  const tab = getActiveTab(); if (!tab || !state.tabs.includes(tab)) return false;
+  const running = window.ReadMDCodeRuns.batchFor(tab);
+  if (running) { window.ReadMDCodeRuns.cancel(running); await running.done; return false; }
+  const job = window.ReadMDCodeRuns.create(tab, true);
+  if (!job) { showToast(_t('review.busy')); return false; }
+  const wasEditing = Boolean(state.editing), button = $('btn-run-all-chunks');
+  const label = button?.querySelector('span') || button, oldLabel = label?.textContent;
+  let cards = [], results = [];
+  try {
+    if (label) label.textContent = _t('common.cancel');
+    const context = await window.ReadMDReview.codeBatchTarget(tab, job.controller.signal);
+    if (!context.batch.items.length) { showToast(_t('toast.noRunnableChunks')); return false; }
+    const pane = $(wasEditing ? 'preview-pane' : 'md-body');
+    const visible = [...(pane?.querySelectorAll('.code-chunk-card') || [])].filter(card => card._readmdCodeOwner === tab);
+    cards = context.batch.items.map(item => visible.find(card => Number(card.dataset.sourceLine) === item.target.source_line && decodeURIComponent(card.dataset.code || '') === item.target.code));
+    cards.forEach(card => card?._readmdBatchState?.(job, 'start'));
+    showToast(_t('toast.batchRunStarted', { count: context.batch.items.length }), 1500);
+    if (job.cancelled || !state.tabs.includes(tab)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+    job.phase = 'running';
+    const response = await window.ReadMDReview.codeBatchRun(context, job.controller.signal, job.taskId);
+    results = response.results || [];
+    if (response.ok !== true) throw Object.assign(new Error('batch failed'), { code: response.error_code || 'execution_failed' });
+    if (job.cancelled || !state.tabs.includes(tab)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+    if (results.length !== context.batch.items.length) throw Object.assign(new Error('invalid batch result'), { code: 'review_invalid_request' });
+    if (wasEditing && context.batch.items.some(item => item.output)) {
+      job.phase = 'waiting-to-write'; cards.forEach(card => card?._readmdBatchState?.(job, 'pending'));
+      await window.ReadMDCodeRuns.beforeWrite(job); job.phase = 'writing';
+      const outputs = results.map(result => (result.stdout || '') + (result.stderr ? '\n' + result.stderr : ''));
+      const snapshot = await window.ReadMDReview.codeBatchOutput(outputs, context, job.controller.signal, job.insertTaskId);
+      if (!snapshot.code_output_unchanged && getActiveTab() === tab && state.editing && await saveEdit() === false) throw Object.assign(new Error('review_persistence_failed'), { code: 'review_persistence_failed' });
     }
+    cards.forEach((card, index) => card?._readmdBatchState?.(job, 'success', results[index]));
+    return true;
+  } catch (error) {
+    cards.forEach((card, index) => card?._readmdBatchState?.(job, 'error', results[index], error));
+    showToast(_t(job.cancelled || /cancelled/.test(error?.code || '') ? 'task.cancelled' : error?.code === 'capability_pack_unavailable' ? 'error.capability_pack_unavailable' : /stale|conflict/.test(error?.code || '') ? 'review.conflict' : /budget/.test(error?.code || '') ? 'review.limit' : 'toast.unknownError'));
+    return false;
+  } finally {
+    window.ReadMDCodeRuns.finish(job);
+    if (label && label.textContent === _t('common.cancel')) label.textContent = oldLabel;
   }
 }
 window.runAllCodeChunks = runAllCodeChunks;
@@ -9820,7 +10697,7 @@ async function launchPresentationMode() {
         </div>
         <button type="button" class="presentation-btn" id="presentation-overview-btn" title="${_t('presentation.overviewTitle')}">${_t('presentation.overviewLabel')}</button>
         <button type="button" class="presentation-btn" id="presentation-fullscreen-btn" title="${_t('presentation.fullscreenTitle')}">${_t('presentation.fullscreenLabel')}</button>
-        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle" data-modal-close><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div id="presentation-loading"></div>
       <iframe class="presentation-iframe" title="${_t('menu.presentation') || '演讲演示'}" src="about:blank"></iframe>
@@ -10178,11 +11055,11 @@ async function renderVirtual(source, name, dir, content, fixes, extras, _session
   const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
     await window.ReadMDLifecycle?.whenIdle(lifecycleOwner);
-    if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return; }
+    if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return false; }
     return renderVirtual(source, name, dir, content, fixes, extras, true);
   }, _sessionQueued);
   if ((!_sessionQueued && !ownsLifecycle()) || blocked()) return defer();
-  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
   if (blocked()) return defer();
   // Import/AI results create another tab; keep the current editor draft intact.
   if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
@@ -10230,33 +11107,38 @@ async function renderVirtual(source, name, dir, content, fixes, extras, _session
   renderTabsBar();
   setProgress(100);
   afterRender();
+  return true;
 }
 
 
 async function convertFile(path, onExists) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!(await ensureModule('convert'))) return;
+  if (!(await ensureModule('convert'))) return false;
   busy(true);
   let d;
   try {
     const q = '/api/convert?p=' + encodeURIComponent(path) + '&on_exists=' + encodeURIComponent(onExists || 'skip') + '&language=' + encodeURIComponent(typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto') + (onExists ? '' : '&preview=1');
     const r = await apiFetch(q);
     d = await r.json().catch(() => ({}));
-    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return; }
+    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return false; }
     if (!r.ok) {
       const why = d.reason ? _t('convert.reason.' + d.reason) : '';
       showToast((why && why !== 'convert.reason.' + d.reason ? why : apiMessage(d, 'toast.convertFailed')) || '转换失败', 4200);
-      return;
+      return false;
     }
-    if (!d.content) { showToast(apiMessage(d, 'toast.convertNoContent') || '未提取到内容', 4200); return; }
+    if (!d.content) {
+      window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
+      showToast(apiMessage(d, 'toast.convertNoContent') || '未提取到内容', 4200); return false;
+    }
     showConvertWarns(d.warns);
-  } catch (e) { showToast((_t('toast.convertFailPrefix') || '转换失败：') + e.message); return; }
+  } catch (e) { showToast((_t('toast.convertFailPrefix') || '转换失败：') + e.message); return false; }
   finally { busy(false); }
 
   if (d.saved && d.out) {
     showToast((_t('toast.savedPrefix') || '已保存：') + d.out);
     await loadFile(d.out);
-    return;
+    window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
+    return true;
   }
   if (d.skipped && !onExists) {
     // 已存在同名 .md：让用户决定，而不是静默覆盖或静默丢弃。
@@ -10270,10 +11152,12 @@ async function convertFile(path, onExists) {
         { id: 'preview', label: _t('convert.existsPreview') || '仅预览' },
       ]
     );
-    if (choice === 'rename' || choice === 'overwrite') { await convertFile(path, choice); return; }
-    if (choice === 'cancel') return;
+    if (choice === 'rename' || choice === 'overwrite') return convertFile(path, choice);
+    if (choice === 'cancel') return false;
   }
-  renderVirtual('convert', d.name, d.dir, d.content, d.fixes, { assets: d.assets, originPath: path });
+  const opened = await renderVirtual('convert', d.name, d.dir, d.content, d.fixes, { assets: d.assets, originPath: path })===true;
+  if (opened) window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
+  return opened;
 }
 
 function showConvertWarns(warns) {
@@ -10284,33 +11168,266 @@ function showConvertWarns(warns) {
 }
 
 
+// The ordinary Open/Drop/OS lane reads original PDFs. Conversion remains an
+// explicit action in the PDF workspace or the existing conversion workbench.
+async function openDocumentPath(path, options = {}) {
+  if (!path) return false;
+  if (window.ReadMDOffice?.isPath(path)) return window.ReadMDOffice.open(path, options);
+  if (/\.pdf$/i.test(path)) {
+    const action = async () => {
+      if (!options._sessionRestoring && window.ReadMDSession?.restoring?.()) await window.__readmdSessionReady;
+      await window.ReadMDLifecycle?.whenIdle(options._lifecycleOwner);
+      if (!await waitForSessionTransition()) return false;
+      if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
+      if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
+      // Keep the underlying editor and its draft. The PDF workspace has its
+      // own guarded save/close path and does not become a Markdown session tab.
+      if (!window.ReadMDPdf?.read) { showToast(window.i18n.t('pdf.readUnavailable')); return false; }
+      return window.ReadMDPdf.read(path);
+    };
+    return deferSessionOperation(action, options._sessionQueued);
+  }
+  if ((typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(path)) || (typeof IMG_RE !== 'undefined' && IMG_RE.test(path))) return convertOrOcr(path, 'convert');
+  return loadFile(path, options);
+}
+
 async function loadFileDialog() {
   if (hasPy) {
     try {
       const p = await py.choose_file();
-      if (p) {
-        if (typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(p)) {
-          await convertOrOcr(p, 'convert');
-        } else {
-          await loadFile(p);
-        }
-      }
+      if (p) await openDocumentPath(p);
     } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
     return;
   }
   const input = $('file-input');
   input.value = '';
+  input.multiple = false;
   input.onchange = async () => {
     const f = input.files && input.files[0];
     if (!f) return;
     try {
       const p = await uploadFile(f);
-      if (p && MD_RE.test(p)) await loadFile(p, { browserCopy: true });
-      else if (p) await convertOrOcr(p, 'convert');
+      if (p) await openDocumentPath(p, { browserCopy: true });
     } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
   };
   input.click();
 }
+
+;
+'use strict';
+// Office pages use the actual PDF rendering from the original document. Only
+// the visible page and its temporary server view live here; session/recovery
+// stores retain the original source identity, never PDF or image bytes.
+window.ReadMDOffice = (() => {
+  let visible = null;
+  const isPath = path => typeof path === 'string' && /\.(docx|pptx)$/i.test(path);
+  const isTab = tab => tab?.mode === 'office-preview';
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+  const failure = message => Object.assign(new Error(message), { officePreviewMessage: true });
+  const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '');
+  const post = (body, options = {}) => apiFetch('/api/office/preview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store', body: JSON.stringify(body), ...options,
+  });
+  async function closeView(view) {
+    if (uuid(view)) try { await post({ view, close: true }); } catch (_) { /* The bounded server view also expires. */ }
+  }
+  function releaseView() {
+    const target = visible;
+    if (!target) return Promise.resolve();
+    visible = null;
+    target.controller.abort();
+    target.image.removeAttribute('src');
+    if (target.url) URL.revokeObjectURL(target.url);
+    $('content')?.classList.remove('is-office-preview');
+    if (state.pagination.kind === 'office') {
+      delete state.pagination.kind;
+      delete state.pagination.loading;
+      delete state.pagination.error;
+      Object.assign(state.pagination, { enabled: false, pages: [], totalPages: 0, currentPage: 0 });
+      updatePaginationBar();
+    }
+    const cancel = target.task ? apiFetch('/api/task/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: target.task }),
+    }).catch(() => {}) : Promise.resolve();
+    return Promise.allSettled([cancel, closeView(target.view)]);
+  }
+  function createTab(descriptor) {
+    const path = descriptor.path;
+    const name = path.split(/[\\/]/).pop() || descriptor.name;
+    const browserCopy = descriptor.browserCopy === true;
+    return { id: descriptor.id || 'tab_' + crypto.randomUUID(), mode: 'office-preview', source: 'office',
+      path, originPath: path, dir: path.replace(/[\\/][^\\/]*$/, ''), name,
+      title: browserCopy ? `${name} (${t('app.browserCopy')})` : name,
+      browserCopy, content: '', original: null, fixed: '', fixes: [], stats: null,
+      isDirty: false, isVirtual: false, size: 0, encoding: '', revision: '', mtime: 0,
+      ext: '.' + path.split('.').pop().toLowerCase(), webAssets: [],
+      recoveryKey: descriptor.recoveryKey || descriptor.key,
+      readerMode: 'paged', readerPage: descriptor.readerPage || 0, scrollPos: descriptor.scrollPos || 0 };
+  }
+  const current = target => visible === target && !target.controller.signal.aborted &&
+    isReaderRenderCurrent(target.render) && state.tabs.includes(target.tab) && getActiveTab() === target.tab;
+  function updateControls(target) {
+    target.root.setAttribute('aria-busy', String(target.loading));
+    if (target.pages) target.image.alt = (target.tab.title || target.tab.name) + ' · ' + t('pagination.pageInfo', { current: target.page + 1, total: target.pages });
+    Object.assign(state.pagination, { loading: target.loading, error: !!target.error,
+      currentPage: target.page, totalPages: target.pages });
+    updatePaginationBar();
+  }
+  async function loadPage(target, page) {
+    if (!current(target) || target.loading || !Number.isSafeInteger(page) || page < 0) return false;
+    target.loading = true;
+    target.error = false;
+    target.image.hidden = true;
+    target.status.hidden = false;
+    target.status.dataset.i18n = 'audit.loading';
+    target.status.textContent = t('audit.loading');
+    updateControls(target);
+    const task = target.task = crypto.randomUUID();
+    try {
+      const fromSource = () => ({ path: target.tab.path, page, task_id: task,
+        ...(target.source ? { expected_source: target.source } : {}) });
+      let response = await post(target.view ? { view: target.view, page, task_id: task } :
+        fromSource(), { signal: target.controller.signal });
+      // An expired in-memory rendering is safe to reopen from its source once.
+      if (response.status === 410 && target.view && current(target)) {
+        void closeView(target.view); target.view = null;
+        response = await post(fromSource(), { signal: target.controller.signal });
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw failure(apiMessage(data, 'editor.previewRenderFail'));
+      }
+      const view = response.headers.get('X-ReadMD-View');
+      const source = response.headers.get('X-ReadMD-Source');
+      const pagesHeader = response.headers.get('X-ReadMD-Pages'), pageHeader = response.headers.get('X-ReadMD-Page');
+      const pages = Number(pagesHeader), actualPage = Number(pageHeader);
+      if (!uuid(view) || !/^[0-9a-f]{64}$/.test(source || '') || (target.source && target.source !== source) || !/^\d+$/.test(pagesHeader || '') || !/^\d+$/.test(pageHeader || '') || !Number.isSafeInteger(pages) || pages < 1 ||
+          !Number.isSafeInteger(actualPage) || actualPage !== page || actualPage >= pages ||
+          !/^image\/png(?:\s*;|$)/i.test(response.headers.get('Content-Type') || '')) {
+        if (uuid(view) && view !== target.view) void closeView(view);
+        throw failure(t('editor.previewRenderFail'));
+      }
+      if (!current(target)) { void closeView(view); return false; }
+      target.view = view; target.source = source;
+      const blob = await response.blob();
+      if (!current(target)) { void closeView(view); return false; }
+      if (!blob.size) throw failure(t('editor.previewRenderFail'));
+      const url = URL.createObjectURL(blob), previousUrl = target.url;
+      target.url = url; target.page = actualPage; target.pages = pages;
+      if (state.pagination.pages.length !== pages)
+        state.pagination.pages = Array.from({ length: pages }, (_, pageIndex) => ({ pageIndex, title: '' }));
+      target.tab.readerPage = actualPage;
+      target.image.src = url;
+      target.image.hidden = false;
+      target.status.hidden = true;
+      $('content').scrollTop = 0;
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+      window.ReadMDSession?.persist();
+      return true;
+    } catch (error) {
+      if (current(target)) {
+        target.error = true;
+        delete target.status.dataset.i18n;
+        target.status.textContent = error.officePreviewMessage ? error.message : t('editor.previewRenderFail');
+        target.status.hidden = false;
+      }
+      return false;
+    } finally {
+      if (target.task === task) target.task = null;
+      target.loading = false;
+      if (current(target)) updateControls(target);
+    }
+  }
+  function goToPage(page) {
+    const target = visible;
+    if (!target || !current(target)) return false;
+    if (!Number.isSafeInteger(page) || target.loading) { updateControls(target); return false; }
+    page = Math.max(0, Math.min(page, Math.max(0, target.pages - 1)));
+    if (page === target.page && target.url && !target.error) { updateControls(target); return true; }
+    target.restoreScroll = null;
+    return loadPage(target, page);
+  }
+  async function render(tab) {
+    const render = beginReaderRender(), pane = $('content');
+    if (!pane || !state.tabs.includes(tab) || getActiveTab() !== tab) return false;
+    Object.assign(state.pagination, { kind: 'office', enabled: true, mode: 'paged', rawContent: null, searchText: null,
+      pages: [], allHeadings: [], totalPages: 0, currentPage: 0, loading: false, error: false });
+    state.headings = [];
+    closeSearch(); closeMdPopups();
+    window.ReadMDGraph?.close?.();
+    $('backlinks-panel')?.classList.add('hidden');
+    const root = document.createElement('section'); root.className = 'office-preview'; root.setAttribute('aria-label', tab.title || tab.name);
+    const status = document.createElement('p'); status.className = 'office-preview-status'; status.setAttribute('role', 'status');
+    const image = document.createElement('img'); image.className = 'office-preview-page'; image.alt = tab.title || tab.name; image.draggable = false; image.hidden = true;
+    root.append(status, image); pane.replaceChildren(root); pane.classList.add('is-office-preview'); pane.classList.remove('hidden');
+    const target = visible = { tab, render, root, status, image,
+      controller: new AbortController(), view: null, task: null, url: null, page: 0, pages: 0, loading: false,
+      restoreScroll: tab.scrollPos || 0, preferredPage: Number(tab.readerPage || 0) };
+    render.signal.addEventListener('abort', () => { if (visible === target) void releaseView(); }, { once: true });
+    image.onerror = () => { if (current(target)) { target.error = true; status.dataset.i18n = 'editor.previewRenderFail'; status.textContent = t('editor.previewRenderFail'); status.hidden = false; updateControls(target); } };
+    image.onload = () => {
+      const restoredPage = target.preferredPage > 0 && target.preferredPage < target.pages ? target.preferredPage : 0;
+      if (current(target) && target.restoreScroll !== null && target.page === restoredPage) {
+        pane.scrollTop = target.restoreScroll; target.restoreScroll = null;
+      }
+    };
+    buildToc();
+    const preferredPage = Number(tab.readerPage || 0);
+    if (!await loadPage(target, 0)) return false;
+    if (preferredPage > 0 && preferredPage < target.pages && current(target)) await loadPage(target, preferredPage);
+    return current(target);
+  }
+  async function open(path, options = {}) {
+    if (!isPath(path)) return false;
+    const ownsLifecycle = () => window.ReadMDLifecycle?.isOwner(options._lifecycleOwner);
+    const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy?.() && !ownsLifecycle());
+    const defer = () => deferSessionOperation(async () => {
+      if (!options._sessionRestoring && window.ReadMDSession?.restoring?.()) await window.__readmdSessionReady;
+      await window.ReadMDLifecycle?.whenIdle(options._lifecycleOwner);
+      if (!await waitForSessionTransition()) return false;
+      return open(path, { ...options, _sessionQueued: true });
+    }, options._sessionQueued);
+    if ((!options._sessionRestoring && window.ReadMDSession?.restoring?.()) || blocked() || (!options._sessionQueued && !ownsLifecycle())) return defer();
+    if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
+    if (blocked()) return defer();
+    const pdfModal = $('pdf-modal');
+    if (pdfModal && !pdfModal.classList.contains('hidden')) {
+      if (!window.ReadMDPdf?.prepareClose || !await window.ReadMDPdf.prepareClose()) return false;
+      if (blocked()) return defer();
+    }
+    let tab = findTabByPath(path);
+    if (tab?._restoreDescriptor || tab?._renamePending || tab?._renameInFlight || tab?.isDirty) { showToast(t('error.review_needs_recovery')); return false; }
+    if (tab && !isTab(tab) && tab.mode !== 'unavailable') { showToast(t('toast.noEditableContent')); return false; }
+    if (tab?.mode === 'unavailable') {
+      Object.assign(tab, createTab(tab)); delete tab._restoreUnavailable;
+    }
+    if (tab && state.activeTabId !== tab.id) {
+      await switchTab(tab.id, { _sessionQueued: options._sessionQueued });
+      return getActiveTab() === tab;
+    }
+    const previous = getActiveTab();
+    if (previous && window.ReadMDReview && !await window.ReadMDReview.flush(previous)) return false;
+    if (getActiveTab() !== previous) return false;
+    if (blocked()) return defer();
+    beginDocumentLoad();
+    if (state.editing) syncActiveTabDirty();
+    if (previous) captureReaderState(previous);
+    exitEdit();
+    if (tab) { Object.assign(tab, createTab({ ...tab, browserCopy: options.browserCopy ?? tab.browserCopy })); delete tab._restoreUnavailable; }
+    else { tab = createTab({ path, browserCopy: options.browserCopy }); state.tabs.push(tab); }
+    state.activeTabId = tab.id;
+    syncStateFromActiveTab();
+    addRecent(path); pushHistory(path); saveLastFile(path); clearAiOutput();
+    await renderActiveTab({ restoreScroll: true });
+    return state.tabs.includes(tab);
+  }
+  window.addEventListener('pagehide', () => { void releaseView(); });
+  window.addEventListener('readmd:language-changed', () => { if (visible && current(visible)) updateControls(visible); });
+  return { isPath, isTab, createTab, open, render, goToPage, releaseView,
+    prepareClose: async () => { await releaseView(); return true; } };
+})();
 
 ;
 'use strict';
@@ -10384,38 +11501,21 @@ function setPvLayout(layout) {
     switchEditAiToChatPanel();
   }
   state.pvLayout = layout;
-  document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === layout));
-  updatePvLabel(layout);
   applyPvLayout();
 }
 
 function updatePvLabel(layout = state.pvLayout || 'none') {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const names = {
-    none: _t('editor.previewNone') || '无',
-    left: _t('editor.previewLeft') || '左',
-    right: _t('editor.previewRight') || '右',
-    bottom: _t('editor.previewBottom') || '下',
-    top: _t('editor.previewTop') || '上'
-  };
-  const narrow = window.innerWidth < 600 && (layout === 'left' || layout === 'right');
-  const previewLabel = _t('editor.preview') || '预览';
-  const trigger = $('pv-trigger');
-  if (trigger) {
-    // Short visible label; the full state (incl. narrow-screen note) is in title/aria-label.
-    const full = narrow
-      ? previewLabel + '：' + names[layout] + '（' + (_t('editor.narrowScreenBottom') || '窄屏置底') + '）'
-      : previewLabel + '：' + names[layout];
-    trigger.innerHTML = '<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span class="pv-trigger-label"></span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
-    trigger.querySelector('.pv-trigger-label').textContent = full;
-    trigger.title = full;
-    trigger.setAttribute('aria-label', full);
-    trigger.classList.toggle('is-on', layout !== 'none');
+  for (const button of document.querySelectorAll('.pv-btn')) {
+    const active = button.dataset.pv === layout;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
   }
+  $('edit-view-trigger')?.classList.toggle('is-on', layout !== 'none');
 }
 
 function applyPvLayout({ persist = true, updatePanels = true } = {}) {
   const layout = state.pvLayout || 'none';
+  updatePvLabel(layout);
   const mc = $('main-col');
 
   const pw = $('preview-wrap');
@@ -10719,6 +11819,7 @@ async function renderPreview() {
   }
   if(window.ReadMDReader)ReadMDReader.enhanceFootnotes(pane);
   if(window.ReadMDPublication)ReadMDPublication.applyLayout(pane);
+  window.ReadMDTableView?.observe(pane);
   // Cache only a committed render. A second request for the same source must
   // not invalidate an in-flight render and then skip it as already displayed.
   pvLast = source;
@@ -10872,10 +11973,58 @@ function alignEditorAndPreview() {
 }
 window.alignEditorAndPreview = alignEditorAndPreview;
 
-function applyPvUi() {
-  document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === state.pvLayout));
+function updatePreviewOptions() {
   const sync = $('pv-sync');
-  if (sync) sync.checked = !!state.pvSync;
+  const publication = $('pv-publication');
+  if (sync) {
+    sync.checked = !!state.pvSync;
+    sync.disabled = !!state.pvPublication;
+  }
+  if (publication) publication.checked = !!state.pvPublication;
+}
+
+function bindPreviewControls() {
+  document.querySelectorAll('.pv-btn').forEach(button => {
+    button.addEventListener('click', event => {
+      setPvLayout(button.dataset.pv);
+      closeMdPopups({ restoreFocus: event.detail === 0 });
+    });
+  });
+  const sync = $('pv-sync');
+  sync.addEventListener('change', () => {
+    state.pvSync = sync.checked;
+    saveSettings();
+  });
+  const publication = $('pv-publication');
+  publication.addEventListener('change', async () => {
+    const wanted = publication.checked;
+    const tab = state.activeTabId;
+    const view = cmView;
+    publication.disabled = true;
+    try {
+      const ready = !wanted || (view && await ReadMDCapabilities.ensure('typst') &&
+        await ReadMDCapabilities.ensurePublication(view.state.doc.toString(), {
+          ...state.export?.options, pdf: { engine: 'typst' }
+        }));
+      if (state.activeTabId !== tab || cmView !== view || !state.editing) return;
+      state.pvPublication = !!(wanted && ready);
+      pvLast = '';
+      schedulePreview();
+    } catch {
+      if (state.activeTabId === tab && cmView === view && state.editing) {
+        showToast(i18n.t('editor.previewRenderFail'));
+      }
+    } finally {
+      publication.disabled = false;
+      updatePreviewOptions();
+    }
+  });
+  $('preview-wrap').addEventListener('scroll', pvSyncFromPreview);
+  bindPvSplitter();
+}
+
+function applyPvUi() {
+  updatePreviewOptions();
   setPvLayout(state.pvLayout);
 }
 
@@ -11198,6 +12347,7 @@ function promptSaveConflict() {
 }
 
 async function saveAs(contentOverride = null) {
+  if (getActiveTab()?.mode === 'office-preview') { showToast(window.i18n.t('toast.noEditableContent')); return false; }
   if(state.editing&&window.ReadMDInlineMath){
     const tab=getActiveTab(),view=cmView;
     if(typeof contentOverride!=='string')await ReadMDInlineMath.commit({focus:false});
@@ -11209,6 +12359,7 @@ async function saveAs(contentOverride = null) {
 }
 
 async function saveAsSnapshot(snapshot, options = {}) {
+  if (snapshot.tab?.mode === 'office-preview') return false;
   if (!snapshot.reviewPrepared && window.ReadMDReview) {
     const reviewSession = await ReadMDReview.prepareSave(snapshot.tab, snapshot.content);
     if (reviewSession === false) return false;
@@ -11279,6 +12430,7 @@ const imgState = {
 };
 let imgLoadEpoch = 0;
 let imgInsertPending = false;
+let imgTarget = null;
 window.ReadMDModal.setGuard('img-modal', () => !imgInsertPending);
 
 function syncImgAvailability() {
@@ -11298,7 +12450,8 @@ function updateImgHistoryButtons() { $('img-undo').disabled=!imgState.history.le
 function openImgModal() {
   if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!state.dir) { showToast(_t('toast.imgLocalOnly') || '图片编辑仅支持本地 Markdown 文件'); return; }
+  imgTarget = imageEditTarget();
+  if (!imgTarget) { showToast(_t('toast.imgEnterEditFirst')); return; }
   $('img-modal').classList.remove('hidden');
   ++imgLoadEpoch;
   imgState.img = null;
@@ -11311,6 +12464,7 @@ function closeImgModal(force) {
   if (imgInsertPending && force !== true) return;
   ++imgLoadEpoch;
   window.ReadMDModal.close('img-modal');
+  imgTarget = null;
   imgState.img = null;
   imgState.drag = null;
   if (cmView) cmView.focus();
@@ -11620,7 +12774,8 @@ function insertImgUrl() {
   const url = $('img-url-input').value.trim();
   if (!url) { showToast(_t('toast.imgEnterUrl') || '请输入图片 URL'); return; }
   if (!cmView) { showToast(_t('toast.imgEnterEditFirst') || '请先进入编辑模式'); return; }
-  cmInsertImage(url);
+  if (!imgTarget?.current()) { showToast(_t('error.review_stale_generation')); return; }
+  cmInsertImage(url, imgTarget);
   closeImgModal();
   showToast(_t('toast.imgUrlInserted') || '已插入图片 URL');
 }
@@ -11631,12 +12786,12 @@ function registerStagedImage(asset, tab = getActiveTab()) {
   if (getActiveTab() === tab) state.webAssets = tab.webAssets;
 }
 
-function cmInsertImage(rel) {
-  if (!cmView) return;
+function cmInsertImage(rel, target) {
+  if (!target?.current()) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const sel = cmView.state.selection.main;
-  const insert = '![' + (_t('editor.image') || '图片') + '](' + rel + ')';
-  cmView.dispatch({ changes: { from: sel.from, to: sel.to, insert }, selection: { anchor: sel.from + insert.length } });
+  const href = rel.replace(/[()<>\s\\]/gu, ch => Array.from(new TextEncoder().encode(ch), b => '%' + b.toString(16).toUpperCase().padStart(2, '0')).join(''));
+  const insert = '![' + (_t('editor.image') || '图片') + '](' + href + ')';
+  cmView.dispatch({ changes: { from: target.from, to: target.to, insert }, selection: { anchor: target.from + insert.length }, userEvent: 'input.image' });
   cmView.focus();
 }
 
@@ -11664,9 +12819,8 @@ async function exportAndInsertImg() {
 async function exportAndInsertImgOnce() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!imgState.img) return;
-  const target = { view: cmView, tabId: state.activeTabId, dir: state.dir, file: state.file, doc: cmView.state.doc.toString() };
-  const targetUnchanged = () => cmView === target.view && state.activeTabId === target.tabId &&
-    state.dir === target.dir && state.file === target.file && cmView.state.doc.toString() === target.doc;
+  const target = imgTarget;
+  if (!target?.current()) { showToast(_t('toast.imgExportFail')); return; }
   const r = imgRect();
   const srcX = (imgState.crop.x - r.x) / imgState.fitScale;
   const srcY = (imgState.crop.y - r.y) / imgState.fitScale;
@@ -11698,7 +12852,7 @@ async function exportAndInsertImgOnce() {
     fr.onerror = () => res('');
     fr.readAsDataURL(blob);
   });
-  if (!b64 || !targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
+  if (!b64 || !target.current()) { showToast(_t('toast.imgExportFail')); return; }
   busy(true);
   try {
     const resp = await apiFetch('/api/image/save', {
@@ -11707,9 +12861,9 @@ async function exportAndInsertImgOnce() {
     });
     const d = await resp.json();
     if (!resp.ok || !d.ok) throw new Error(d.error || _t('toast.unknownError'));
-    if (!targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
-    registerStagedImage(d.asset);
-    cmInsertImage(d.rel);
+    if (!target.current()) { showToast(_t('toast.imgExportFail')); return; }
+    registerStagedImage(d.asset, target.tab);
+    cmInsertImage(d.rel, target);
     closeImgModal(true);
     showToast(_t('toast.imgInsertedRel', { rel: d.rel }) || ('图片已插入（' + d.rel + '）'));
   } catch (e) {
@@ -11729,6 +12883,8 @@ async function exportAndInsertImgOnce() {
    ============================================================ */
 
 (function (root) {
+  const tableAttributes = root ? root.ReadMDTableAttributes :
+    typeof module !== 'undefined' && module.exports ? require('./table-attributes.js') : null;
   const LIST_RE = /^(?:[-*+][ \t]+\[[ xX]\](?:[ \t]+|$)|[-*+](?:[ \t]+|$)|\d{1,9}[.)](?:[ \t]+|$))/;
   const HEADING_RE = /^#{1,6}(?:[ \t]+|$)/;
   const WORD_RE = /[A-Za-z0-9_À-ɏͰ-ϿЀ-ӿ]/;
@@ -12355,11 +13511,19 @@ async function exportAndInsertImgOnce() {
     return edit(t.from, t.to, insert, t.from + off + c.from, t.from + off + c.to);
   }
 
+  // This guard also covers a cursor position outside the incremental syntax
+  // tree. The heuristic reformatter cannot safely edit an attributed table.
+  function hasCellAttributes(lines) {
+    return tableAttributes && lines.some((line, index) =>
+      index !== 1 && line.includes('}') && splitRow(line).some(tableAttributes.parseCell));
+  }
+
   /* Tab / Shift+Tab: realign the table and move to the next / previous cell
      (a new row is added after the last cell). */
   function tableNavEdit(doc, pos, dir) {
     const t = findTable(doc, pos);
     if (!t) return null;
+    if (hasCellAttributes(t.lines)) return { blocked: true };
     const rows = t.lines.slice();
     const cols = Math.max(...rows.map(r => splitRow(r).length));
     let r = t.row, c = Math.min(cellIndex(rows[r], t.colText), cols - 1);
@@ -12377,6 +13541,7 @@ async function exportAndInsertImgOnce() {
   function tableEnterEdit(doc, pos) {
     const t = findTable(doc, pos);
     if (!t) return null;
+    if (hasCellAttributes(t.lines)) return { blocked: true };
     const rows = t.lines.slice();
     const cols = Math.max(...rows.map(r => splitRow(r).length));
     const empty = splitRow(rows[t.row]).every(c => !c);
@@ -12401,16 +13566,725 @@ async function exportAndInsertImgOnce() {
     return { text: formatted.join('\n'), selFrom: first.from, selTo: first.to };
   }
 
+  // The caller supplies two adjacent body lines from one parsed table.
+  function tableRowSwap(first, second) {
+    const [upper, lower] = first.from < second.from ? [first, second] : [second, first];
+    if (lower.from !== upper.to + 1 || upper.text === lower.text) return null;
+    return { from: upper.from, to: lower.to, insert: lower.text + '\n' + upper.text };
+  }
+
   const api = {
     computeSyntaxEdit, applySyntaxEdit,
     headingLevelEdit, calloutEdit, CALLOUT_TYPES,
     blockInsertEdit, linePrefixEdit, inlineInsertEdit, footnoteEdit, tocMarkdown, headingSlug,
     fuzzyScore, textStats,
-    strWidth, splitRow, isDelimRow, formatTable, findTable, cellRanges, tableNavEdit, tableEnterEdit, tableBlock,
+    strWidth, splitRow, isDelimRow, formatTable, findTable, cellRanges, tableNavEdit, tableEnterEdit, tableBlock, tableRowSwap,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ReadMDTransforms = api;
 })(typeof window !== 'undefined' ? window : null);
+
+;
+'use strict';
+// Structural edits consume the rows validated against CodeMirror's syntax tree.
+// Only the review service commits the resulting UTF-16 replacement.
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = factory(require('../reader/heading-identity.js'), require('../../vendor/marked.min.js'), require('./table-attributes.js'));
+  } else root.ReadMDTableStructure = factory(root.ReadMDHeadings, root.marked, root.ReadMDTableAttributes);
+})(typeof window !== 'undefined' ? window : null, (headings, marked, tableAttributes) => {
+  function dimensionEdit(source, parsed, axis, size) {
+    const previous = parsed?.attributes[axis];
+    if (previous === size) return null;
+    if (previous !== undefined) {
+      const suffix = source.slice(parsed.from, parsed.to);
+      const from = parsed.from + suffix.indexOf(axis + '=') + axis.length + 1;
+      return { from, to: from + String(previous).length, insert: String(size) };
+    }
+    if (parsed) return { from: parsed.to - 1, to: parsed.to - 1, insert: ' ' + axis + '=' + size };
+    const end = source.length;
+    return { from: end, to: end, insert: tableAttributes.suffix({ [axis]: size }, end > 0) };
+  }
+
+  function resizeTrack(context, axis, index, size) {
+    if (!tableAttributes.validDimension(axis, size)) return null;
+    const row = axis === 'height' ? index : 0, column = axis === 'width' ? index : 0;
+    const cell = context.rows[row]?.[column];
+    if (!cell) return null;
+    const edit = dimensionEdit(cell.original, context.layout.cells[row][column], axis, size);
+    if (!edit || context.to - context.from - (edit.to - edit.from) + edit.insert.length > 65536) return null;
+    return { from: cell.from + edit.from, to: cell.from + edit.to, insert: edit.insert };
+  }
+
+  function columnEdit(context, column, insert) {
+    if (context.layout?.hasSpans) return null;
+    const width = context.rows[0].length;
+    if (insert ? width >= tableAttributes.maxColumns || (width + 1) * context.rows.length > 256 : width === 1) return null;
+    const output = context.lines.map(({ line, segments }, index) => {
+      const cells = segments.map(segment => line.text.slice(segment.from, segment.to));
+      let prefix = line.text.slice(0, segments[0].from);
+      const suffix = line.text.slice(segments[width - 1].to);
+      // Frame bare rows so an empty edge cell or the last surviving column
+      // still parses as a table. Keep existing indentation outside the frame.
+      if (!prefix) {
+        const indent = cells[0].match(/^ {0,3}/)[0];
+        cells[0] = cells[0].slice(indent.length);
+        prefix = indent + '|';
+      }
+      if (!suffix && /(?:^|[^\\])(?:\\\\)*\\$/.test(cells[width - 1])) cells[width - 1] += ' ';
+      if (insert) cells.splice(column + 1, 0, index === 1 ? ' --- ' : ' ');
+      else {
+        const row = index === 0 ? 0 : index - 1;
+        const height = context.layout?.heights?.[row];
+        if (column === 0 && index !== 1 && height != null) {
+          const target = context.rows[row][1];
+          const edit = dimensionEdit(target.original, context.layout.cells[row][1], 'height', height);
+          const offset = target.from - target.segmentFrom;
+          cells[1] = cells[1].slice(0, offset + edit.from) + edit.insert + cells[1].slice(offset + edit.to);
+        }
+        cells.splice(column, 1);
+      }
+      return prefix + cells.join('|') + (suffix || '|');
+    });
+    const replacement = output.join('\n');
+    if (replacement.length > 65536) return null;
+    return { from: context.lines[0].line.from, to: context.lines.at(-1).line.to, insert: replacement };
+  }
+
+  // Compare signed decimal significands and powers without rounding long IDs,
+  // converting currencies or expanding exponent notation into huge strings.
+  function decimal(text) {
+    const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(text);
+    if (!match || !(match[2] || match[3])) return null;
+    const raw = match[2] + (match[3] || '');
+    const first = raw.search(/[1-9]/);
+    if (first < 0) return { sign: 0, power: 0n, digits: '' };
+    return { sign: match[1] === '-' ? -1 : 1,
+      power: BigInt(match[2].length - first) + BigInt(match[4] || 0),
+      digits: raw.slice(first).replace(/0+$/, '') };
+  }
+  const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+  function sortRows(context, column, ascending, language) {
+    if (context.layout?.hasSpans) return null;
+    const data = context.rows.slice(1);
+    if (data.length < 2) return null;
+    const collator = new Intl.Collator(language, {numeric: true});
+    const keyed = data.map((row, index) => {
+      const cell = row[column];
+      const text = (cell.value ?? headings.inlineText(marked.Lexer.lexInline(cell.content ?? cell.original))).trim();
+      const number = decimal(text);
+      return { index, text, number, group: !text ? 2 : number ? 0 : 1 };
+    });
+    keyed.sort((a, b) => {
+      if (a.group !== b.group) return a.group - b.group;
+      let order;
+      if (a.number && b.number) {
+        const x = a.number, y = b.number;
+        order = x.sign - y.sign || x.sign * (compare(x.power, y.power) || compare(x.digits, y.digits));
+      } else order = collator.compare(a.text, b.text);
+      return (ascending ? order : -order) || a.index - b.index;
+    });
+    const first = keyed.findIndex((key, index) => key.index !== index);
+    if (first < 0) return null;
+    let last = keyed.length - 1;
+    while (keyed[last].index === last) last--;
+    const line = index => context.lines[index + 2].line;
+    return { from: line(first).from, to: line(last).to,
+      insert: keyed.slice(first, last + 1).map(key => line(key.index).text).join('\n') };
+  }
+  function attributeEdit(context, cell, attributes) {
+    const current = context.layout.cells[cell.row][cell.column];
+    const previous = current?.attributes ?? {}, names = Object.keys(attributes);
+    if (names.length === Object.keys(previous).length && names.every(name => attributes[name] === previous[name])) return null;
+    const from = current?.from ?? cell.original.length;
+    const to = current?.to ?? from;
+    const insert = tableAttributes.suffix(attributes, from > 0);
+    if (insert === null || cell.original.slice(from, to) === insert ||
+        context.to - context.from - (to - from) + insert.length > 65536) return null;
+    const updated = cell.original.slice(0, from) + insert + cell.original.slice(to);
+    const parsed = tableAttributes.parseCell(updated);
+    // Removing metadata must not activate an earlier, literal brace suffix.
+    if (!insert && parsed) return null;
+    const rows = context.rows.map(row => row.map(slot => slot === cell ? updated : slot.original));
+    if (!tableAttributes.layout(rows)) return null;
+    return { from: cell.from + from, to: cell.from + to, insert };
+  }
+
+  function rectangle(context, row, column, rowspan, colspan) {
+    return context.rows.slice(row, row + rowspan)
+      .flatMap(cells => cells.slice(column, column + colspan))
+      .map(({ segmentFrom: from, segmentTo: to }) => ({ from, to }));
+  }
+
+  function mergeCells(context, cell, rowspan, colspan) {
+    const { row, column } = cell;
+    if (context.layout.owners[row][column] || rowspan === 1 && colspan === 1) return null;
+    const attrs = { ...context.layout.cells[row][column]?.attributes };
+    if (colspan !== 1) attrs.colspan = colspan;
+    if (rowspan !== 1) attrs.rowspan = rowspan;
+    const edit = attributeEdit(context, cell, attrs);
+    return edit && { ...edit, affected: rectangle(context, row, column, rowspan, colspan) };
+  }
+
+  function splitCell(context, cell) {
+    const owner = context.layout.owners[cell.row][cell.column];
+    if (!owner) return null;
+    const { row, column, rowspan, colspan } = owner;
+    const attrs = { ...context.layout.cells[row][column].attributes };
+    delete attrs.colspan;
+    delete attrs.rowspan;
+    const edit = attributeEdit(context, context.rows[row][column], attrs);
+    return edit && { ...edit, affected: rectangle(context, row, column, rowspan, colspan) };
+  }
+
+  function alignCell(context, cell, align, valign) {
+    const attrs = { ...context.layout.cells[cell.row][cell.column]?.attributes };
+    if (align) attrs.align = align;
+    else delete attrs.align;
+    if (valign) attrs.valign = valign;
+    else delete attrs.valign;
+    const edit = attributeEdit(context, cell, attrs);
+    return edit && { ...edit, affected: rectangle(context, cell.row, cell.column, 1, 1) };
+  }
+
+  return { columnEdit, sortRows, mergeCells, splitCell, alignCell, resizeTrack };
+});
+
+;
+'use strict';
+
+(function (root) {
+  const bounds = root.ReadMDTableAttributes.dimensions;
+  const clamp = (axis, value) => Math.min(bounds[axis].max, Math.max(bounds[axis].min, Math.round(value)));
+
+  function mount(grid, context, canResize, commit, translate) {
+    const document = grid.ownerDocument;
+    const columns = [], rows = [], colgroup = document.createElement('colgroup');
+    grid.append(colgroup);
+    grid.classList.add('has-table-resize');
+    let drag = null;
+
+    function authored(track) {
+      const sizes = track.axis === 'width' ? context.layout.widths : context.layout.heights;
+      return sizes[track.index];
+    }
+
+    function dimension(track) {
+      return clamp(track.axis, authored(track) ?? track.cell.getBoundingClientRect()[track.axis]);
+    }
+
+    function paint(widthDraft, rowDraft) {
+      const widths = widthDraft ?? context.layout.widths;
+      const fixed = widths.reduce((total, width) => total + (width ?? 0), 0);
+      const auto = widths.filter(width => width == null).length;
+      grid.style.setProperty('--table-fixed-width', fixed + 'px');
+      grid.style.setProperty('--table-auto-columns', String(auto));
+      grid.style.width = auto ? '100%' : 'var(--table-grid-min-width)';
+      columns.forEach((track, index) => { track.column.style.width = widths[index] == null ? '' : widths[index] + 'px'; });
+      rows.forEach(track => {
+        const height = track === rowDraft?.track ? rowDraft.value : authored(track);
+        if (height == null) track.row.style.removeProperty('--table-row-height');
+        else track.row.style.setProperty('--table-row-height', height + 'px');
+      });
+    }
+
+    function update() {
+      const enabled = canResize();
+      for (const track of [...columns, ...rows]) {
+        track.handle.setAttribute('aria-disabled', String(!enabled));
+        if (enabled && !drag) track.handle.setAttribute('aria-valuenow', String(dimension(track)));
+      }
+    }
+    const resizeObserver = typeof root.ResizeObserver === 'function' ? new root.ResizeObserver(() => {
+      if (!grid.isConnected) resizeObserver.disconnect();
+      else if (!drag) update();
+    }) : null;
+
+    function release() {
+      const gesture = drag;
+      drag = null;
+      if (!gesture) return null;
+      const { handle } = gesture.track;
+      delete handle.dataset.tableDragging;
+      if (handle.hasPointerCapture(gesture.pointerId)) handle.releasePointerCapture(gesture.pointerId);
+      return gesture;
+    }
+
+    function cancel() {
+      if (!release()) return false;
+      paint();
+      update();
+      return true;
+    }
+
+    async function save(track, value) {
+      try {
+        if (canResize()) await commit(track.axis, track.index, value);
+      } finally {
+        paint();
+        update();
+      }
+    }
+
+    function coordinate(track, event) {
+      return track.axis === 'width' ? event.clientX : event.clientY;
+    }
+
+    function preview(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const { track, initial, origin, direction, widths } = drag;
+      drag.value = clamp(track.axis, initial + direction * (coordinate(track, event) - origin));
+      if (widths) widths[track.index] = drag.value;
+      paint(widths, drag);
+      track.handle.setAttribute('aria-valuenow', String(drag.value));
+    }
+
+    function register(axis, index, cell, row) {
+      const handle = document.createElement('span');
+      const track = { axis, index, cell, row, handle };
+      if (axis === 'width') {
+        track.column = document.createElement('col');
+        colgroup.append(track.column);
+        columns.push(track);
+      } else rows.push(track);
+      const key = axis === 'width' ? 'editor.tableResizeColumn' : 'editor.tableResizeRow';
+      const label = translate(key, { index: index + 1 });
+      handle.className = 'table-resize-handle';
+      handle.dataset.tableResize = axis;
+      handle.dataset.tableTrack = String(index);
+      handle.tabIndex = 0;
+      handle.title = label;
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-label', label);
+      handle.setAttribute('aria-orientation', axis === 'width' ? 'vertical' : 'horizontal');
+      handle.setAttribute('aria-valuemin', String(bounds[axis].min));
+      handle.setAttribute('aria-valuemax', String(bounds[axis].max));
+      handle.addEventListener('focus', () => handle.setAttribute('aria-valuenow', String(dimension(track))));
+      handle.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || event.isPrimary === false || drag || !canResize()) return;
+        try { handle.setPointerCapture(event.pointerId); } catch (_) { return; }
+        event.preventDefault();
+        handle.focus({ preventScroll: true });
+        const initial = dimension(track);
+        const widths = axis === 'width' ? columns.map(item => item.cell.getBoundingClientRect().width) : undefined;
+        const direction = widths && root.getComputedStyle(grid).direction === 'rtl' ? -1 : 1;
+        drag = { track, initial, value: initial, widths, origin: coordinate(track, event), direction, pointerId: event.pointerId };
+        handle.dataset.tableDragging = '';
+      });
+      handle.addEventListener('pointermove', preview);
+      handle.addEventListener('pointerup', event => {
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        preview(event);
+        const { initial, value } = release();
+        if (value === initial) { paint(); update(); return; }
+        void save(track, value);
+      });
+      for (const eventName of ['pointercancel', 'lostpointercapture']) {
+        handle.addEventListener(eventName, event => {
+          if (drag?.pointerId === event.pointerId) cancel();
+        });
+      }
+      handle.addEventListener('keydown', event => {
+        const [less, more] = axis === 'width' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+        if (event.altKey || event.ctrlKey || event.metaKey || ![less, more, 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        if (drag || !canResize()) return;
+        const initial = dimension(track);
+        const direction = axis === 'width' && root.getComputedStyle(grid).direction === 'rtl' ? -1 : 1;
+        const value = event.key === 'Home' ? bounds[axis].min : event.key === 'End' ? bounds[axis].max :
+          clamp(axis, initial + (event.shiftKey ? 24 : 8) * (event.key === more ? direction : -direction));
+        if (value !== initial) void save(track, value);
+      });
+      cell.append(handle);
+    }
+
+    return {
+      add(cell, slot, row) {
+        if (cell.row === 0) register('width', cell.column, slot, row);
+        if (cell.column === 0) register('height', cell.row, slot, row);
+      },
+      refresh() { paint(); update(); resizeObserver?.observe(grid); },
+      update,
+      cancel,
+    };
+  }
+
+  root.ReadMDTableResize = { mount };
+})(window);
+
+;
+'use strict';
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = factory(require('./table-attributes.js'), require('../../vendor/marked.min.js'), require('../reader/heading-identity.js'));
+  } else root.ReadMDTableClipboard = factory(root.ReadMDTableAttributes, root.marked, root.ReadMDHeadings);
+})(typeof window !== 'undefined' ? window : null, (attributes, marked, headings) => {
+  const mime = 'application/x-readmd-table+json';
+  const csvMime = 'text/csv', tsvMime = 'text/tab-separated-values';
+  const maxSource = 65536, maxCells = 256, maxClipboard = 1024 * 1024;
+  const invalidRange = 'editor.tableCellInvalidRange';
+  const unsafeString = /[\u0000\uD800-\uDFFF]/u;
+
+  function inBounds(grid, area) {
+    return area && [area.row, area.column, area.height, area.width].every(Number.isSafeInteger) &&
+      area.row >= 0 && area.column >= 0 && area.height >= 1 && area.width >= 1 &&
+      area.row + area.height <= grid.length && area.column + area.width <= grid[0].length;
+  }
+
+  function containsSpans(context, area) {
+    const bottom = area.row + area.height, right = area.column + area.width;
+    for (let row = area.row; row < bottom; row++) for (let col = area.column; col < right; col++) {
+      const owner = context.layout.owners[row][col];
+      if (owner && (owner.row < area.row || owner.column < area.column ||
+          owner.row + owner.rowspan > bottom || owner.column + owner.colspan > right)) return false;
+    }
+    return true;
+  }
+
+  function rectangle(context, anchor, end) {
+    if (!anchor) return null;
+    if (end && (end.row !== anchor.row || end.column !== anchor.column)) {
+      return { row: Math.min(anchor.row, end.row), column: Math.min(anchor.column, end.column),
+        height: Math.abs(anchor.row - end.row) + 1, width: Math.abs(anchor.column - end.column) + 1, explicit: true };
+    }
+    const owner = context.layout.owners[anchor.row]?.[anchor.column];
+    return owner ? { row: owner.row, column: owner.column, height: owner.rowspan, width: owner.colspan } :
+      { row: anchor.row, column: anchor.column, height: 1, width: 1 };
+  }
+
+  function shape(rows) {
+    if (!Array.isArray(rows) || rows.length === 0 || rows.length > attributes.maxRows + 1 || !Array.isArray(rows[0])) return null;
+    const columns = rows[0].length;
+    if (!columns || columns > attributes.maxColumns || rows.length * columns > maxCells ||
+        rows.some(row => !Array.isArray(row) || row.length !== columns ||
+          row.some(cell => typeof cell !== 'string' || unsafeString.test(cell)))) return null;
+    return columns;
+  }
+
+  // The clipboard parser keeps empty cells explicit. A short row in a range
+  // would make it unclear whether an existing target slot should be erased.
+  function parseDelimited(text, delimiter) {
+    if (text.length > maxClipboard || unsafeString.test(text)) return null;
+    text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+    const rows = [];
+    let row = [], cell = '', quoted = false, closed = false;
+    for (let at = 0; at < text.length; at++) {
+      const ch = text[at];
+      if (quoted) {
+        if (ch !== '"') cell += ch;
+        else if (text[at + 1] === '"') { cell += '"'; at++; }
+        else { quoted = false; closed = true; }
+      } else if (ch === delimiter || ch === '\n') {
+        row.push(cell); cell = ''; closed = false;
+        if (row.length > attributes.maxColumns) return null;
+        if (ch === '\n') {
+          rows.push(row); row = [];
+          if (rows.length > attributes.maxRows + 1) return null;
+        }
+      } else {
+        if (closed || delimiter === ',' && ch === '"' && cell) return null;
+        if (ch === '"' && !cell) quoted = true;
+        else cell += ch;
+      }
+    }
+    if (quoted) return null;
+    if (!text.endsWith('\n') || row.length) { row.push(cell); rows.push(row); }
+    return shape(rows) ? rows : null;
+  }
+
+  function serialize(rows, delimiter) {
+    return rows.map(row => row.map(cell => {
+      // Quoting the empty one-column record distinguishes it from a trailing newline.
+      if (!cell && row.length === 1 || cell.includes(delimiter) || /["\r\n\t\uFEFF]/.test(cell)) {
+        return '"' + cell.replace(/"/g, '""').replace(/\r\n?|\n/g, '\r\n') + '"';
+      }
+      return cell;
+    }).join(delimiter)).join('\r\n');
+  }
+
+  function richCell(source) {
+    if (/[\r\n\u2028\u2029]|^[ \t]|[ \t]$|<\/?(?:table|tr|td|th|col|caption)\b/i.test(source)) return false;
+    let escaped = false;
+    for (const ch of source) {
+      if (ch === '\\') { escaped = !escaped; continue; }
+      if (ch === '|' && !escaped) return false;
+      escaped = false;
+    }
+    return true;
+  }
+
+  function decodeRich(value) {
+    if (!value || value.length > maxClipboard) return null;
+    try {
+      const { version, header, firstColumn, rows } = JSON.parse(value);
+      const columns = shape(rows);
+      if (version !== 1 || typeof header !== 'boolean' || typeof firstColumn !== 'boolean' || !columns ||
+          rows.some(row => row.some(cell => !richCell(cell))) || rows.flat().reduce((n, cell) => n + cell.length, 0) > maxSource) return null;
+      // The first copied row can be a body row. Recreate only the header/first
+      // column offsets needed for validating span and track suffix placement.
+      const positioned = firstColumn ? [...rows] : rows.map(row => ['', ...row]);
+      if (!header) positioned.unshift(Array(positioned[0].length).fill(''));
+      if (!attributes.layout(positioned)) return null;
+      return { rows, columns, rich: true };
+    } catch (_) { return null; }
+  }
+
+  // null: let ordinary paste continue; false: recognizable but invalid range.
+  function read(clipboard, allowSingleColumn = false) {
+    if (!clipboard) return null;
+    const types = Array.from(clipboard.types || []), get = type => clipboard.getData(type);
+    const custom = get(mime);
+    if (custom) return decodeRich(custom) || false;
+    const html = get('text/html');
+    if (html && html.length <= maxClipboard) {
+      const carrier = /<table\b[^<>]*?\sdata-readmd-table\s*=\s*(['"])([^'"\s<>]*)\1[^<>]*>/i.exec(html);
+      if (carrier) {
+        // The HTML is an optional transport when a browser/OS filters custom
+        // MIME. Never parse or insert the clipboard's HTML as DOM.
+        try { return decodeRich(decodeURIComponent(carrier[2])) || false; }
+        catch (_) { return false; }
+      }
+    }
+    if (types.includes(mime)) return false;
+    const csv = get(csvMime), tsv = get(tsvMime), text = get('text/plain');
+    const explicitCsv = csv || types.includes(csvMime), explicitTsv = tsv || types.includes(tsvMime);
+    if (!explicitCsv && !explicitTsv && !text.includes('\t')) {
+      if (!allowSingleColumn || !text && !types.includes('text/plain')) return null;
+      // Preserve literal quotes for normal single-cell text copied elsewhere.
+      if (!/[\r\n]/.test(text)) return shape([[text]]) && text.length <= maxClipboard ? { rows: [[text]], columns: 1 } : false;
+    }
+    const rows = parseDelimited(explicitCsv ? csv : explicitTsv ? tsv : text, explicitCsv ? ',' : '\t');
+    return rows ? { rows, columns: rows[0].length } : false;
+  }
+
+  function plainText(source) {
+    if (!marked?.Lexer?.lexInline || !headings?.inlineText) return source;
+    const flatten = tokens => tokens.map(token => {
+      if (token.type === 'br' || token.type === 'html' && /^<br\s*\/?>$/i.test(token.raw)) return '\n';
+      return token.tokens ? flatten(token.tokens) : headings.inlineText([token]);
+    }).join('');
+    return flatten(marked.Lexer.lexInline(source.replace(/\\\|/g, '|')));
+  }
+
+  const escapeHtml = text => text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  function flavors(context, area) {
+    if (!inBounds(context.rows, area) || !containsSpans(context, area)) return null;
+    const rows = context.rows.slice(area.row, area.row + area.height).map(row => row.slice(area.column, area.column + area.width));
+    const json = JSON.stringify({ version: 1, header: area.row === 0, firstColumn: area.column === 0,
+      rows: rows.map(row => row.map(cell => cell.original)) });
+    if (!decodeRich(json)) return null;
+    const values = rows.map(row => row.map(cell => plainText(cell.content)));
+    const carrier = encodeURIComponent(json).replace(/'/g, '%27');
+    const html = '<table data-readmd-table="' + carrier + '">' + rows.map((row, y) => {
+      const tag = y + area.row === 0 ? 'th' : 'td';
+      return '<tr>' + row.map((cell, x) => {
+        const owner = context.layout.owners[cell.row][cell.column];
+        if (owner && (owner.row !== cell.row || owner.column !== cell.column)) return '';
+        const height = owner?.rowspan || 1, width = owner?.colspan || 1;
+        const props = context.layout.cells[cell.row][cell.column]?.attributes;
+        const sizes = Object.entries({ rowspan: height > 1 ? height : null, colspan: width > 1 ? width : null,
+          align: props?.align, valign: props?.valign, width: props?.width, height: props?.height })
+          .filter(([, value]) => value != null).map(([key, value]) => ' ' + key + '="' + value + '"').join('');
+        const items = values.slice(y, y + height).flatMap(line => line.slice(x, x + width)).filter(Boolean);
+        return '<' + tag + sizes + '>' + items.map(value => escapeHtml(value).replace(/\n/g, '<br>')).join('<br>') + '</' + tag + '>';
+      }).join('') + '</tr>';
+    }).join('') + '</table>';
+    const tsv = serialize(values, '\t');
+    return { [mime]: json, 'text/html': html, [csvMime]: serialize(values, ','), [tsvMime]: tsv, 'text/plain': tsv };
+  }
+
+  function write(event, data) {
+    if (!event.clipboardData || !data || event.defaultPrevented) return false;
+    // Plain text is mandatory; Gecko/WebKit/Chromium differ on what other
+    // clipboard flavors survive a native clipboard write.
+    try { event.clipboardData.setData('text/plain', data['text/plain']); }
+    catch (_) { return false; }
+    for (const [type, value] of Object.entries(data)) if (type !== 'text/plain') {
+      try { event.clipboardData.setData(type, value); } catch (_) { /* Keep the other formats. */ }
+    }
+    event.preventDefault();
+    return true;
+  }
+
+  function richReplacement(source, targetAttrs) {
+    const from = attributes.parseCell(source), into = targetAttrs?.attributes;
+    const missingTracks = ['width', 'height'].filter(key => into?.[key] !== undefined && from?.attributes[key] === undefined);
+    if (!missingTracks.length) return source;
+    const tracks = missingTracks.map(key => key + '=' + into[key]).join(' ');
+    return from ? source.slice(0, from.to - 1) + ' ' + tracks + source.slice(from.to - 1) :
+      source + (source ? ' ' : '') + '{' + tracks + '}';
+  }
+
+  function replacements(doc, from, to, edits) {
+    let start = from, result = '';
+    for (const edit of edits) { result += doc.sliceString(start, edit.from) + edit.insert; start = edit.to; }
+    return result + doc.sliceString(start, to);
+  }
+
+  function plan(context, target, payload, encodeCell) {
+    if (!target || !payload) return null;
+    const area = { row: target.row, column: target.column, height: payload.rows.length, width: payload.columns };
+    if (target.explicit && (area.height !== target.height || area.width !== target.width) ||
+        !inBounds(context.rows, area) || !containsSpans(context, area)) return null;
+    const updatedRows = context.rows.map(row => row.map(cell => cell.original)), edits = [];
+    for (let y = 0; y < area.height; y++) for (let x = 0; x < area.width; x++) {
+      const row = area.row + y, column = area.column + x, source = payload.rows[y][x];
+      const cell = context.rows[row][column], existing = context.layout.cells[row][column];
+      let result;
+      if (payload.rich) result = richReplacement(source, existing);
+      else {
+        if (source.length > maxSource) return null;
+        const body = encodeCell(source), suffix = existing && cell.original.slice(existing.from + (existing.from > 0 ? 1 : 0));
+        result = suffix ? (body ? body + ' ' : '') + suffix : body;
+      }
+      updatedRows[row][column] = result;
+      if (result !== cell.original) edits.push({ from: cell.from, to: cell.to, insert: result });
+    }
+    if (!edits.length) return { edits };
+    if (!attributes.layout(updatedRows)) return null;
+    // An originally unframed cell may no longer parse when emptied or when
+    // the pasted Markdown ends in an escape. Check the entire table without
+    // reserializing its untouched rows, delimiter, padding or other cells.
+    const doc = context.editorDoc, tableFrom = context.lines[0].line.from, tableTo = context.lines.at(-1).line.to;
+    if (tableTo - tableFrom + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0) > maxSource) return null;
+    const next = replacements(doc, tableFrom, tableTo, edits);
+    const tokens = marked.lexer(next, { gfm: true }), token = tokens[0];
+    if (tokens.length !== 1 || token?.type !== 'table') return null;
+    const renderedRows = [token.header, ...token.rows];
+    if (renderedRows.length !== updatedRows.length || renderedRows.some((row, y) => row.length !== updatedRows[y].length ||
+        row.some((cell, x) => cell.text !== updatedRows[y][x].replace(/\\\|/g, '|')))) return null;
+    const from = edits[0].from, to = edits.at(-1).to;
+    return { from, to, insert: replacements(doc, from, to, edits), edits };
+  }
+
+  // CSV is explicitly available to plain-text consumers even when the OS
+  // does not expose the native text/csv flavor from the standard Copy action.
+  async function copyCsv(value) {
+    try { await navigator.clipboard.writeText(value); return true; } catch (_) { /* Try the native copy event. */ }
+    let written = false;
+    const listener = event => { written = write(event, { 'text/plain': value, [csvMime]: value }); };
+    document.addEventListener('copy', listener);
+    try { document.execCommand('copy'); } catch (_) { /* Both transports are unavailable. */ }
+    finally { document.removeEventListener('copy', listener); }
+    return written;
+  }
+
+  function bindGrid({ grid, csvButton, pasteCsvButton, context, getCell, getRange, ready, encodeCell, report, commit }) {
+    const gridButton = target => target?.closest?.('button[data-table-row][data-table-column]');
+    function area(target) {
+      const range = getRange();
+      const button = gridButton(target);
+      if (range && (!button || [range.anchor, range.end].some(cell => cell.row === +button.dataset.tableRow && cell.column === +button.dataset.tableColumn))) {
+        return rectangle(context, range.anchor, range.end);
+      }
+      const cell = button ? context.rows[+button.dataset.tableRow]?.[+button.dataset.tableColumn] : getCell();
+      return rectangle(context, cell);
+    }
+    grid.addEventListener('copy', event => {
+      if (!ready() || !event.clipboardData || event.defaultPrevented) return;
+      const data = flavors(context, area(event.target));
+      if (!data) { event.preventDefault(); report(invalidRange); return; }
+      if (write(event, data)) report('toast.copiedSelection');
+    });
+    function paste(event, target = event.target) {
+      if (!event.clipboardData || event.defaultPrevented) return;
+      const payload = read(event.clipboardData, true);
+      if (payload === null) return;
+      event.preventDefault();
+      if (!ready()) return;
+      const edit = plan(context, area(target), payload, encodeCell);
+      if (!edit) { report(invalidRange); return; }
+      if (edit.edits.length) void commit(edit);
+    }
+    grid.addEventListener('paste', paste);
+
+    // Some native hosts only send Paste to an editable target. Momentarily
+    // give the grid shortcut such a target while leaving the default command
+    // intact, so it still delivers a trusted ClipboardEvent with all flavors.
+    const doc = grid.ownerDocument;
+    if (doc && grid.parentElement) {
+      const relay = doc.createElement('textarea');
+      relay.tabIndex = -1; relay.inputMode = 'none';
+      relay.setAttribute('aria-label', grid.getAttribute('aria-label'));
+      relay.style.cssText = 'position:absolute;width:1px;height:1px;padding:0;border:0;opacity:0;pointer-events:none';
+      grid.parentElement.append(relay);
+      let origin;
+      function restoreFocus() {
+        const button = origin; origin = null;
+        if (doc.activeElement === relay && button?.isConnected) button.focus({ preventScroll: true });
+      }
+      relay.addEventListener('paste', event => {
+        const target = origin;
+        restoreFocus();
+        if (target) paste(event, target);
+        event.preventDefault();
+      });
+      grid.addEventListener('keydown', event => {
+        if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== 'v' ||
+            event.defaultPrevented || event.isComposing || !ready()) return;
+        const button = gridButton(event.target);
+        if (!button) return;
+        origin = button; relay.value = '';
+        relay.focus({ preventScroll: true });
+        setTimeout(() => { if (origin === button) restoreFocus(); }, 250);
+      });
+    }
+    // Some spreadsheet apps expose CSV only as plain text. An explicit
+    // paste keeps commas in ordinary prose literal and uses the same grid transaction.
+    if (pasteCsvButton) {
+      let fallback, request = 0;
+      function dropFallback() { fallback?.remove(); fallback = null; }
+      function sameTarget(target) {
+        const now = area();
+        return ready() && target && now && ['row','column','width','height','explicit']
+          .every(key => target[key] === now[key]);
+      }
+      function accept(text, target) {
+        if (!sameTarget(target)) { report('review.conflict'); return; }
+        const rows = parseDelimited(text, ',');
+        const edit = rows && plan(context, target, {rows, columns: rows[0].length}, encodeCell);
+        if (!edit) { report(invalidRange); return; }
+        if (edit.edits.length) void commit(edit);
+      }
+      pasteCsvButton.addEventListener('click', async () => {
+        if (!ready()) return;
+        const target = area(), token = ++request;
+        dropFallback();
+        if (!target) { report(invalidRange); return; }
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+          try {
+            const text = await navigator.clipboard.readText();
+            if (token === request && text) accept(text, target);
+            return;
+          } catch (_) { /* WebKit can require a keyboard or native menu paste. */ }
+        }
+        if (token !== request || !sameTarget(target)) return;
+        const input = pasteCsvButton.ownerDocument.createElement('textarea');
+        input.rows = 1; input.className = 'modal-input'; input.placeholder = pasteCsvButton.textContent;
+        input.setAttribute('aria-label', pasteCsvButton.textContent);
+        input.addEventListener('paste', event => {
+          event.preventDefault();
+          const value = event.clipboardData?.getData(csvMime) || event.clipboardData?.getData('text/plain');
+          dropFallback(); pasteCsvButton.focus();
+          if (value && token === request) accept(value, target);
+        });
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dropFallback(); pasteCsvButton.focus(); }
+        });
+        fallback = input; pasteCsvButton.after(input); input.focus();
+      });
+    }
+    csvButton.addEventListener('click', async () => {
+      if (!ready()) return;
+      const data = flavors(context, area());
+      if (!data) { report(invalidRange); return; }
+      const copied = await copyCsv(data[csvMime]);
+      if (ready()) report(copied ? 'toast.copiedSelection' : 'toast.copyFailed');
+    });
+  }
+
+  return { mime, invalidRange, read, rectangle, flavors, plan, bindGrid };
+});
 
 ;
 'use strict';
@@ -13201,7 +15075,7 @@ window.ReadMDReview = (() => {
     const key='error.'+code, localized=t(key);
     if (code && localized !== key) return localized;
     if (code === 'cancelled') return t('ai.stopped');
-    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
+    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery|overlapping_edits/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
   }
   function notifyError(error) { if (typeof showToast === 'function') showToast(message(error), 6000); }
   function source(tab) {
@@ -13220,7 +15094,7 @@ window.ReadMDReview = (() => {
     return text;
   }
   function record(tab, initial) {
-    if (!tab || tab._restoreUnavailable) return null;
+    if (!tab || tab._restoreUnavailable || tab.mode === 'office-preview') return null;
     let rec = records.get(tab);
     if (!rec) {
       const text = lf(initial ?? source(tab));
@@ -13318,10 +15192,14 @@ window.ReadMDReview = (() => {
   }
   function remoteEdits(before, snapshot, op) {
     if (before === snapshot.content) return [];
+    if (Array.isArray(snapshot.transaction_edits)) {
+      if (apply(before, snapshot.transaction_edits) !== snapshot.content) throw failure('review_conflict');
+      return snapshot.transaction_edits;
+    }
     if (op?.edits && apply(before, op.edits) === snapshot.content) return op.edits;
     if (op?.kind === 'resolve' && op.previous) {
       const edits = op.previous.changes.filter(change => op.ids.includes(change.id)).flatMap(change => {
-        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.original }];
+        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.restore_original ?? change.original }];
         if (op.decision === 'accept' && change.application === 'proposed') return [{ from: change.from, to: change.to, insert: change.replacement }];
         return [];
       }).sort((a, b) => a.from - b.from);
@@ -13505,7 +15383,7 @@ window.ReadMDReview = (() => {
         } catch (error) {
           // Retain the same id and exact payload: an explicit retry can recover
           // a committed operation whose network acknowledgement was lost.
-          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
+          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|overlapping_edits|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
           if (!rejected) { rec.queue.unshift(op); rec.error = error; }
           op.reject?.(error); delete op.resolve; delete op.reject;
           notifyError(error); refresh(rec);
@@ -13534,7 +15412,7 @@ window.ReadMDReview = (() => {
       pump(rec);
     }
   }
-  async function flush(tab = activeTab()) {
+  async function flushReview(tab) {
     // Closing/switching an unseen reader is not an editing operation. Explicit
     // capture/mutation/save create their own record before flushing instead.
     const rec = tab && records.get(tab); if (!rec || rec.unsupported) return true;
@@ -13555,14 +15433,31 @@ window.ReadMDReview = (() => {
     }
     return rec.snapshot.content === rec.local;
   }
-  async function flushAll() {
+  function canParkForClose(tab) {
+    const rec = tab && records.get(tab), snapshot = rec?.snapshot, recovery = snapshot?.recovery;
+    // A persisted external-change marker may remain for the next open. It must
+    // not block closing when the editor source, stored review and disk agree.
+    // The reader may project formatting fixes without modifying that source.
+    return Boolean(tab?.path && !tab.isDirty && !tab.unsavedCreation && !tab._reviewRestorePending &&
+      !tab._renamePending && rec?.error?.code === 'review_recovery_required' &&
+      recovery?.reason === 'external_change' && recovery.external_path === snapshot.path &&
+      !snapshot.save_intent && !snapshot.changes.length && !rec.queue.length && !rec.processing &&
+      !rec.saving && !rec.adopting && !rec.adoption && !rec.renaming &&
+      snapshot.content === recovery.external_content && snapshot.content === rec.local &&
+      snapshot.content === source(tab));
+  }
+  async function flush(tab = activeTab(), { park = false } = {}) {
+    if (park && canParkForClose(tab)) return true;
+    return flushReview(tab);
+  }
+  async function flushAll(options) {
     const tabs = typeof state !== 'undefined' && Array.isArray(state.tabs) ? [...state.tabs] : [activeTab()].filter(Boolean);
-    for (const tab of tabs) if (!await flush(tab)) return false;
+    for (const tab of tabs) if (!await flush(tab, options)) return false;
     return true;
   }
   async function ensure(tab = activeTab(), initial) { const rec = record(tab, initial); return rec ? open(rec) : null; }
   async function restore(tab = activeTab()) {
-    if (!tab || tab._restoreUnavailable) return null;
+    if (!tab || tab._restoreUnavailable || tab.mode === 'office-preview') return null;
     const existing = records.get(tab);
     if (existing) { refresh(existing); return existing.snapshot || existing.opening; }
     if (!restores.has(tab)) {
@@ -13593,14 +15488,7 @@ window.ReadMDReview = (() => {
   }
   function mount(view, tab, initial) {
     const rec = record(tab, initial); if (!rec) return;
-    // Identical Markdown in another document cannot certify cached widgets
-    // and listeners from the previous owner. Keep the protected preview code.
-    const pane = typeof document === 'undefined' ? null : document.getElementById?.('preview-pane');
-    if (pane && pane._readmdPreviewOwner !== tab) {
-      if (typeof pvRenderEpoch !== 'undefined') pvRenderEpoch++;
-      if (typeof pvLast !== 'undefined') pvLast = '';
-      pane._readmdPreviewOwner = tab; pane.replaceChildren();
-    }
+    window.ReadMDCodeRuns?.mountEditor?.(tab);
     rec.view = view; if (view) views.set(view, rec);
     if (rec.snapshot && rec.local === lf(initial) && rec.snapshot.content === rec.local) refresh(rec);
     void open(rec).then(() => pump(rec));
@@ -13640,6 +15528,125 @@ window.ReadMDReview = (() => {
   async function propose(edits, stamp, tab = activeTab()) {
     const normalized = edits.map(edit => ({ from: edit.from, to: edit.to, insert: lf(edit.insert) }));
     return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
+  }
+  function manualCurrent(rec, stamp) {
+    return Boolean(rec && stamp && stamp.owner === rec.tab && activeTab() === rec.tab && state.editing &&
+      activeView() === stamp.view && rec.view === stamp.view && stamp.view.state.doc === stamp.editorDoc &&
+      !stamp.view.state.readOnly && window.ReadMDCollaborationShare?.canEdit() !== false &&
+      !renameReserved(rec) && !rec.tab._renameInFlight && !rec.error && !rec.saving && !rec.adopting && !rec.processing && !rec.queue.length &&
+      !window.ReadMDLifecycle?.busy?.() && !window.ReadMDSession?.restoring?.() &&
+      rec.tab.path === stamp.path && (rec.tab.revision || '') === stamp.fileRevision &&
+      rec.snapshot?.revision === stamp.revision && rec.snapshot?.disk_revision === stamp.disk_revision &&
+      stamp.view.state.doc.toString() === stamp.content && isCurrent(rec, stamp));
+  }
+  async function freshManualHead(rec, stamp) {
+    // resume is the existing authorized physical-open path: it checks the
+    // disk fingerprint and reports recovery instead of silently rebasing.
+    const latest = await request('/api/review', { action: 'resume', path: stamp.path || rec.snapshot.path });
+    if (!manualCurrent(rec, stamp) || latest.recovery || latest.status === 'needs_recovery' ||
+        ['document_id', 'generation', 'review_revision', 'revision', 'disk_revision', 'content'].some(key => latest[key] !== stamp[key]) ||
+        latest.path !== rec.snapshot.path) throw failure('review_stale_generation');
+  }
+  const splitsSurrogate = (text, at) => at > 0 && at < text.length &&
+    /[\uD800-\uDBFF]/.test(text[at - 1]) && /[\uDC00-\uDFFF]/.test(text[at]);
+
+  async function captureManualRange(from, to, tab = activeTab(), { allowDraft = false } = {}) {
+    const view = activeView(), editorDoc = view?.state.doc;
+    if (!tab || !view || activeTab() !== tab || !state.editing) throw failure('review_stale_generation');
+    const path = tab.path, fileRevision = tab.revision || '', editGeneration = tab.editGeneration || 0;
+    const draft = !path || path.startsWith('draft:');
+    if (draft && !allowDraft) throw failure('review_stale_generation');
+    const base = await capture(tab), rec = records.get(tab);
+    if (!base || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > base.content.length ||
+        splitsSurrogate(base.content, from) || splitsSurrogate(base.content, to)) throw failure('review_conflict');
+    if (draft && !rec.snapshot.path?.startsWith('draft:')) throw failure('review_stale_generation');
+    const stamp = { ...base, owner: tab, view, editorDoc, path, fileRevision, editGeneration,
+      revision: rec.snapshot.revision, disk_revision: rec.snapshot.disk_revision, from, to, original: base.content.slice(from, to) };
+    if (!manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    return Object.freeze(stamp);
+  }
+  async function applyManualRange(insert, stamp, tab = activeTab(), ownedCurrent,
+    { edits, preserveSelection = false, selectionAnchor, userEvent = 'input.table.cell' } = {}) {
+    const rec = tab && records.get(tab);
+    const owned = () => ownedCurrent === undefined || typeof ownedCurrent === 'function' && ownedCurrent() === true;
+    if (typeof insert !== 'string' || !owned() || !manualCurrent(rec, stamp) || stamp.content.slice(stamp.from, stamp.to) !== stamp.original) throw failure('review_stale_generation');
+    if (!await flush(tab) || !owned() || !manualCurrent(rec, stamp)) throw rec?.error || failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    // The dialog may have closed, or another FIFO operation started, during
+    // the last await. No cancellation claim is made after this dispatch.
+    if (!owned() || !manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    let changes = [{ from: stamp.from, to: stamp.to, insert }];
+    if (edits !== undefined) {
+      if (!Array.isArray(edits) || !edits.length || edits.some(edit => !edit || edit.from < stamp.from ||
+        edit.to > stamp.to || splitsSurrogate(stamp.content, edit.from) || splitsSurrogate(stamp.content, edit.to))) {
+        throw failure('review_conflict');
+      }
+      changes = edits.map(({from, to, insert}) => ({ from, to, insert }));
+      const relative = changes.map(edit => ({ ...edit, from: edit.from - stamp.from, to: edit.to - stamp.from }));
+      if (apply(stamp.original, relative) !== insert) throw failure('review_conflict');
+    }
+    const after = apply(stamp.content, changes);
+    if (after === stamp.content) return rec.snapshot;
+    // The ordinary CM listener owns enqueueEdit and its genuine manual FIFO.
+    // Never send an AI proposal or manufacture a visible acknowledgement.
+    const anchor = selectionAnchor ?? (stamp.from + insert.length);
+    if (!Number.isSafeInteger(anchor) || anchor < stamp.from || anchor > stamp.from + insert.length || splitsSurrogate(after, anchor)) throw failure('review_conflict');
+    const selection = preserveSelection ? undefined : { anchor };
+    stamp.view.dispatch({ changes, selection, scrollIntoView: !preserveSelection, userEvent });
+    if (stamp.view.state.doc.toString() !== after || rec.local !== after) throw failure('review_conflict');
+    if (!await flush(tab)) throw rec.error || failure('review_persistence_failed');
+    return rec.snapshot;
+  }
+  async function codeTarget(sourceLine, code, tab = activeTab(), signal) {
+    const stamp = await capture(tab), rec = records.get(tab);
+    if (signal?.aborted) throw failure('cancelled');
+    if (!stamp || !rec || !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const snapshot = await request('/api/review', { action: 'code_target', document_id: stamp.document_id,
+      generation: stamp.generation, review_revision: stamp.review_revision, source_line: sourceLine, code });
+    const target = snapshot.code_target;
+    if (signal?.aborted) throw failure('cancelled');
+    if (!isCurrent(rec, stamp) || snapshot.content !== stamp.content || !target ||
+        target.document_id !== stamp.document_id || target.generation !== stamp.generation || target.review_revision !== stamp.review_revision ||
+        target.code !== code || !/^[a-f0-9]{64}$/.test(target.node_id || '') ||
+        !Number.isSafeInteger(target.from) || !Number.isSafeInteger(target.to) || target.from < 0 || target.to < target.from || target.to > stamp.content.length) throw failure('review_stale_generation');
+    return Object.freeze({ tab, stamp: Object.freeze(stamp), target: Object.freeze(target) });
+  }
+  async function codeOutput(output, context, signal, taskId) {
+    if (!context?.tab || !Array.isArray(state.tabs) || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    return mutate('code_output', { body: { target: context.target, output: String(output ?? ''), task_id: taskId }, signal }, context.tab, context.stamp);
+  }
+  async function codeBatchTarget(tab = activeTab(), signal) {
+    const stamp = await capture(tab), rec = records.get(tab);
+    if (signal?.aborted) throw failure('cancelled');
+    if (!stamp || !rec || !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const snapshot = await request('/api/review', { action: 'code_batch_target', document_id: stamp.document_id,
+      generation: stamp.generation, review_revision: stamp.review_revision });
+    const items = snapshot.code_batch?.items;
+    if (signal?.aborted) throw failure('cancelled');
+    if (!isCurrent(rec, stamp) || snapshot.content !== stamp.content || !Array.isArray(items) || items.length > 32 ||
+        items.some(item => typeof item.lang !== 'string' || typeof item.output !== 'boolean' ||
+          item.target?.document_id !== stamp.document_id || item.target.generation !== stamp.generation || item.target.review_revision !== stamp.review_revision ||
+          typeof item.target.code !== 'string' || !/^[a-f0-9]{64}$/.test(item.target.node_id || '') ||
+          !Number.isSafeInteger(item.target.from) || !Number.isSafeInteger(item.target.to) || item.target.from < 0 || item.target.to < item.target.from || item.target.to > stamp.content.length)) throw failure('review_stale_generation');
+    return Object.freeze({ tab, stamp: Object.freeze(stamp), batch: Object.freeze({ items: Object.freeze(items.map(item => Object.freeze({ ...item, target: Object.freeze(item.target) }))) }) });
+  }
+  async function codeBatchRun(context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    // Execution returns console results, never an editor snapshot. Keep the
+    // durable adapter's stronger snapshot validation on every mutation/read.
+    const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'code_batch_run', confirm: true, document_id: context.stamp.document_id,
+        generation: context.stamp.generation, review_revision: context.stamp.review_revision, batch: context.batch, task_id: taskId }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) throw failure(data.error_code || 'execution_failed');
+    if (typeof data.ok !== 'boolean' || data.source_written !== false || !Array.isArray(data.results) || data.results.length > 32 ||
+        data.results.some(result => result.ok !== true || typeof result.stdout !== 'string')) throw failure('review_invalid_request');
+    return data;
+  }
+  async function codeBatchOutput(outputs, context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    return mutate('code_batch_output', { body: { batch: context.batch, outputs, task_id: taskId }, signal }, context.tab, context.stamp);
   }
   function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
   async function discard(tab = activeTab(), expected) {
@@ -13744,7 +15751,7 @@ window.ReadMDReview = (() => {
     return 'unknown';
   }
   async function prepareSave(tab = activeTab(), expected) {
-    if (tab?._restoreUnavailable) return false;
+    if (tab?._restoreUnavailable || tab?.mode === 'office-preview') return false;
     if (tab?._renamePending || tab?._renameInFlight) return false;
     const rec = record(tab);
     if (!await flush(tab)) return false;
@@ -13810,13 +15817,14 @@ window.ReadMDReview = (() => {
   function finishSave(tab) { const rec = records.get(tab); if (rec) { rec.saving = false; pump(rec); refresh(rec); } }
   // A rename moves the durable identity, not the text. Lock the local queue
   // while its CAS is in flight and only adopt a matching server receipt.
-  async function beginRename(tab) {
+  async function beginRename(tab, options) {
     if (!tab) return null;
     const restoring = restores.get(tab);
     if (restoring) await restoring;
-    if (!await flush(tab)) return null;
+    if (!await flush(tab, options)) return null;
     const rec = records.get(tab);
-    if (rec?.unsupported || rec?.renaming || rec?.error || rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
+    if (rec?.unsupported || rec?.renaming || (rec?.error && !(options?.park && canParkForClose(tab))) ||
+        rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
     if (rec) { rec.renaming = true; rec.renameEpoch++; }
     return { review_session: rec?.snapshot ? cas(rec) : undefined };
   }
@@ -14009,7 +16017,7 @@ window.ReadMDReview = (() => {
         if (typeof state !== 'undefined' && !state.editing && typeof toggleEdit === 'function') await toggleEdit();
         if (activeTab() === tab) navigate(1, tab);
       });
-      footer.insertBefore(marker, document.getElementById('status-mods'));
+      footer.insertBefore(marker, document.getElementById('editor-status-group'));
     }
     if (marker) {
       marker.hidden = !(pending || conflict);
@@ -14050,9 +16058,353 @@ window.ReadMDReview = (() => {
   }
   document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
   window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
-  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, resolve, discard, history, runAi, cancelAi,
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, captureManualRange, applyManualRange, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
     prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
     busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
+})();
+
+;
+'use strict';
+/* Drawing drafts never write Markdown until the captured image target is checked
+ * again after staging. Reopening a draft restores ink, not insertion authority. */
+window.ReadMDInk = (() => {
+  const LIMIT = { edge: 8192, layers: 32, strokes: 4096, points: 48000, svg: 4 * 1024 * 1024 };
+  const defaults = {
+    title: '压感画布', layerName: '图层 {index}', layers: '图层', addLayer: '添加图层', name: '图层名称',
+    visible: '显示图层', opacity: '不透明度', color: '画笔颜色', penWidth: '笔宽', pressure: '使用触控笔压感',
+    pen: '画笔', mask: '蒙版', clearMask: '清除蒙版', import: '导入 ReadMD SVG', export: '下载 SVG',
+    keepClose: '关闭并保留草稿', retarget: '使用当前选区', stale: '插入位置已变化。请回到原文档并重新选择插入位置。',
+    restored: '已恢复草稿。请在原文档重新选择插入位置。', draftKept: '绘画草稿已保留',
+    draftError: '恢复草稿保存失败。请先下载 SVG，再关闭画布。', closeConfirm: '恢复草稿保存失败。仍要关闭并放弃本次绘画吗？',
+    importConfirm: '导入将替换当前画布，可撤销恢复。是否继续？', invalid: '无法打开此画布，请检查尺寸、图层与笔画。',
+    limit: '已达到画布点数、笔画或图层上限。', hint: '拖动绘画；方向键移动画笔，空格点绘，Ctrl/⌘+Z 撤销。', canvas: '绘画区域'
+  };
+  const tr = (key, args = {}) => {
+    const id = key.includes('.') ? key : 'ink.' + key;
+    let value = window.i18n?.t(id, args);
+    if (!value || value === id) value = defaults[key] || ({ 'img.width': '宽度', 'img.height': '高度', 'editor.undo': '撤销', 'editor.redo': '重做', 'dialog.imgInsert': '插入文档' })[key] || key;
+    return String(value).replace(/\{(\w+)\}/g, (all, name) => args[name] ?? all);
+  };
+  let ui, session = null, stroke = null, frame = 0, timer = null;
+  const drafts = new Map();
+  const copy = value => JSON.parse(JSON.stringify(value));
+  const activeTab = () => typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const keyOf = tab => tab ? 'readmd.ink.draft.v1.' + encodeURIComponent(tab.path || 'tab:' + tab.id) : '';
+  const originalTab = s => !!s && keyOf(activeTab()) === s.key && activeTab() === s.tab;
+  const targetNow = () => typeof imageEditTarget === 'function' ? imageEditTarget() : null;
+  const visible = () => ui && !ui.modal.classList.contains('hidden');
+  function checked(value) {
+    if (value?.schema !== 1 || !Number.isInteger(value.width) || !Number.isInteger(value.height) || value.width < 1 || value.height < 1 || value.width > LIMIT.edge || value.height > LIMIT.edge || !Array.isArray(value.layers) || !value.layers.length || value.layers.length > LIMIT.layers) throw Error('invalid');
+    let points = 0, strokes = 0;
+    const document = { schema: 1, width: value.width, height: value.height, layers: value.layers.map(layer => {
+      if (typeof layer?.name !== 'string' || Array.from(layer.name).length > 100 || typeof layer.visible !== 'boolean' || !Number.isInteger(layer.opacity) || layer.opacity < 0 || layer.opacity > 100) throw Error('invalid');
+      const readStrokes = list => {
+        if (!Array.isArray(list) || (strokes += list.length) > LIMIT.strokes) throw Error('limit');
+        return list.map(mark => {
+          if (!/^#[0-9a-f]{6}$/i.test(mark?.color) || !Number.isFinite(mark.width) || mark.width < 0.25 || mark.width > 128 || !Array.isArray(mark.points) || !mark.points.length || (points += mark.points.length) > LIMIT.points) throw Error('invalid');
+          return { color: mark.color, width: mark.width, points: mark.points.map(p => {
+            if (!Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite) || p[0] < 0 || p[0] > value.width || p[1] < 0 || p[1] > value.height || p[2] < 0 || p[2] > 1) throw Error('invalid');
+            return p.slice();
+          }) };
+        });
+      };
+      const out = { name: layer.name, visible: layer.visible, opacity: layer.opacity, strokes: readStrokes(layer.strokes) };
+      if (layer.mask !== undefined) out.mask = readStrokes(layer.mask);
+      return out;
+    }) };
+    return document;
+  }
+  const empty = () => ({ schema: 1, width: 1024, height: 640, layers: [{ name: tr('layerName', { index: 1 }), visible: true, opacity: 100, strokes: [] }] });
+  function counts(document) {
+    let points = 0, strokes = 0;
+    for (const layer of document.layers) for (const marks of [layer.strokes, layer.mask || []]) for (const mark of marks) { strokes++; points += mark.points.length; }
+    return { points, strokes };
+  }
+  function status(key) { if (ui) ui.status.textContent = key ? tr(key) : ''; }
+  function persist(s = session) {
+    if (!s) return true;
+    drafts.set(s.key, { document: copy(s.document), layer: s.layer });
+    try {
+      localStorage.setItem(s.key, JSON.stringify({ schema: 1, document: s.document, layer: s.layer }));
+      s.durable = true; return true;
+    } catch (_) { s.durable = false; if (s === session) status('draftError'); return false; }
+  }
+  function checkpoint(before) {
+    session.undo.push(before); session.redo = [];
+    let bytes = session.undo.reduce((sum, entry) => sum + entry.length * 2, 0);
+    while (session.undo.length > 30 || bytes > 8 * 1024 * 1024) bytes -= session.undo.shift().length * 2;
+  }
+  function change(action) {
+    if (!session || session.pending || stroke) return;
+    const before = JSON.stringify(session.document), document = copy(session.document);
+    try { action(document); const next = checked(document); if (JSON.stringify(next) === before) return; checkpoint(before); session.document = next; persist(); refresh(); }
+    catch (error) { status(error.message === 'limit' ? 'limit' : 'invalid'); refreshControls(true); }
+  }
+  function history(redo) {
+    if (!session || session.pending || stroke) return;
+    const from = redo ? session.redo : session.undo, to = redo ? session.undo : session.redo;
+    if (!from.length) return;
+    to.push(JSON.stringify(session.document)); session.document = JSON.parse(from.pop());
+    session.layer = Math.min(session.layer, session.document.layers.length - 1); persist(); refresh();
+  }
+  function label(key, control) {
+    const item = document.createElement('label'); item.className = 'ink-field';
+    const title = document.createElement('span'); title.dataset.inkLabel = key; title.textContent = tr(key); item.append(title, control); return item;
+  }
+  function button(id, key, action) {
+    const control = document.createElement('button'); control.type = 'button'; control.id = id; control.dataset.inkLabel = key; control.textContent = tr(key); control.addEventListener('click', action); return control;
+  }
+  function input(id, type, value) { const control = document.createElement('input'); control.id = id; control.type = type; control.value = value; return control; }
+  function mount() {
+    if (ui) return;
+    const modal = document.createElement('div'); modal.id = 'ink-modal'; modal.className = 'modal hidden'; modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-labelledby', 'ink-title'); modal.dataset.backdrop = 'static';
+    const box = document.createElement('section'); box.className = 'modal-dialog ink-box';
+    const head = document.createElement('header'); head.className = 'modal-header';
+    const title = document.createElement('h3'); title.id = 'ink-title'; title.dataset.inkLabel = 'title'; title.textContent = tr('title');
+    const keep = button('ink-close', 'keepClose', close); keep.dataset.modalClose = ''; head.append(title, keep);
+    const toolbar = document.createElement('div'); toolbar.className = 'ink-toolbar';
+    const pen = button('ink-pen', 'pen', () => { if (session) { session.mask = false; refreshControls(); } });
+    const mask = button('ink-mask', 'mask', () => { if (session) { session.mask = true; refreshControls(); } });
+    const color = input('ink-color', 'color', '#222222'); color.addEventListener('change', () => { if (session) session.color = color.value; });
+    const width = input('ink-width', 'number', '6'); width.min = '0.25'; width.max = '128'; width.step = '0.25'; width.addEventListener('change', () => { if (!session) return; const n = Number(width.value); if (Number.isFinite(n) && n >= 0.25 && n <= 128) session.width = n; else width.value = session.width; });
+    const pressure = input('ink-pressure', 'checkbox', ''); pressure.checked = true; pressure.addEventListener('change', () => { if (session) session.pressure = pressure.checked; });
+    const undo = button('ink-undo', 'editor.undo', () => history(false)), redo = button('ink-redo', 'editor.redo', () => history(true));
+    const size = ['width', 'height'].map(axis => { const field = input('ink-document-' + axis, 'number', axis === 'width' ? 1024 : 640); field.min = '1'; field.max = String(LIMIT.edge); field.step = '1'; field.addEventListener('change', () => change(document => { document[axis] = Number(field.value); })); return field; });
+    toolbar.append(pen, mask, label('color', color), label('penWidth', width), label('pressure', pressure), undo, redo, label('img.width', size[0]), label('img.height', size[1]));
+    const workspace = document.createElement('div'); workspace.className = 'ink-workspace';
+    const side = document.createElement('aside'); side.className = 'ink-layers';
+    const layers = document.createElement('select'); layers.id = 'ink-layers'; layers.size = 6; layers.addEventListener('change', () => { if (!session || stroke) return; session.layer = Number(layers.value); persist(); refresh(); });
+    const add = button('ink-add-layer', 'addLayer', () => { change(document => { if (document.layers.length >= LIMIT.layers) throw Error('limit'); document.layers.push({ name: tr('layerName', { index: document.layers.length + 1 }), visible: true, opacity: 100, strokes: [] }); }); if (session) { session.layer = session.document.layers.length - 1; persist(); refresh(); } });
+    const name = input('ink-layer-name', 'text', ''); name.maxLength = 200; name.addEventListener('change', () => change(document => { document.layers[session.layer].name = name.value; }));
+    const show = input('ink-layer-visible', 'checkbox', ''); show.addEventListener('change', () => change(document => { document.layers[session.layer].visible = show.checked; }));
+    const opacity = input('ink-opacity', 'range', '100'); opacity.min = '0'; opacity.max = '100'; opacity.step = '1'; opacity.addEventListener('change', () => change(document => { document.layers[session.layer].opacity = Number(opacity.value); }));
+    const clearMask = button('ink-clear-mask', 'clearMask', () => change(document => { delete document.layers[session.layer].mask; }));
+    side.append(label('layers', layers), add, label('name', name), label('visible', show), label('opacity', opacity), clearMask);
+    const area = document.createElement('div'); area.className = 'ink-surface';
+    const canvas = document.createElement('canvas'); canvas.id = 'ink-canvas'; canvas.tabIndex = 0; canvas.setAttribute('aria-label', tr('canvas')); canvas.setAttribute('aria-describedby', 'ink-hint'); area.append(canvas); workspace.append(side, area);
+    const hint = document.createElement('p'); hint.id = 'ink-hint'; hint.dataset.inkLabel = 'hint'; hint.textContent = tr('hint');
+    const message = document.createElement('p'); message.id = 'ink-status'; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+    const footer = document.createElement('footer'); footer.className = 'modal-footer ink-actions';
+    const file = input('ink-file', 'file', ''); file.accept = '.svg,image/svg+xml'; file.hidden = true; file.addEventListener('change', importFile);
+    const load = button('ink-import', 'import', () => file.click()), download = button('ink-export', 'export', exportFile);
+    const retarget = button('ink-retarget', 'retarget', () => { if (!session || session.pending || !originalTab(session)) return; const target = targetNow(); if (target?.current()) { session.target = target; status(''); refreshControls(); } else status('stale'); });
+    const insert = button('ink-insert', 'dialog.imgInsert', insertDrawing); insert.classList.add('primary');
+    footer.append(file, load, download, retarget, insert); box.append(head, toolbar, workspace, hint, message, footer); modal.append(box); document.body.append(modal);
+    ui = { modal, box, canvas, scratch: document.createElement('canvas'), layers, add, name, show, opacity, clearMask, pen, mask, color, width, pressure, undo, redo, size, file, load, download, retarget, insert, keep, status: message };
+    window.ReadMDModal?.setGuard(modal.id, () => !session?.pending);
+    canvas.addEventListener('pointerdown', pointerStart); canvas.addEventListener('pointermove', pointerMove); canvas.addEventListener('pointerup', pointerEnd);
+    canvas.addEventListener('pointercancel', pointerCancel); canvas.addEventListener('lostpointercapture', pointerCancel);
+    canvas.addEventListener('keydown', keyboardInk); canvas.addEventListener('focus', drawSoon); canvas.addEventListener('blur', drawSoon);
+    modal.addEventListener('keydown', event => {
+      if (event.isComposing || event.keyCode === 229 || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+      if ((event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase())) { event.preventDefault(); event.stopPropagation(); history(event.shiftKey || event.key.toLowerCase() === 'y'); }
+    });
+    window.addEventListener('beforeunload', event => { if (session && !persist()) { event.preventDefault(); event.returnValue = ''; } });
+  }
+  function refreshControls(force = false) {
+    if (!session || !ui) return;
+    const layer = session.document.layers[session.layer];
+    ui.modal.querySelectorAll('button,input,select').forEach(control => { control.disabled = session.pending || !!stroke; });
+    ui.pen.setAttribute('aria-pressed', String(!session.mask)); ui.mask.setAttribute('aria-pressed', String(session.mask));
+    const value = (control, text) => { if (force || document.activeElement !== control) control.value = text; };
+    value(ui.color, session.color); value(ui.width, session.width); ui.pressure.checked = session.pressure;
+    value(ui.size[0], session.document.width); value(ui.size[1], session.document.height);
+    value(ui.name, layer.name); ui.show.checked = layer.visible; value(ui.opacity, layer.opacity);
+    ui.undo.disabled ||= !session.undo.length; ui.redo.disabled ||= !session.redo.length; ui.add.disabled ||= session.document.layers.length >= LIMIT.layers;
+    ui.keep.disabled = session.pending;
+    ui.clearMask.disabled ||= !layer.mask?.length; ui.retarget.disabled ||= !originalTab(session);
+    ui.insert.disabled ||= !session.target?.current(); ui.canvas.setAttribute('aria-disabled', String(session.pending || !layer.visible));
+    ui.box.setAttribute('aria-busy', String(session.pending));
+  }
+  function refresh() {
+    if (!session) return;
+    ui.layers.replaceChildren(...session.document.layers.map((layer, index) => { const option = document.createElement('option'); option.value = index; option.textContent = layer.name || tr('layerName', { index: index + 1 }); option.selected = index === session.layer; return option; }));
+    refreshControls(true); drawSoon();
+  }
+  function drawSoon() { if (!frame) frame = requestAnimationFrame(() => { frame = 0; paint(); }); }
+  function paintMark(ctx, mark) {
+    // Match the Rust SVG renderer, including pressure at the two segment ends.
+    const radius = p => mark.width * (0.15 + 0.85 * p[2]) * 0.5;
+    ctx.fillStyle = mark.color;
+    for (let i = 0; i < mark.points.length; i++) {
+      const p = mark.points[i], r = radius(p); ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2); ctx.fill();
+      if (!i) continue;
+      const a = mark.points[i - 1], ar = radius(a), dx = p[0] - a[0], dy = p[1] - a[1], length = Math.hypot(dx, dy); if (!length) continue;
+      const nx = -dy / length, ny = dx / length; ctx.beginPath(); ctx.moveTo(a[0] + nx * ar, a[1] + ny * ar); ctx.lineTo(p[0] + nx * r, p[1] + ny * r); ctx.lineTo(p[0] - nx * r, p[1] - ny * r); ctx.lineTo(a[0] - nx * ar, a[1] - ny * ar); ctx.closePath(); ctx.fill();
+    }
+  }
+  function paint() {
+    if (!session || !visible()) return;
+    const doc = session.document, scale = Math.min(1.5, 1600 / Math.max(doc.width, doc.height)), width = Math.max(1, Math.round(doc.width * scale)), height = Math.max(1, Math.round(doc.height * scale));
+    const canvas = ui.canvas, scratch = ui.scratch; if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+    if (scratch.width !== width || scratch.height !== height) { scratch.width = width; scratch.height = height; }
+    canvas.style.aspectRatio = doc.width + ' / ' + doc.height;
+    const ctx = canvas.getContext('2d'), layerCtx = scratch.getContext('2d'); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, width, height);
+    doc.layers.forEach((layer, index) => {
+      if (!layer.visible || !layer.opacity) return;
+      layerCtx.setTransform(1, 0, 0, 1, 0, 0); layerCtx.clearRect(0, 0, width, height); layerCtx.setTransform(width / doc.width, 0, 0, height / doc.height, 0, 0); layerCtx.globalCompositeOperation = 'source-over';
+      layer.strokes.forEach(mark => paintMark(layerCtx, mark)); if (stroke?.layer === index && !stroke.mask) paintMark(layerCtx, stroke.mark);
+      layerCtx.globalCompositeOperation = 'destination-out'; (layer.mask || []).forEach(mark => paintMark(layerCtx, mark)); if (stroke?.layer === index && stroke.mask) paintMark(layerCtx, stroke.mark);
+      ctx.globalAlpha = layer.opacity / 100; ctx.drawImage(scratch, 0, 0);
+    });
+    ctx.globalAlpha = 1;
+    if (document.activeElement === canvas && session.cursor) { const [x, y] = session.cursor.map((v, i) => v * (i ? height / doc.height : width / doc.width)); ctx.strokeStyle = '#1686ff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); ctx.moveTo(x, y - 7); ctx.lineTo(x, y + 7); ctx.stroke(); }
+  }
+  function sample(event, previous) {
+    const rect = ui.canvas.getBoundingClientRect(), doc = session.document;
+    const pressure = session.pressure && event.pointerType === 'pen' ? Math.min(1, Math.max(0, event.pressure > 0 ? event.pressure : previous?.[2] ?? 0.5)) : 1;
+    return [Math.round(Math.min(doc.width, Math.max(0, (event.clientX - rect.left) / rect.width * doc.width)) * 100) / 100, Math.round(Math.min(doc.height, Math.max(0, (event.clientY - rect.top) / rect.height * doc.height)) * 100) / 100, Math.round(pressure * 1000) / 1000];
+  }
+  function appendSamples(event) {
+    if (!stroke || event.pointerId !== stroke.id) return;
+    const events = event.getCoalescedEvents?.() || [event];
+    for (const pointEvent of events.length ? events : [event]) {
+      if (stroke.mark.points.length + stroke.used >= LIMIT.points) { status('limit'); break; }
+      const last = stroke.mark.points.at(-1), point = sample(pointEvent, last);
+      if (!last || Math.abs(point[0] - last[0]) + Math.abs(point[1] - last[1]) > 0.15 || Math.abs(point[2] - last[2]) > 0.02) stroke.mark.points.push(point);
+    }
+    drawSoon();
+  }
+  function pointerStart(event) {
+    if (!session || session.pending || stroke || event.button !== 0 || event.isPrimary === false || !session.document.layers[session.layer].visible) return;
+    const used = counts(session.document); if (used.points >= LIMIT.points || used.strokes >= LIMIT.strokes) { status('limit'); return; }
+    event.preventDefault(); ui.canvas.focus({ preventScroll: true });
+    stroke = { id: event.pointerId, layer: session.layer, mask: session.mask, used: used.points, mark: { color: session.color, width: session.width, points: [sample(event)] } };
+    try { ui.canvas.setPointerCapture(event.pointerId); } catch (_) { stroke = null; return; }
+    refreshControls(); drawSoon();
+  }
+  function pointerMove(event) { if (stroke?.id === event.pointerId) { event.preventDefault(); appendSamples(event); } }
+  function finishStroke(cancelled) {
+    if (!stroke) return;
+    const completed = stroke; stroke = null;
+    if (!cancelled) change(document => { const layer = document.layers[completed.layer], key = completed.mask ? 'mask' : 'strokes'; (layer[key] ||= []).push(completed.mark); });
+    refreshControls(); drawSoon();
+  }
+  function pointerEnd(event) { if (stroke?.id === event.pointerId) { appendSamples(event); finishStroke(false); try { ui.canvas.releasePointerCapture(event.pointerId); } catch (_) {} } }
+  function pointerCancel(event) { if (stroke?.id === event.pointerId) finishStroke(true); }
+  function keyboardInk(event) {
+    if (!session || session.pending || stroke || event.isComposing) return;
+    const amount = event.shiftKey ? 10 : 1, cursor = session.cursor || [session.document.width / 2, session.document.height / 2];
+    if (event.key.startsWith('Arrow')) { event.preventDefault(); if (event.key === 'ArrowLeft') cursor[0] -= amount; if (event.key === 'ArrowRight') cursor[0] += amount; if (event.key === 'ArrowUp') cursor[1] -= amount; if (event.key === 'ArrowDown') cursor[1] += amount; session.cursor = [Math.max(0, Math.min(session.document.width, cursor[0])), Math.max(0, Math.min(session.document.height, cursor[1]))]; drawSoon(); }
+    else if (event.code === 'Space' && !event.repeat) { event.preventDefault(); const used = counts(session.document); if (used.points >= LIMIT.points || used.strokes >= LIMIT.strokes) { status('limit'); return; } if (!session.document.layers[session.layer].visible) return; change(document => { const layer = document.layers[session.layer], key = session.mask ? 'mask' : 'strokes'; (layer[key] ||= []).push({ color: session.color, width: session.width, points: [[...cursor, 1]] }); }); }
+  }
+  async function request(action, payload) {
+    const response = await apiFetch('/api/drawing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...payload }) });
+    const value = await response.json(); if (!response.ok || value.ok !== true) throw Error('invalid'); return value;
+  }
+  async function perform(action) {
+    if (!session || session.pending || stroke) return;
+    const current = session; current.pending = true; refreshControls();
+    try { await action(current); } catch (_) { if (session === current) status('invalid'); }
+    finally { if (session === current) { current.pending = false; refreshControls(); } }
+  }
+  async function importFile() {
+    const file = ui.file.files?.[0]; ui.file.value = ''; if (!file || !session) return;
+    if (file.size > LIMIT.svg) { status('invalid'); return; }
+    if (counts(session.document).strokes && !window.confirm(tr('importConfirm'))) return;
+    await perform(async current => {
+      const opened = await request('open', { svg: await file.text() }); if (session !== current) return;
+      const document = checked(opened.document); checkpoint(JSON.stringify(current.document)); current.document = document; current.layer = 0; current.cursor = null; persist(); refresh();
+    });
+  }
+  async function exportFile() {
+    await perform(async current => {
+      const rendered = await request('render', { document: current.document }); if (session !== current || typeof rendered.svg !== 'string') return;
+      const blob = new Blob([rendered.svg], { type: 'image/svg+xml' }); if (blob.size > LIMIT.svg) throw Error('invalid');
+      const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = 'ReadMD-drawing.svg'; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+    });
+  }
+  async function insertDrawing() {
+    if (!session?.target?.current()) { status('stale'); return; }
+    await perform(async current => {
+      const target = current.target, result = await request('stage', { document: current.document });
+      if (session !== current || current.target !== target || !target.current() || !visible()) { status('stale'); return; }
+      if (typeof result.rel !== 'string' || !result.asset || typeof registerStagedImage !== 'function' || typeof cmInsertImage !== 'function') throw Error('invalid');
+      registerStagedImage(result.asset, target.tab); cmInsertImage(result.rel, target);
+      drafts.delete(current.key); try { localStorage.removeItem(current.key); } catch (_) {}
+      session = null; clearInterval(timer); timer = null; window.ReadMDModal.close(ui.modal);
+    });
+  }
+  function open() {
+    const tab = activeTab(); if (!tab) return false;
+    if (visible()) { ui.canvas.focus(); return true; }
+    mount(); const key = keyOf(tab); let saved = drafts.get(key), stored;
+    if (!saved) {
+      try { stored = localStorage.getItem(key); } catch (_) { /* Drawing can continue with an explicit unsaved-close guard. */ }
+      if (stored) try {
+        if (stored.length > LIMIT.svg) throw Error('invalid');
+        const value = JSON.parse(stored); if (value.schema !== 1) throw Error('invalid');
+        saved = { document: checked(value.document), layer: value.layer };
+      } catch (_) { if (typeof showToast === 'function') showToast(tr('invalid')); return false; }
+    }
+    session = { key, tab, document: saved ? copy(saved.document) : empty(), layer: Math.max(0, Math.min(Number.isInteger(saved?.layer) ? saved.layer : 0, (saved?.document.layers.length || 1) - 1)), target: saved ? null : targetNow(), color: '#222222', width: 6, pressure: true, mask: false, pending: false, undo: [], redo: [], durable: false, cursor: null };
+    ui.modal.querySelectorAll('[data-ink-label]').forEach(node => { node.textContent = tr(node.dataset.inkLabel); }); ui.canvas.setAttribute('aria-label', tr('canvas'));
+    refresh(); status(saved ? 'restored' : ''); persist();
+    window.ReadMDModal.open(ui.modal); drawSoon(); clearInterval(timer); timer = setInterval(() => { if (visible()) refreshControls(); }, 400); return true;
+  }
+  function close() {
+    if (!session || session.pending) return false;
+    if (stroke) finishStroke(false);
+    const kept = persist(); if (!kept && !window.confirm(tr('closeConfirm'))) return false;
+    if (!kept) { drafts.delete(session.key); session = null; }
+    clearInterval(timer); timer = null; window.ReadMDModal.close(ui.modal); if (kept && typeof showToast === 'function') showToast(tr('draftKept')); return true;
+  }
+  return { open, close };
+})();
+
+;
+'use strict';
+
+// Bind the requested chapter to the cursor and the current editor generation.
+// The review service selects siblings from the parsed working document.
+const ReadMDManuscript = (() => {
+  const pending = new WeakSet();
+  async function run(command) {
+    const select = command === 'select';
+    const view = cmView, tab = getActiveTab();
+    if (!view || !tab || pending.has(view) || !state.editing) return;
+    const doc = view.state.doc, selection = view.state.selection.main, caret = selection.head;
+    const generation = tab.editGeneration;
+    const current = () => cmView === view && getActiveTab() === tab && state.editing &&
+      view.state.doc === doc && tab.editGeneration === generation && view.state.selection.main.head === caret && view.state.selection.main.anchor === selection.anchor;
+    pending.add(view);
+    try {
+      const review = window.ReadMDReview, identity = await review.capture(tab);
+      if (!identity || !current()) return;
+      const response = await apiFetch('/api/review', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: select ? 'chapter_range' : 'chapter_move_plan', direction: select ? undefined : command, caret,
+          document_id: identity.document_id, generation: identity.generation, review_revision: identity.review_revision })
+      });
+      const plan = await response.json();
+      if (!current()) return;
+      if (!response.ok) throw new Error(plan.error_code || 'review_persistence_failed');
+      if (plan.document_id !== identity.document_id || plan.generation !== identity.generation ||
+          plan.review_revision !== identity.review_revision) throw new Error('review_stale_generation');
+      if (select) {
+        if (!plan.chapter) { showToast(i18n.t('editor.noChapter')); return; }
+        // Keep the active end inside this section when the next heading starts at to.
+        view.dispatch({ selection: { anchor: plan.chapter.to, head: plan.chapter.from }, scrollIntoView: true });
+        view.focus();
+        return;
+      }
+      if (plan.edit === null) { showToast(i18n.t('editor.noSibling')); return; }
+      const { from, to, insert, anchor } = plan.edit;
+      const stamp = await review.captureManualRange(from, to, tab, { allowDraft: true });
+      if (!current() || stamp.document_id !== identity.document_id || stamp.generation !== identity.generation ||
+          stamp.review_revision !== identity.review_revision || stamp.editGeneration !== identity.editGeneration) {
+        throw new Error('review_stale_generation');
+      }
+      await review.applyManualRange(insert, stamp, tab, current, { userEvent: 'input.chapter.move', selectionAnchor: anchor });
+      if (cmView === view && getActiveTab() === tab && state.editing) view.focus();
+    } catch (error) {
+      if (getActiveTab() === tab) {
+        const key = 'error.' + (error.code || error.message), label = i18n.t(key);
+        showToast(label && label !== key ? label : i18n.t('review.persistenceFailed'));
+      }
+    } finally { pending.delete(view); }
+  }
+  return { move: run, select: () => run('select') };
 })();
 
 ;
@@ -14106,7 +16458,10 @@ function saveEditorPrefs() {
 }
 
 let cmCompartments = null;
-let cmPointerDown = false;
+let cmSelectionGesture = null;
+let cmSelectionTimer = 0;
+const CM_SELECTION_SETTLE_MS = 140;
+const CM_SELECTION_SLOP_SQUARED = 16;
 let cmReusedState = false;
 let cmLayoutCleanup = null;
 
@@ -14224,7 +16579,7 @@ function createEditor(doc) {
         }
         slashOnUpdate(u);
         if (u.selectionSet && !u.docChanged) scheduleDocStatistics();
-        if (u.selectionSet || u.docChanged) updateCmSelectionToolbar();
+        if (u.selectionSet || u.docChanged) scheduleCmSelectionToolbar();
         if (u.geometryChanged && !slash.open) repositionCmSelectionToolbar();
       }),
     ],
@@ -14237,8 +16592,20 @@ function createEditor(doc) {
   window.ReadMDReview?.mount(cmView, tab, doc);
   syncSearchMode();
   applyEditorViewClasses();
-  cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
-  cmView.dom.addEventListener('keyup', () => setTimeout(updateCmSelectionToolbar, 10));
+  const view = cmView;
+  view.dom.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || !event.isPrimary || !event.target.closest('.cm-content')) return;
+    cmSelectionGesture = {
+      view, id: event.pointerId, type: event.pointerType, x: event.clientX, y: event.clientY,
+      dragPending: false, recenter: false,
+    };
+    hideCmSelectionToolbar();
+  }, true);
+  view.dom.addEventListener('mousedown', event => {
+    const gesture = cmMouseSelectionGesture(view);
+    if (!gesture || event.button !== 0) return;
+    gesture.dragPending = event.detail === 1 && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+  }, true);
   cmView.scrollDOM.addEventListener('scroll', () => {
     if (slash.open) positionSlashMenu();
     repositionCmSelectionToolbar();
@@ -14250,11 +16617,36 @@ function createEditor(doc) {
 
 }
 
-document.addEventListener('pointerup', () => {
-  if (!cmPointerDown) return;
-  cmPointerDown = false;
-  setTimeout(updateCmSelectionToolbar, 10);
-});
+function cmMouseSelectionGesture(view) {
+  const gesture = cmSelectionGesture;
+  return gesture?.type === 'mouse' && gesture.view === view ? gesture : null;
+}
+
+// CodeMirror tracks a drag on document mousemove. Let the initial click place
+// the caret, then wait for intentional movement before extending the range.
+window.addEventListener('mousemove', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture?.dragPending || !(event.buttons & 1) || gesture.view.compositionStarted) return;
+  const distanceSquared = (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2;
+  if (distanceSquared < CM_SELECTION_SLOP_SQUARED) event.stopPropagation();
+  else gesture.dragPending = false;
+}, true);
+document.addEventListener('pointerup', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  cmSelectionGesture = null;
+  if (gesture.recenter) scheduleCmTypewriterCenter(gesture.view);
+  // CodeMirror may finish the selection in mouseup, after pointerup.
+  requestAnimationFrame(() => {
+    if (cmView === gesture.view && !cmSelectionGesture) scheduleCmSelectionToolbar();
+  });
+}, true);
+document.addEventListener('pointercancel', event => {
+  if (cmSelectionGesture?.id !== event.pointerId) return;
+  cmSelectionGesture = null;
+  hideCmSelectionToolbar();
+}, true);
+window.addEventListener('blur', () => { cmSelectionGesture = null; hideCmSelectionToolbar(); });
 
 /* vendor 包只导出 historyKeymap，不直接导出 undo / redo：从键位表里取命令 */
 function cmHistoryCommand(key) {
@@ -14283,8 +16675,27 @@ function cmRedo() {
 }
 
 function hideCmSelectionToolbar() {
+  clearTimeout(cmSelectionTimer);
+  cmSelectionTimer = 0;
   const toolbar = $('cm-selection-toolbar');
   if (toolbar) toolbar.classList.add('hidden');
+}
+
+function selectionToolbarRange() {
+  if (!state.editing || !cmView || cmSelectionGesture?.view === cmView || cmView.composing || slash.open) return null;
+  const selection = cmView.state.selection.main;
+  return selection.empty ? null : selection;
+}
+
+function scheduleCmSelectionToolbar() {
+  hideCmSelectionToolbar();
+  const selection = selectionToolbarRange(), view = cmView;
+  if (!selection) return;
+  cmSelectionTimer = setTimeout(() => {
+    cmSelectionTimer = 0;
+    const current = selectionToolbarRange();
+    if (cmView === view && current?.from === selection.from && current.to === selection.to) updateCmSelectionToolbar();
+  }, CM_SELECTION_SETTLE_MS);
 }
 
 /* Selection toolbar buttons -> toolbar command (same code path as #md-tool). */
@@ -14309,12 +16720,8 @@ function cmSelectionMarks(view, from, to) {
 function updateCmSelectionToolbar() {
   const toolbar = $('cm-selection-toolbar');
   if (!toolbar) return;
-  if (!state.editing || !cmView || cmPointerDown || slash.open) {
-    toolbar.classList.add('hidden');
-    return;
-  }
-  const sel = cmView.state.selection.main;
-  if (!sel || sel.empty || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
+  const sel = selectionToolbarRange();
+  if (!sel || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
     toolbar.classList.add('hidden');
     return;
   }
@@ -14471,6 +16878,7 @@ document.addEventListener('pointerdown', e => {
 
 function destroyEditor() {
 
+  cmSelectionGesture = null;
   if (cmLayoutCleanup) { cmLayoutCleanup(); cmLayoutCleanup = null; }
   hideCmSelectionToolbar();
   closeSlashMenu();
@@ -14744,21 +17152,32 @@ function cmFocusExtension() {
 }
 
 /* Typewriter mode: the cursor line stays at the vertical centre. */
+function scheduleCmTypewriterCenter(view) {
+  const gesture = cmMouseSelectionGesture(view);
+  if (gesture) {
+    gesture.recenter = true;
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (cmView !== view || !view.hasFocus || !editorPrefs.typewriter || cmMouseSelectionGesture(view)) return;
+    const head = view.state.selection.main.head;
+    view.dispatch({ effects: window.ReadMDCodeMirror.EditorView.scrollIntoView(head, { y: 'center' }) });
+  });
+}
+
 function cmTypewriterExtension() {
   const CM = window.ReadMDCodeMirror;
   return [
     CM.EditorView.scrollMargins.of(view => {
+      // Drag autoscroll uses these margins to detect the edge of the editor.
+      if (cmMouseSelectionGesture(view)) return null;
       const h = view.scrollDOM.clientHeight;
       return { top: h * 0.45, bottom: h * 0.45 };
     }),
     CM.EditorView.updateListener.of(u => {
       if (!u.selectionSet || !u.view.hasFocus) return;
       if (!u.transactions.some(tr => tr.isUserEvent('input') || tr.isUserEvent('delete') || tr.isUserEvent('select') || tr.isUserEvent('move'))) return;
-      const head = u.state.selection.main.head;
-      requestAnimationFrame(() => {
-        if (!cmView || cmView !== u.view) return;
-        u.view.dispatch({ effects: CM.EditorView.scrollIntoView(head, { y: 'center' }) });
-      });
+      scheduleCmTypewriterCenter(u.view);
     }),
   ];
 }
@@ -14914,6 +17333,10 @@ function cmInsertSyntax(kind) {
   if (!cmView) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   switch (kind) {
+    case 'ink': return window.ReadMDInk.open();
+    case 'chapter-select': return ReadMDManuscript.select();
+    case 'chapter-up': return ReadMDManuscript.move('up');
+    case 'chapter-down': return ReadMDManuscript.move('down');
     case 'codechunk': openCodeChunkModal(); return;
     case 'diagram': openDiagramModal(); return;
     case 'docimport': openDocImportModal(); return;
@@ -14939,11 +17362,6 @@ function cmInsertSyntax(kind) {
 }
 
 
-function closeMdPopups() {
-  document.querySelectorAll('.md-menu, .pv-menu').forEach(el => el.classList.add('hidden'));
-  const trigger = $('pv-trigger'); if (trigger) trigger.setAttribute('aria-expanded', 'false');
-  document.querySelectorAll('#edit-bar [data-menu]').forEach(b => b.setAttribute('aria-expanded', 'false'));
-}
 
 /* ============================================================
    Editor Studio PRO: Code Chunk / Diagram / Doc Import Modals
@@ -15475,6 +17893,9 @@ function updateDocStatistics() {
   const hiddenMetadata=[...(window.ReadMDFormula?.metadataRanges(docText)||[]),...(window.ReadMDPublication?.metadataRanges(docText)||[])].sort((a,b)=>a.from-b.from);
   let visibleText='',visibleAt=0;for(const hidden of hiddenMetadata){visibleText+=docText.slice(visibleAt,hidden.from);visibleAt=hidden.to;}visibleText+=docText.slice(visibleAt);
   const stats = T && T.textStats ? T.textStats(visibleText) : { words: 0, chars: visibleText.length, minutes: 0 };
+  if (state.editing && typeof updateSidebarStatistics === 'function') {
+    updateSidebarStatistics({ words: stats.words, minutes: Math.max(stats.minutes, stats.words ? 1 : 0) });
+  }
   const nf = n => { try { return Number(n).toLocaleString((window.i18n && window.i18n.currentLang) || undefined); } catch (e) { return String(n); } };
   let selWords = 0;
   if (cmView && T && T.textStats) {
@@ -15493,6 +17914,7 @@ function updateDocStatistics() {
     }
   }
   const params = { words: nf(stats.words), chars: nf(stats.chars), min: nf(Math.max(stats.minutes, stats.words ? 1 : 0)), total: nf(stats.words) };
+  statsEl.classList.toggle('has-selection', selWords > 0);
   statsEl.textContent = selWords
     ? _t('editor.statsSelection', { words: nf(selWords), total: params.total })
     : _t('editor.statsLine', params);
@@ -15558,9 +17980,24 @@ function clipboardTableRows(text, delimiter) {
 function clipboardTableCell(text) {
   // Office cells are text, not Markdown/HTML. Entities also avoid GFM's
   // backslash/pipe parity trap and survive subsequent table Tab/Enter edits.
-  return text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
+  const escaped = text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
     .replace(/\n/g, '<br>')
     .replace(/^ +| +$/g, spaces => '&#32;'.repeat(spaces.length));
+  if (!window.ReadMDTableAttributes?.parseCell(escaped.trim())) return escaped;
+  const brace = escaped.lastIndexOf('{');
+  return escaped.slice(0, brace) + '&#123;' + escaped.slice(brace + 1);
+}
+
+// Freeze the destination before any file picker, image decode or clipboard I/O.
+// A cursor change may leave the document intact, so carry the original range.
+function imageEditTarget() {
+  const view = cmView, tab = getActiveTab();
+  if (!state.editing || !view || !tab || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false) return null;
+  const doc = view.state.doc, generation = tab.editGeneration || 0, path = tab.path, revision = tab.revision;
+  const { from, to } = view.state.selection.main;
+  return { tab, from, to, current: () => cmView === view && getActiveTab() === tab && state.editing &&
+    !view.state.readOnly && view.state.doc === doc && tab.path === path && tab.revision === revision &&
+    (tab.editGeneration || 0) === generation && window.ReadMDCollaborationShare?.canEdit() !== false };
 }
 
 /* 智能 Excel / CSV 粘贴转 Markdown 表格 */
@@ -15588,9 +18025,12 @@ function handleSmartExcelPaste(e) {
     }
   }
   if (imageFile) {
+    const target = imageEditTarget();
+    if (!target) return;
     e.preventDefault();
-    const pasteTab = getActiveTab(), pasteView = cmView, pasteContent = getEditContent();
-    const pasteTargetCurrent = () => getActiveTab() === pasteTab && cmView === pasteView && state.editing && getEditContent() === pasteContent;
+    const format = { 'image/png':'png', 'image/jpeg':'jpg', 'image/gif':'gif', 'image/webp':'webp',
+      'image/bmp':'bmp', 'image/tiff':'tiff', 'image/svg+xml':'svg', 'image/jp2':'jp2' }[imageFile.type.toLowerCase()];
+    if (!format) { showToast(window.i18n.t('error.unsupported_format')); return; }
     const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
     showToast(_t('toast.savingImage') || '正在保存剪贴板图片…', 1500);
     const reader = new FileReader();
@@ -15603,17 +18043,17 @@ function handleSmartExcelPaste(e) {
           body: JSON.stringify({
             stage: true,
             data: b64,
-            format: 'png',
+            format,
             name: 'clipboard'
           })
         });
         const d = await resp.json();
-        if (resp.ok && d && d.ok && pasteTargetCurrent()) {
+        if (resp.ok && d && d.ok && target.current()) {
           const insertRel = d.rel || d.relPath || d.path;
-          registerStagedImage(d.asset, pasteTab);
-          cmInsertImage(insertRel);
+          registerStagedImage(d.asset, target.tab);
+          cmInsertImage(insertRel, target);
           showToast(_t('toast.imgInsertedRel', { rel: insertRel }) || ('图片已插入（' + insertRel + '）'));
-        } else if (pasteTargetCurrent()) {
+        } else if (target.current()) {
           showToast(apiMessage(d, 'toast.imgSaveFailed') || '图片保存失败');
         }
       } catch (err) {
@@ -15628,6 +18068,7 @@ function handleSmartExcelPaste(e) {
   if (cmView) {
     const ranges = cmView.state.selection.ranges;
     if (ranges.length !== 1 || cmInCode(cmView.state, ranges[0].from) || cmInCode(cmView.state, ranges[0].to)) return;
+    if (cmPasteTableClipboard(e, cmView)) return;
   } else if (!$('edit-area') || e.target !== $('edit-area')) return;
 
   const csv = e.clipboardData.getData('text/csv');
@@ -15726,6 +18167,429 @@ function cmAlignTableColumn(view, alignment) {
   return true;
 }
 
+/* READMD_LITERAL_TABLE_CELL_HELPERS_BEGIN */
+// This first visual edit handles literal, single-line cells. Rich/unknown
+// cell source is retained and read-only rather than flattened to display text.
+function cmTableCellLiteral(raw) {
+  if (raw.length > 4096 || /[`*_~$<>\[\]\r\n\u0000]/.test(raw)) return null;
+  for (let i = 0; i < raw.length; i++) if (raw[i] === '\\' && !['\\', '|'].includes(raw[++i])) return null;
+  let unknown = false;
+  const text = raw.replace(/\\([\\|])/g, '$1').replace(/&([^;\s]+);/g, (whole, entity) => {
+    if (Object.hasOwn({ amp: 1, lt: 1, gt: 1, quot: 1, apos: 1 }, entity)) return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[entity];
+    const n = /^#\d+$/.test(entity) ? Number(entity.slice(1)) : /^#x[0-9a-f]+$/i.test(entity) ? parseInt(entity.slice(2), 16) : -1;
+    if (n <= 0 || n > 0x10ffff || n >= 0xd800 && n <= 0xdfff) { unknown = true; return whole; }
+    return String.fromCodePoint(n);
+  });
+  return unknown ? null : text;
+}
+function cmTableCellReplacement(value) {
+  if (typeof value !== 'string' || value.length > 4096 || /[\r\n\u0000\u2028\u2029]/.test(value)) return null;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value.charCodeAt(i);
+    if (ch >= 0xd800 && ch <= 0xdbff) { const next = value.charCodeAt(++i); if (!(next >= 0xdc00 && next <= 0xdfff)) return null; }
+    else if (ch >= 0xdc00 && ch <= 0xdfff) return null;
+  }
+  return clipboardTableCell(value);
+}
+function cmTableCellContext(view, protectRange = false) {
+  const CM = window.ReadMDCodeMirror, hit = view && cmSingleCursorLine(view), attributes = window.ReadMDTableAttributes;
+  if (!view || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
+  const tree = CM.syntaxTree(view.state);
+  if (!hit) {
+    if (!protectRange) return null;
+    const { from, to } = view.state.selection.main;
+    let touchesTable = false;
+    tree.iterate({ from, to, enter(node) {
+      if (node.name === 'Table' && node.from < to && from < node.to) { touchesTable = true; return false; }
+    } });
+    return touchesTable ? { unsupported: true } : null;
+  }
+  let node = tree.resolveInner(hit.range.head, -1);
+  while (node && node.name !== 'Table') {
+    if (node.name === 'HTMLBlock' && /^\s*<table\b/i.test(view.state.doc.sliceString(node.from, node.to))) return { unsupported: true };
+    node = node.parent;
+  }
+  if (!node && protectRange) {
+    node = tree.resolveInner(hit.range.head, 1);
+    while (node && node.name !== 'Table') node = node.parent;
+  }
+  if (!node) return null;
+  const doc = view.state.doc, header = doc.lineAt(node.from), last = doc.lineAt(node.to);
+  const unsupported = () => ({ unsupported: true });
+  if (!attributes || node.parent?.name !== 'Document' || node.to - node.from > 65536 || last.number - header.number > attributes.maxRows + 1 ||
+      !/^ {0,3}$/.test(header.text.slice(0, node.from - header.from)) || /<(?:table|tr|td|th|col|caption)\b/i.test(doc.sliceString(node.from, node.to))) return unsupported();
+  const lines = [];
+  for (let number = header.number; number <= last.number; number++) {
+    const line = doc.line(number), segments = cmTableRowSegments(line.text);
+    if (!segments || !segments.length || segments.length > attributes.maxColumns || lines.length && segments.length !== lines[0].segments.length) return unsupported();
+    lines.push({ line, segments });
+  }
+  if (lines.length < 2 || (lines.length - 1) * lines[0].segments.length > 256 ||
+      !lines[1].segments.every(cell => /^\s*:?-+:?\s*$/.test(lines[1].line.text.slice(cell.from, cell.to)))) return unsupported();
+  const rows = lines.filter((_, index) => index !== 1).map(({ line, segments }, row) => segments.map((segment, column) => {
+    const raw = line.text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
+    const body = raw.slice(leading).replace(/[ \t]*$/, ''), from = line.from + segment.from + leading;
+    return { row, column, from, to: from + body.length, original: body, line: line.number,
+      segmentFrom: line.from + segment.from, segmentTo: line.from + segment.to };
+  }));
+  const parsedRows = [];
+  for (let child = node.firstChild; child; child = child.nextSibling) if (child.name === 'TableHeader' || child.name === 'TableRow') parsedRows.push(child);
+  if (parsedRows.length !== rows.length || rows.some((cells, row) => {
+    const parsedCells = parsedRows[row].getChildren('TableCell');
+    return cells.some(cell => cell.from !== cell.to && !parsedCells.some(parsed => parsed.from === cell.from && parsed.to === cell.to));
+  })) return unsupported();
+  const layout = attributes.layout(rows.map(row => row.map(cell => cell.original)));
+  if (!layout) return unsupported();
+  for (const cell of rows.flat()) {
+    const attrs = layout.cells[cell.row][cell.column];
+    cell.content = attrs?.text ?? cell.original;
+    cell.contentTo = cell.from + cell.content.length + (attrs?.from > 0 ? 1 : 0);
+    cell.value = cmTableCellLiteral(cell.content);
+  }
+  const selected = rows.flat().find(cell => cell.line === hit.line.number && hit.range.from >= cell.segmentFrom && hit.range.to <= cell.segmentTo);
+  return selected ? { from: node.from, to: node.to, rows, lines, layout, selected, editorDoc: doc } : unsupported();
+}
+
+async function cmCommitTableClipboard(edit, tab, doc, current) {
+  const review = window.ReadMDReview;
+  const options = { edits: edit.edits, preserveSelection: true, userEvent: 'input.paste.table' };
+  const stamp = await review.captureManualRange(edit.from, edit.to, tab, { allowDraft: true });
+  if (!current() || stamp.editorDoc !== doc || stamp.original !== doc.sliceString(edit.from, edit.to)) throw Error('review_stale_generation');
+  if (review.snapshot(tab).changes.some(change => change.decision !== 'withdrawn' && edit.edits.some(({ from, to }) =>
+    change.from === change.to ? from <= change.from && change.from <= to : change.from < to && from < change.to))) {
+    throw Error('review_conflict');
+  }
+  await review.applyManualRange(edit.insert, stamp, tab, current, options);
+}
+
+function cmPasteTableClipboard(event, view) {
+  const clipboard = window.ReadMDTableClipboard;
+  const payload = clipboard?.read(event.clipboardData);
+  if (payload == null) return false;
+  const context = cmTableCellContext(view, true);
+  if (!context) return false;
+  event.preventDefault();
+  const edit = !context.unsupported && clipboard.plan(context, context.selected, payload, clipboardTableCell);
+  const toast = key => showToast(window.i18n?.t(key) || key);
+  if (!edit) { toast(clipboard.invalidRange); return true; }
+  if (!edit.edits.length) return true;
+  const tab = getActiveTab(), doc = view.state.doc, selection = view.state.selection;
+  const current = () => cmView === view && getActiveTab() === tab && state.editing && view.state.doc === doc &&
+    view.state.selection.eq(selection) && !view.state.readOnly && window.ReadMDCollaborationShare?.canEdit() !== false;
+  void cmCommitTableClipboard(edit, tab, doc, current).catch(() => {
+    if (cmView === view && getActiveTab() === tab) toast('review.conflict');
+  });
+  return true;
+}
+
+let tableCellSession = null;
+window.ReadMDModal?.setGuard?.('table-modal', () => !tableCellSession?.resize?.cancel());
+function tableCellControls(view, context, modal, picker) {
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key, root = document.createElement('div');
+  root.id = 'table-cell-controls'; root.className = 'table-cell-editor'; picker.before(root);
+  const status = document.createElement('p'); status.className = 'hint'; status.setAttribute('role', 'status');
+  if (context.unsupported || !window.ReadMDReview?.captureManualRange || !window.ReadMDReview?.applyManualRange) {
+    status.textContent = t(context.unsupported ? 'error.publication_table_unsupported' : 'review.persistenceFailed'); root.append(status); return;
+  }
+  const tab = getActiveTab(), session = { view, tab, context, root, serial: 0, stamp: null, busy: false };
+  tableCellSession = session;
+  root.style.setProperty('--table-cell-columns', String(context.rows[0].length));
+  const active = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
+    cmView === view && getActiveTab() === tab && !view.state.readOnly &&
+    window.ReadMDCollaborationShare?.canEdit() !== false;
+  const current = () => active() && view.state.doc === context.editorDoc;
+  const grid = document.createElement('table'); grid.className = 'table-cell-grid'; grid.style.width = '100%'; grid.style.tableLayout = 'fixed'; grid.setAttribute('aria-label', t('editor.table'));
+  const gridWrap = document.createElement('div'); gridWrap.className = 'table-cell-grid-scroll'; gridWrap.style.maxWidth = '100%'; gridWrap.style.overflowX = 'auto'; gridWrap.append(grid);
+  const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
+  const label = document.createElement('label'); label.setAttribute('for', input.id);
+  const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
+  const structureBar = document.createElement('div'); structureBar.className = 'table-structure-tools'; actions.append(structureBar);
+  const clipboard = window.ReadMDTableClipboard, csvButton = document.createElement('button');
+  const pasteCsvButton = document.createElement('button');
+  if (clipboard) {
+    const mod = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+    grid.title = t('editor.tableCellSelectRange') + ' · ' + mod + 'C / ' + mod + 'V';
+    csvButton.type = 'button'; csvButton.id = 'table-cell-copy-csv'; csvButton.className = 'tb-btn';
+    csvButton.textContent = t('editor.copy') + ' CSV';
+    pasteCsvButton.type = 'button'; pasteCsvButton.id = 'table-cell-paste-csv'; pasteCsvButton.className = 'tb-btn';
+    pasteCsvButton.textContent = t('editor.paste') + ' CSV'; actions.append(csvButton, pasteCsvButton);
+  }
+  const structureActions = [
+    ['up', 'pm.up', 'M12 19V5m-5 5 5-5 5 5'],
+    ['down', 'pm.down', 'M12 5v14m-5-5 5 5 5-5'],
+    ['insert', 'editor.insertRow', 'M3 5h18v4H3z M12 12v8m-4-4h8'],
+    ['delete', 'editor.deleteRow', 'M3 5h18v4H3z M8 16h8'],
+    ['insert-column', 'editor.insertColumn', 'M4 3h4v18H4z M12 12h8m-4-4v8'],
+    ['delete-column', 'editor.deleteColumn', 'M4 3h4v18H4z M12 12h8'],
+    ['sort-asc', 'editor.sortAscending', 'M4 6h12M4 11h8M4 16h4m8 3V9m-3 3 3-3 3 3'],
+    ['sort-desc', 'editor.sortDescending', 'M4 6h4M4 11h8M4 16h10m-6-2V4m-3 7 3 3 3-3'],
+  ].map(([action, key, icon]) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn icon';
+    button.dataset.tableMove = action; button.disabled = true;
+    button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
+    button.title = t(key); button.setAttribute('aria-label', t(key));
+    button.innerHTML = `<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg>`;
+    button.addEventListener('click', () => void applyStructure(action)); structureBar.append(button);
+    return { action, button };
+  });
+  const apply = document.createElement('button'), cancel = document.createElement('button');
+  for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
+  apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
+  const properties = document.createElement('details'), summary = document.createElement('summary');
+  properties.id = 'table-cell-properties';
+  properties.open = context.layout.cells.some(row => row.some(cell =>
+    cell && Object.keys(cell.attributes).some(key => key !== 'width' && key !== 'height')));
+  summary.dataset.i18n = 'editor.tableCellProperties'; summary.textContent = t(summary.dataset.i18n); properties.append(summary);
+  const propertyFields = document.createElement('div'); propertyFields.className = 'table-cell-property-fields'; properties.append(propertyFields);
+  function propertyField(tag, name, key) {
+    const field = document.createElement(tag), caption = document.createElement('label');
+    field.id = 'table-cell-' + name; field.className = 'modal-input';
+    caption.setAttribute('for', field.id);
+    const text = document.createElement('span'); text.dataset.i18n = key; text.textContent = t(key);
+    caption.append(text, field); propertyFields.append(caption);
+    field.addEventListener('input', updatePropertyControls);
+    return field;
+  }
+  function spanField(name, key) {
+    const field = propertyField('input', name, key);
+    field.type = 'number'; field.min = '1'; field.step = '1'; field.value = '1';
+    return field;
+  }
+  function alignmentField(name, key, choices) {
+    const field = propertyField('select', name, key);
+    for (const [value, optionKey] of [['', 'export.presetDefault'], ...choices]) {
+      const option = document.createElement('option'); option.value = value;
+      option.dataset.i18n = optionKey; option.textContent = t(optionKey); field.append(option);
+    }
+    return field;
+  }
+  const rowSpan = spanField('rowspan', 'editor.tableCellRowSpan'), columnSpan = spanField('colspan', 'editor.tableCellColumnSpan');
+  const horizontal = alignmentField('align', 'editor.tableCellHorizontal', [
+    ['left', 'export.alignLeft'], ['center', 'export.alignCenter'], ['right', 'export.alignRight'],
+  ]);
+  const vertical = alignmentField('valign', 'editor.tableCellVertical', [
+    ['top', 'formula.ommlEnum.VerticalAlignmentValues.Top'], ['middle', 'editor.tableCellMiddle'], ['bottom', 'formula.ommlEnum.VerticalAlignmentValues.Bottom'],
+  ]);
+  const rangeFeedback = document.createElement('p'); rangeFeedback.className = 'table-cell-range-feedback';
+  rangeFeedback.setAttribute('aria-live', 'polite');
+  const propertyActions = document.createElement('div'); propertyActions.className = 'panel-feedback-row table-cell-property-actions';
+  properties.append(propertyActions, rangeFeedback);
+  function propertyAction(id, key, action) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn';
+    button.id = 'table-cell-' + id; button.dataset.i18n = key; button.textContent = t(key); button.disabled = true;
+    button.addEventListener('click', () => commitStructure(propertyEdit(action))); propertyActions.append(button);
+    return button;
+  }
+  const merge = propertyAction('merge', 'editor.tableCellMerge', 'merge');
+  const split = propertyAction('split', 'editor.tableCellSplit', 'split');
+  const applyProperties = propertyAction('properties-apply', 'editor.tableCellApplyProperties', 'align');
+  const rangeHelp = document.createElement('p'); rangeHelp.className = 'table-cell-range-feedback';
+  rangeHelp.dataset.i18n = 'editor.tableCellSelectRange'; rangeHelp.textContent = t(rangeHelp.dataset.i18n);
+  properties.append(rangeHelp);
+  const buttons = [];
+  const structureCache = new Map();
+  const cellChanged = () => !input.disabled && input.value !== session.cell?.value;
+  const resize = grid.ownerDocument && window.ReadMDTableResize?.mount(grid, context,
+    () => current() && !session.busy && !cellChanged(), (axis, index, size) =>
+      commitStructure(ReadMDTableStructure.resizeTrack(context, axis, index, size), true), t);
+  session.resize = resize;
+  function structuralEdit(action) {
+    if (!session.cell || context.layout.hasSpans || cellChanged()) return null;
+    if (!structureCache.has(action)) structureCache.set(action, planStructure(action));
+    return structureCache.get(action);
+  }
+  function planStructure(action) {
+    const {rows, editorDoc} = context;
+    const {row, column} = session.cell;
+    if (action === 'insert-column' || action === 'delete-column') {
+      return ReadMDTableStructure.columnEdit(context, column, action === 'insert-column');
+    }
+    if (action === 'sort-asc' || action === 'sort-desc') {
+      return ReadMDTableStructure.sortRows(context, column, action === 'sort-asc', window.i18n?.currentLang);
+    }
+    const line = editorDoc.line(rows[row][0].line);
+    if (action === 'insert') {
+      const after = row === 0 ? editorDoc.line(line.number + 1) : line;
+      const indent = after.text.match(/^ {0,3}/)[0];
+      const insert = '\n' + indent + '|' + ' |'.repeat(rows[0].length);
+      if (rows.length >= ReadMDTableAttributes.maxRows + 1 || (rows.length + 1) * rows[0].length > 256 ||
+          context.to - context.from + insert.length > 65536) return null;
+      return { from: after.to, to: after.to, insert };
+    }
+    if (row === 0) return null;
+    if (action === 'delete') return { from: line.from - 1, to: line.to, insert: '' };
+    const adjacent = rows[row + (action === 'up' ? -1 : 1)];
+    if (!adjacent || adjacent === rows[0]) return null;
+    return window.ReadMDTransforms.tableRowSwap(line, editorDoc.line(adjacent[0].line));
+  }
+  function updateStructureButtons() {
+    for (const {button, action} of structureActions) button.disabled = session.busy || !structuralEdit(action);
+    csvButton.disabled = pasteCsvButton.disabled = session.busy || cellChanged();
+    resize?.update();
+  }
+  function propertyEdit(action) {
+    if (!session.cell || cellChanged()) return null;
+    const tools = window.ReadMDTableStructure, cell = session.cell;
+    if (action === 'merge') return tools.mergeCells(context, cell, Number(rowSpan.value), Number(columnSpan.value));
+    if (action === 'split') return tools.splitCell(context, cell);
+    return tools.alignCell(context, cell, horizontal.value, vertical.value);
+  }
+  function updatePropertyControls() {
+    if (!session.cell) return;
+    const { row, column } = session.cell, { owners } = context.layout;
+    const owner = owners[row][column];
+    const canMerge = propertyEdit('merge');
+    rowSpan.disabled = columnSpan.disabled = session.busy || Boolean(owner);
+    horizontal.disabled = vertical.disabled = session.busy;
+    merge.disabled = session.busy || !canMerge;
+    split.disabled = session.busy || !propertyEdit('split');
+    applyProperties.disabled = session.busy || !propertyEdit('align');
+    const hasRange = rowSpan.value !== '1' || columnSpan.value !== '1';
+    rangeFeedback.textContent = hasRange && !owner && !canMerge && !cellChanged() ? t('editor.tableCellInvalidRange') : '';
+    rangeFeedback.hidden = !rangeFeedback.textContent;
+    const clipRange = session.clipboardRange && clipboard?.rectangle(context, session.clipboardRange.anchor, session.clipboardRange.end);
+    for (const { button, cell } of buttons) {
+      const inRange = clipRange ? cell.row >= clipRange.row && cell.row < clipRange.row + clipRange.height &&
+        cell.column >= clipRange.column && cell.column < clipRange.column + clipRange.width : owner ? owners[cell.row][cell.column] === owner :
+        canMerge && cell.row >= row && cell.row < row + Number(rowSpan.value) &&
+          cell.column >= column && cell.column < column + Number(columnSpan.value);
+      if (inRange) button.dataset.tableInRange = '';
+      else delete button.dataset.tableInRange;
+    }
+  }
+  input.addEventListener('input', () => { updateStructureButtons(); updatePropertyControls(); });
+  function applyStructure(action) { return commitStructure(structuralEdit(action)); }
+  async function commitStructure(edit, keepSelection = false) {
+    if (!current() || session.busy || !edit) return;
+    let resizedCell = null;
+    session.busy = true; input.readOnly = true; apply.disabled = true;
+    updateStructureButtons(); updatePropertyControls();
+    status.textContent = t('review.busy');
+    try {
+      if (edit.edits) {
+        await cmCommitTableClipboard(edit, tab, context.editorDoc, current);
+        if (active()) closeTableModal();
+        return;
+      }
+      const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab, { allowDraft: keepSelection });
+      if (!current() || stamp.editorDoc !== context.editorDoc ||
+          stamp.original !== context.editorDoc.sliceString(edit.from, edit.to)) throw Error('review_stale_generation');
+      // A structural edit would invalidate these anchors. Keep any review
+      // touching the affected lines available for an explicit decision first.
+      const changes = ReadMDReview.snapshot(tab).changes;
+      if (changes.some(change => change.decision !== 'withdrawn' && (edit.affected || [edit]).some(({ from, to }) =>
+        change.from === change.to ? from <= change.from && change.from <= to : change.from < to && from < change.to))) {
+        status.textContent = t('review.conflict'); return;
+      }
+      const options = keepSelection ? { preserveSelection: true, userEvent: 'input.table.resize' } : undefined;
+      const saved = await ReadMDReview.applyManualRange(edit.insert, stamp, tab, current, options);
+      if (!active()) return;
+      if (!keepSelection) { closeTableModal(); return; }
+      const next = cmTableCellContext(view);
+      if (next?.from !== context.from || view.state.doc.toString() !== saved.content) throw Error('review_stale_generation');
+      const { row, column } = session.cell;
+      Object.assign(context, next);
+      for (const item of buttons) item.cell = context.rows[item.cell.row][item.cell.column];
+      structureCache.clear();
+      resizedCell = session.cell = context.rows[row][column];
+      session.stamp = null;
+    } catch (_) {
+      if (tableCellSession === session && getActiveTab() === tab) status.textContent = t('review.conflict');
+    } finally {
+      session.busy = false;
+      if (current()) {
+        input.readOnly = false; updateStructureButtons(); updatePropertyControls(); apply.disabled = !session.stamp;
+        if (resizedCell) void captureSelectedCell(resizedCell, false);
+      }
+    }
+  }
+  async function select(cell, focusInput = true) {
+    if (!current() || session.busy) return;
+    structureCache.clear();
+    session.stamp = null; session.cell = cell; input.value = cell.value ?? cell.content; input.disabled = cell.value === null; apply.disabled = true;
+    const owner = context.layout.owners[cell.row][cell.column], attrs = context.layout.cells[cell.row][cell.column]?.attributes;
+    rowSpan.max = String(cell.row === 0 ? 1 : context.rows.length - cell.row);
+    columnSpan.max = String(context.rows[0].length - cell.column);
+    rowSpan.value = String(owner?.rowspan ?? 1); columnSpan.value = String(owner?.colspan ?? 1);
+    horizontal.value = attrs?.align ?? ''; vertical.value = attrs?.valign ?? '';
+    updateStructureButtons(); updatePropertyControls();
+    label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
+    for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
+    await captureSelectedCell(cell, focusInput);
+  }
+  async function captureSelectedCell(cell, focusInput) {
+    const token = ++session.serial;
+    // Rich content stays visible while its plain-text replacement is disabled.
+    // Geometry actions have their own capture and can still operate on this cell.
+    if (cell.value === null || !tab?.path || tab.path.startsWith('draft:')) { status.textContent = ''; return; }
+    status.textContent = t('review.busy');
+    try {
+      const stamp = await ReadMDReview.captureManualRange(cell.from, cell.contentTo, tab);
+      if (!current() || token !== session.serial) return;
+      if (stamp.editorDoc !== context.editorDoc || stamp.original !== context.editorDoc.sliceString(cell.from, cell.contentTo)) throw Error('review_stale_generation');
+      session.stamp = stamp;
+      if (!session.busy) {
+        apply.disabled = false; status.textContent = '';
+        if (focusInput && !properties.contains?.(document.activeElement) && !grid.contains?.(document.activeElement)) input.focus();
+      }
+    } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
+  }
+  for (const row of context.rows) {
+    const tr = document.createElement('tr');
+    for (const cell of row) {
+      const td = document.createElement(cell.row === 0 ? 'th' : 'td'), button = document.createElement('button');
+      button.type = 'button'; button.className = 'tb-btn'; button.textContent = cell.value ?? cell.content; button.dataset.tableRow = cell.row; button.dataset.tableColumn = cell.column;
+      button.setAttribute('aria-label', t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1)); button.style.width = '100%'; button.style.overflow = 'hidden'; button.style.textOverflow = 'ellipsis';
+      button.addEventListener('click', event => {
+        if (!current() || session.busy) return;
+        const clicked = context.rows[cell.row][cell.column];
+        if (!event?.shiftKey || !session.cell) {
+          session.clipboardRange = null;
+          if (clipboard) button.focus();
+          void select(clicked, !clipboard);
+          return;
+        }
+        if (clipboard) { session.clipboardRange = { anchor: session.cell, end: clicked }; button.focus(); }
+        if (!rowSpan.disabled && cell.row >= session.cell.row && cell.column >= session.cell.column) {
+          properties.open = true;
+          rowSpan.value = String(cell.row - session.cell.row + 1);
+          columnSpan.value = String(cell.column - session.cell.column + 1);
+        }
+        updatePropertyControls();
+      });
+      buttons.push({ button, cell }); td.append(button); resize?.add(cell, td, tr); tr.append(td);
+    }
+    grid.append(tr);
+  }
+  cancel.addEventListener('click', closeTableModal);
+  apply.addEventListener('click', async () => {
+    if (!current() || session.busy || !session.stamp) return;
+    let replacement = cmTableCellReplacement(input.value);
+    if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
+    if (input.value === session.cell.value) { closeTableModal(); return; }
+    const cell = session.cell;
+    if (replacement && context.layout.cells[cell.row][cell.column]) replacement += ' ';
+    const stamp = session.stamp;
+    session.busy = true; apply.disabled = true; input.disabled = true; updateStructureButtons(); updatePropertyControls();
+    try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
+    catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
+    finally { session.busy = false; if (current()) { input.disabled = false; apply.disabled = false; updateStructureButtons(); updatePropertyControls(); } }
+  });
+  clipboard?.bindGrid({ grid, csvButton, pasteCsvButton, context, getCell: () => session.cell, getRange: () => session.clipboardRange,
+    ready: () => current() && !session.busy && !cellChanged(), encodeCell: clipboardTableCell,
+    report: key => { status.textContent = t(key); }, commit: commitStructure });
+  root.append(gridWrap, label, input, properties);
+  if (context.layout.hasSpans) {
+    const locked = document.createElement('p'); locked.className = 'table-cell-structure-status';
+    locked.dataset.i18n = 'editor.tableCellStructureLocked'; locked.textContent = t(locked.dataset.i18n);
+    root.append(locked);
+  }
+  root.append(actions, status);
+  resize?.refresh();
+  void select(context.selected);
+}
+
+/* READMD_LITERAL_TABLE_CELL_HELPERS_END */
 function openTableModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -15733,6 +18597,9 @@ function openTableModal() {
   if (!modal) return;
   const _t = key => window.i18n ? window.i18n.t(key) : key;
   const picker = $('table-grid-picker'), label = $('table-grid-label');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_END */
   $('table-align-controls')?.remove();
   const view = cmView, hit = cmTableAlignmentContext(view);
   if (hit && picker) {
@@ -15758,9 +18625,16 @@ function openTableModal() {
     initTableGridPicker();
   }
   modal.classList.remove('hidden');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_BEGIN */
+  const cell = cmTableCellContext(view);
+  if (cell && picker) { picker.classList.add('hidden'); tableCellControls(view, cell, modal, picker); }
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_END */
 }
 
 function closeTableModal() {
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_END */
   const modal = $('table-modal');
   if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();
@@ -16072,20 +18946,70 @@ function cmSingleCursorLine(view) {
   return { range: r, line };
 }
 
+function cmAttributedTableRows(view, position) {
+  const parseCell = window.ReadMDTableAttributes?.parseCell, syntaxTree = window.ReadMDCodeMirror?.syntaxTree;
+  if (!parseCell || !syntaxTree) return null;
+  const tree = syntaxTree(view.state), doc = view.state.doc;
+  let table;
+  for (const bias of [-1, 1]) {
+    table = tree.resolveInner(position, bias);
+    while (table && table.name !== 'Table') table = table.parent;
+    if (table) break;
+  }
+  if (!table || !doc.sliceString(table.from, table.to).includes('{')) return null;
+  const rows = [];
+  for (let row = table.firstChild; row; row = row.nextSibling) {
+    if (row.name === 'TableHeader' || row.name === 'TableRow') rows.push(row);
+  }
+  return rows.some(row => row.getChildren('TableCell').some(cell => parseCell(doc.sliceString(cell.from, cell.to)))) ? rows : null;
+}
+
+function cmNavigateAttributedTable(view, rows, position, dir) {
+  const doc = view.state.doc, cells = [];
+  for (const row of rows) {
+    const text = doc.sliceString(row.from, row.to), segments = cmTableRowSegments(text);
+    if (!segments) return true;
+    for (const segment of segments) {
+      const raw = text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
+      const content = raw.slice(leading).replace(/[ \t]*$/, '');
+      const attributes = ReadMDTableAttributes.parseCell(content);
+      const from = row.from + segment.from + leading;
+      const length = attributes?.text?.length ?? content.length;
+      cells.push({ from, to: from + length, start: row.from + segment.from, end: row.from + segment.to });
+    }
+  }
+  const current = cells.findIndex(cell => cell.start <= position && position <= cell.end);
+  const target = current >= 0 ? cells[current + dir] :
+    dir > 0 ? cells.find(cell => cell.start > position) : cells.findLast(cell => cell.end < position);
+  if (target) view.dispatch({ selection: { anchor: target.from, head: target.to }, scrollIntoView: true });
+  return true;
+}
+
 /* Tab / Shift+Tab inside a GFM table: realign pipes and jump between cells. */
 function cmTableTab(view, dir) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
-  if (!T || !hit || cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir), 'input.table');
+  if (!T || !hit) return false;
+  const rows = cmAttributedTableRows(view, hit.range.head);
+  if (rows) return cmNavigateAttributedTable(view, rows, hit.range.head, dir);
+  if (cmInCode(view.state, hit.range.head)) return false;
+  const edit = T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir);
+  return edit?.blocked || cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter inside a table adds a row; Enter on an empty last row leaves it. */
 function cmTableEnter(view) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
-  if (!T || !hit || !hit.range.empty || cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableEnterEdit(view.state.doc.toString(), hit.range.head), 'input.table');
+  if (!T || !hit || !hit.range.empty) return false;
+  const rows = cmAttributedTableRows(view, hit.range.head);
+  if (!rows && cmInCode(view.state, hit.range.head)) return false;
+  const edit = rows ? null : T.tableEnterEdit(view.state.doc.toString(), hit.range.head);
+  if (rows || edit?.blocked) {
+    showToast(window.i18n?.t('editor.tableCellStructureLocked') || 'editor.tableCellStructureLocked');
+    return true;
+  }
+  return cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter at the end of an unclosed opening fence (```js) closes the block
@@ -16767,25 +19691,64 @@ function slashOnUpdate(u) {
 
 window.addEventListener('resize', () => { if (slash.open) positionSlashMenu(); });
 
-/* ============================================================
-   Edit bar: view menu (line numbers / focus / typewriter), slash button,
-   keyboard navigation inside the edit-bar menus.
-   ============================================================ */
+;
+'use strict';
 
-function editMenuArrowNav(e) {
-  const items = [...e.currentTarget.querySelectorAll('button')].filter(b => b.offsetParent !== null && !b.disabled);
-  if (!items.length) return;
-  const i = items.indexOf(document.activeElement);
-  let next = null;
-  if (e.key === 'ArrowDown') next = items[(i + 1) % items.length];
-  else if (e.key === 'ArrowUp') next = items[(i - 1 + items.length) % items.length];
-  else if (e.key === 'Home') next = items[0];
-  else if (e.key === 'End') next = items[items.length - 1];
-  if (next) { e.preventDefault(); next.focus(); }
+function closeMdPopups({ restoreFocus = false } = {}) {
+  const bar = $('edit-bar');
+  const trigger = bar.querySelector('[data-menu][aria-expanded="true"]');
+  bar.querySelectorAll('.md-menu:not(.hidden)').forEach(menu => menu.classList.add('hidden'));
+  trigger?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) trigger?.focus({ preventScroll: true });
 }
 
-// Move the original controls, including their bound handlers, into a single
-// overflow menu. Measure translated labels instead of assuming English widths.
+function positionEditorMenu(trigger, menu) {
+  const gap = 8;
+  const anchor = trigger.getBoundingClientRect();
+  const column = $('document-column').getBoundingClientRect();
+  const viewport = document.documentElement;
+  const left = Math.max(gap, column.left + gap);
+  const right = Math.min(viewport.clientWidth - gap, column.right - gap);
+  const top = anchor.bottom + gap;
+  menu.style.inset = 'auto';
+  menu.style.setProperty('--editor-menu-width', Math.max(0, right - left) + 'px');
+  menu.style.setProperty('--editor-menu-height', Math.max(0, viewport.clientHeight - top - gap) + 'px');
+  const width = menu.getBoundingClientRect().width;
+  const rtl = getComputedStyle(trigger).direction === 'rtl';
+  const alignRight = (trigger.id === 'edit-view-trigger') !== rtl;
+  const wanted = alignRight ? anchor.right - width : anchor.left;
+  menu.style.left = Math.max(left, Math.min(wanted, right - width)) + 'px';
+  menu.style.top = top + 'px';
+}
+
+function editorMenuItems(menu) {
+  return [...menu.querySelectorAll('button:not(:disabled), input:not(:disabled)')]
+    .filter(control => control.getClientRects().length);
+}
+
+function editMenuArrowNav(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeMdPopups({ restoreFocus: true });
+    return;
+  }
+  const items = editorMenuItems(event.currentTarget);
+  if (!items.length) return;
+  const index = items.indexOf(document.activeElement);
+  let next;
+  switch (event.key) {
+    case 'ArrowDown': next = items[(index + 1) % items.length]; break;
+    case 'ArrowUp': next = items[(index - 1 + items.length) % items.length]; break;
+    case 'Home': next = items[0]; break;
+    case 'End': next = items.at(-1); break;
+    default: return;
+  }
+  event.preventDefault();
+  next.focus();
+}
+
+// Reuse each command and its listeners when placing it in the overflow menu.
 function bindEditorToolbarOverflow() {
   const bar = $('edit-bar'), menu = $('edit-overflow-menu'), more = $('edit-overflow-wrap'), trigger = $('edit-overflow-trigger');
   if (!bar || !menu || !more || !trigger || bar.dataset.overflowBound) return;
@@ -16793,9 +19756,7 @@ function bindEditorToolbarOverflow() {
   menu.addEventListener('click', event => { if (event.target.closest('button')) closeMdPopups(); });
   const candidates = [
     ['[data-menu="md-text-menu"]', 'editor.text'],
-    ['#formula-open'], ['#edit-slash-btn'],
-    ['#edit-view-trigger', 'editor.view'],
-    ['.md-fmt-group [data-md="strike"]'], ['.md-fmt-group [data-md="code"]'],
+    ['#formula-open'],
     ['[data-menu="md-structure-menu"]', 'editor.structure'],
     ['[data-menu="md-insert-menu"]', 'editor.insert'],
     ['#edit-redo'], ['#edit-undo'], ['.md-fmt-group [data-md="link"]'],
@@ -16803,7 +19764,7 @@ function bindEditorToolbarOverflow() {
   ].map(([selector, heading]) => {
     const button = bar.querySelector(selector);
     if (!button) return null;
-    const popup = heading ? $(button.dataset.menu || 'edit-view-menu') : null;
+    const popup = heading ? $(button.dataset.menu) : null;
     const original = popup ? button.closest('.md-menu-wrap') : button;
     const anchor = document.createComment('editor toolbar position');
     original.before(anchor);
@@ -16816,7 +19777,7 @@ function bindEditorToolbarOverflow() {
       caption.dataset.i18n = heading;
       caption.textContent = window.i18n ? i18n.t(heading) : button.textContent;
       section.append(caption);
-    } else if (button.classList.contains('icon') || button.id === 'edit-slash-btn') {
+    } else if (button.classList.contains('icon')) {
       const label = document.createElement('span');
       label.className = 'editor-overflow-label';
       label.dataset.i18n = button.dataset.i18nAria;
@@ -16862,9 +19823,6 @@ function bindEditorToolbarOverflow() {
           if (required() <= width + .5) break;
         }
       }
-      // Floating menus open inward when their anchor is close to the edge.
-      const r = more.getBoundingClientRect();
-      more.classList.toggle('editor-menu-end', r.left > window.innerWidth / 2);
       if (focused && focused !== document.activeElement && focused.getClientRects().length) focused.focus({ preventScroll:true });
     });
   };
@@ -16875,43 +19833,41 @@ function bindEditorToolbarOverflow() {
 }
 
 function bindEditBarExtras() {
-  const trig = $('edit-view-trigger');
-  const menu = $('edit-view-menu');
-  if (trig && menu && !trig.dataset.bound) {
-    trig.dataset.bound = '1';
-    trig.addEventListener('click', e => {
-      e.stopPropagation();
+  const bar = $('edit-bar');
+  if (bar.dataset.controlsBound) return;
+  bar.dataset.controlsBound = 'true';
+  bar.querySelectorAll('[data-menu]').forEach(trigger => {
+    const menu = $(trigger.dataset.menu);
+    trigger.addEventListener('click', event => {
+      event.stopPropagation();
       const show = menu.classList.contains('hidden');
       closeMdPopups();
-      menu.classList.toggle('hidden', !show);
-      trig.setAttribute('aria-expanded', show ? 'true' : 'false');
-      if (show && e.detail === 0) { const first = menu.querySelector('button'); if (first) first.focus(); }
+      if (!show) return;
+      menu.classList.remove('hidden');
+      trigger.setAttribute('aria-expanded', 'true');
+      positionEditorMenu(trigger, menu);
+      if (event.detail === 0) editorMenuItems(menu)[0]?.focus();
     });
-    [['edit-view-lines', 'lineNumbers'], ['edit-view-focus', 'focus'], ['edit-view-typewriter', 'typewriter'], ['edit-view-ai-completion', 'aiCompletion']].forEach(([id, key]) => {
-      const b = $(id);
-      if (b) b.addEventListener('click', e => { e.stopPropagation(); setEditorPref(key); });
-    });
-  }
-  const slashBtn = $('edit-slash-btn');
-  if (slashBtn && !slashBtn.dataset.bound) {
-    slashBtn.dataset.bound = '1';
-    slashBtn.addEventListener('mousedown', e => e.preventDefault());
-    slashBtn.addEventListener('click', e => { e.stopPropagation(); closeMdPopups(); if (cmView) openSlashAtCursor(cmView); });
-  }
-  document.querySelectorAll('#edit-bar .md-menu').forEach(m => {
-    if (m.dataset.navBound) return;
-    m.dataset.navBound = '1';
-    m.addEventListener('keydown', editMenuArrowNav);
+    menu.addEventListener('keydown', editMenuArrowNav);
   });
-  document.querySelectorAll('#md-tool [data-menu]').forEach(b => {
-    if (b.dataset.ariaBound) return;
-    b.dataset.ariaBound = '1';
-    b.addEventListener('click', e => requestAnimationFrame(() => {
-      const m = $(b.dataset.menu);
-      const open = !!(m && !m.classList.contains('hidden'));
-      b.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open && e.detail === 0) { const first = m.querySelector('button'); if (first) first.focus(); }
-    }));
+  window.addEventListener('resize', () => {
+    const trigger = bar.querySelector('[data-menu][aria-expanded="true"]');
+    if (trigger) positionEditorMenu(trigger, $(trigger.dataset.menu));
+  });
+  const options = [
+    ['edit-view-lines', 'lineNumbers'],
+    ['edit-view-focus', 'focus'],
+    ['edit-view-typewriter', 'typewriter'],
+    ['edit-view-ai-completion', 'aiCompletion'],
+  ];
+  for (const [id, key] of options) {
+    $(id).addEventListener('click', () => setEditorPref(key));
+  }
+  const slashButton = $('edit-slash-btn');
+  slashButton.addEventListener('mousedown', event => event.preventDefault());
+  slashButton.addEventListener('click', () => {
+    closeMdPopups();
+    if (cmView) openSlashAtCursor(cmView);
   });
   applyEditorViewClasses();
   bindEditorToolbarOverflow();
@@ -17102,12 +20058,7 @@ window.ReadMDFormula = (() => {
           byId('formula-source-details').open=true;return;
         }
       }
-      // Use the existing offline MathJax loader, then render from source rather
-      // than HTML. A stale promise never changes another draft or a closed modal.
-      if (!window.MathJax?.tex2svgPromise) { target.textContent = '$$x$$'; renderMath(target); }
-      if (window.MathJax?.startup?.promise) await MathJax.startup.promise;
-      const deadline = Date.now() + 12000;
-      while (!window.MathJax?.tex2svgPromise && Date.now() < deadline) await new Promise(r => setTimeout(r, 40));
+      await ensureMathRenderer();
       if (draft !== current || epoch !== renderEpoch) return;
       if (!window.MathJax?.tex2svgPromise) throw Error('renderer unavailable');
       const prefix = 'rd-formula-token-' + epoch + '-' + Math.random().toString(36).slice(2, 10) + '-';
@@ -17162,13 +20113,31 @@ window.ReadMDFormula = (() => {
     const from = token ? token.from : source.selectionStart;
     const to = token ? token.to : source.selectionEnd;
     if(current.dialect==='dsl'&&!sourceInput){
+      if (current.insertingTemplate) return;
+      const epoch = ++renderEpoch;
+      const previousSource = current.tex;
+      const wasValid = current.valid;
+      current.insertingTemplate = true;
+      current.valid = false;
+      byId('formula-apply').disabled = true;
+      const stillCurrent = () => draft === current && renderEpoch === epoch && current.tex === previousSource;
       try{
         const response=await apiFetch('/api/math/serialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:tex,dialect:'latex',target:'dsl',display:false})});
         const result=await response.json();if(!response.ok||!result.ok)throw Error('invalid');
-        if(draft!==current)return;tex=result.output;
+        if (!stillCurrent()) return;
+        tex=result.output;
         // A catalogue item replaces a slot, not the whole Office root.
         const wrapped=/^office\.oMath\(([\s\S]*)\)$/.exec(tex);if(wrapped)tex=wrapped[1];
-      }catch(_){if(draft===current)byId('formula-error').textContent=tr('formula.invalid');return;}
+      } catch (_) {
+        if (stillCurrent()) {
+          current.valid = wasValid;
+          byId('formula-apply').disabled = !wasValid;
+          byId('formula-error').textContent = tr('formula.invalid');
+        }
+        return;
+      } finally {
+        current.insertingTemplate = false;
+      }
     }
     // Empty, unselected drafts accept a template directly. Existing content is
     // replaced only when the user selected it, never just by opening the picker.
@@ -17200,8 +20169,11 @@ window.ReadMDFormula = (() => {
     renderTemplatePreviews();
   }
   async function renderTemplatePreviews() {
-    if (!draft || !window.MathJax?.tex2svgPromise) return;
+    if (!draft) return;
     const current = draft;
+    try { await ensureMathRenderer(); }
+    catch (_) { return; }
+    if (draft !== current || !window.MathJax?.tex2svgPromise) return;
     for (const button of byId('formula-list').querySelectorAll('[data-template-tex]')) {
       if (!button.isConnected || button.dataset.previewPending) continue;
       button.dataset.previewPending = 'true';
@@ -17313,7 +20285,7 @@ window.ReadMDFormula = (() => {
     byId('formula-more').onclick = () => { pageSize += 72; picker(); };
     byId('formula-mode').addEventListener('change', renderDraft);
     let timer;
-    byId('formula-source').addEventListener('input', () => { if (!draft) return; draft.tex = byId('formula-source').value; draft.valid = false; byId('formula-apply').disabled = true; clearTimeout(timer); timer = setTimeout(renderDraft, 100); });
+    byId('formula-source').addEventListener('input', () => { if (!draft) return; ++renderEpoch; draft.tex = byId('formula-source').value; draft.valid = false; byId('formula-apply').disabled = true; clearTimeout(timer); timer = setTimeout(renderDraft, 100); });
     byId('formula-source').addEventListener('paste', event => { clearTimeout(timer); void pasteExternalFormula(event); });
     byId('formula-token').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); replaceSelection(e.target.value); } });
     byId('formula-token-replace').onclick = () => replaceSelection(byId('formula-token').value);
@@ -18763,6 +21735,93 @@ window.ReadMDAiHarness = (() => {
 
 ;
 'use strict';
+// Strict consumer for the kernel's chat protocol, independent of rendering.
+window.ReadMDChatStream = (() => {
+  function failure(code = 'ai_invalid_response') {
+    if (code === 'cancelled') return new DOMException('cancelled', 'AbortError');
+    const error = new Error(code); error.code = code; return error;
+  }
+  async function consume(response, { signal, taskId, onDelta, onUsage } = {}) {
+    if (signal?.aborted) throw failure('cancelled');
+    if (!(response.headers.get('content-type') || '').toLowerCase().includes('text/event-stream') || !response.body) throw failure();
+    const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
+    let buffer = '', data = [], started = false, done = false, usage = null, bytes = 0, units = 0;
+    const aborted = () => { void reader.cancel().catch(() => {}); };
+    signal?.addEventListener('abort', aborted, { once: true });
+    function frame() {
+      if (signal?.aborted) throw failure('cancelled');
+      if (!data.length) return;
+      let value;
+      try { value = JSON.parse(data.join('\n')); } catch (_) { throw failure(); }
+      data = [];
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure();
+      if (value.task_id !== undefined && value.task_id !== taskId) throw failure();
+      if (value.type === 'error') {
+        const error = failure(/^[a-z][a-z0-9_]{0,95}$/.test(value.error_code || '') ? value.error_code : 'ai_invalid_response');
+        if (/^[1-5][0-9]{2}$/.test(String(value.status || ''))) error.status = Number(value.status);
+        throw error;
+      }
+      if (value.type === 'start') {
+        if (started || value.task_id !== taskId) throw failure();
+        started = true; return;
+      }
+      if (!started) throw failure();
+      if (value.type === 'delta') {
+        if (typeof value.delta !== 'string' || (units += value.delta.length) > 1000000) throw failure();
+        onDelta?.(value.delta);
+      } else if (value.type === 'usage') {
+        if (!value.usage || typeof value.usage !== 'object' || Array.isArray(value.usage)) throw failure();
+        for (const key of ['prompt_tokens', 'completion_tokens', 'total_tokens']) {
+          if (value.usage[key] !== undefined && (!Number.isSafeInteger(value.usage[key]) || value.usage[key] < 0)) throw failure();
+        }
+        usage = value.usage;
+      } else if (value.type === 'done') {
+        if (value.ok !== true || value.task_id !== taskId) throw failure();
+        done = true;
+      } else throw failure();
+    }
+    function lines(eof) {
+      for (;;) {
+        const at = buffer.search(/[\r\n]/);
+        if (at < 0 || (!eof && buffer[at] === '\r' && at + 1 === buffer.length)) return;
+        const line = buffer.slice(0, at), skip = buffer[at] === '\r' && buffer[at + 1] === '\n' ? 2 : 1;
+        buffer = buffer.slice(at + skip);
+        if (!line) { frame(); if (done) return; }
+        else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+        else if (!line.startsWith(':') && !/^(event|id|retry):/.test(line)) throw failure();
+      }
+    }
+    try {
+      while (!done) {
+        if (signal?.aborted) throw failure('cancelled');
+        const next = await reader.read();
+        if (signal?.aborted) throw failure('cancelled');
+        if (next.done) {
+          buffer += decoder.decode(); lines(true);
+          if (!done) throw failure();
+          break;
+        }
+        bytes += next.value.byteLength; if (bytes > 8 * 1024 * 1024) throw failure();
+        buffer += decoder.decode(next.value, { stream: true }); lines(false);
+      }
+      if (signal?.aborted) throw failure('cancelled');
+      if (usage) onUsage?.(usage);
+      return { done: true, usage, utf16Units: units };
+    } catch (error) {
+      if (signal?.aborted) throw failure('cancelled');
+      if (error?.name === 'TypeError') throw failure();
+      throw error;
+    } finally {
+      signal?.removeEventListener('abort', aborted);
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+  return Object.freeze({ consume });
+})();
+
+;
+'use strict';
 /* One confirmed plan owns the rename, reference edits, and local adoption.
    Preview/receipts are data, never authority to open an enclosing directory. */
 window.ReadMDRefactor = (() => {
@@ -19005,7 +22064,7 @@ window.ReadMDRefactor = (() => {
       Object.assign(tab, { mode: 'file', source: 'file', isVirtual: false, path: file.path, dir: file.dir,
         name: file.name, title: file.name, original: file.original ?? file.content, content: file.content, fixed: file.content,
         revision: file.revision, mtime: file.mtime || 0, size: file.size || 0, encoding: file.encoding || tab.encoding,
-        fixes: file.fixes || [], stats: file.stats || {}, isDirty: false, unsavedCreation: false, externalChanged: false });
+        fixes: file.fix_details ?? file.fixes ?? [], stats: file.stats || {}, isDirty: false, unsavedCreation: false, externalChanged: false });
       if (tab.originPath && key(tab.originPath) === key(oldPath)) tab.originPath = file.path;
     }
     if (typeof state !== 'undefined' && Array.isArray(state.folderFiles)) {
@@ -19407,6 +22466,7 @@ function updateAiConnectionSummary() {
   if (summary) summary.textContent = (model && model.value) || (_t('ai.noModel') || '');
   if (!p) return setAiConnectionState('warn', _t('ai.noProvider') || '');
   const local = isLocalAiProvider(p);
+  if (local && !model?.value) return setAiConnectionState('warn', _t('ai.noModel') || '');
   if (local || p.has_key || p.key_source) setAiConnectionState('ready', p.name + ' · ' + (_t('ai.statusReady') || ''));
   else setAiConnectionState('warn', p.name + ' · ' + (_t('ai.needKey') || ''));
 }
@@ -20368,10 +23428,12 @@ async function deleteCurrentTpl() {
 /* ---------------- 对话历史管理 ---------------- */
 
 async function loadAiSessions() {
+  const epoch = state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
   try {
     const r = await apiFetch('/api/ai/history');
     if (!r.ok) return;
     const d = await r.json();
+    if (state.ai.sessionListEpoch !== epoch) return;
     state.ai.sessions = d.sessions || [];
     renderAiSessionSelect();
   } catch (e) { /* ignore */ }
@@ -20379,6 +23441,16 @@ async function loadAiSessions() {
 
 function renderAiSessionSelect() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const select = $('ai-session');
+  if (select) {
+    const selected = state.ai.sessionId || select.value || '';
+    const options = [document.createElement('option')]; options[0].value = '';
+    for (const session of state.ai.sessions || []) {
+      const option = document.createElement('option'); option.value = session.id;
+      option.textContent = session.title || (_t('ai.untitledSession') || ''); options.push(option);
+    }
+    select.replaceChildren(...options); select.value = selected;
+  }
   const list = $('ai-history-list');
   if (!list) return;
   const q = ($('ai-history-search') && $('ai-history-search').value || '').trim().toLowerCase();
@@ -20397,12 +23469,17 @@ function renderAiSessionSelect() {
     load.innerHTML = '<strong></strong><small></small>';
     load.querySelector('strong').textContent = s.title || (_t('ai.untitledSession') || '');
     load.querySelector('small').textContent = fmtTime(s.updated) + ' · ' + (s.msgCount || 0) + ' ' + (_t('ai.msgCountUnit') || '');
-    load.addEventListener('click', async () => { $('ai-session').value = s.id; await onAiSessionChange(); closeAiModal('ai-history-modal'); });
+    load.addEventListener('click', async () => { await onAiSessionChange(s.id); closeAiModal('ai-history-modal'); });
     const rename = document.createElement('button'); rename.className = 'tb-btn'; rename.textContent = _t('tabs.rename') || ''; rename.title = _t('ai.renameSession') || '';
     rename.addEventListener('click', () => renameAiSession(s));
     const del = document.createElement('button'); del.className = 'tb-btn'; del.textContent = _t('tpl.delete') || ''; del.title = _t('ai.deleteSession') || '';
     del.addEventListener('click', async () => {
-      if (!window.confirm((_t('ai.confirmDeleteSession') || '') + (s.title || (_t('ai.untitledSession') || '')) + '？')) return;
+      if (!await confirmAction({
+        title: _t('ai.deleteSession'),
+        message: _t('ai.confirmDeleteSession', { name: s.title || _t('ai.untitledSession') }),
+        confirmText: _t('ai.delete'),
+        danger: true,
+      })) return;
       await deleteAiSessionById(s.id);
     });
     row.append(load, rename, del); list.appendChild(row);
@@ -20411,7 +23488,7 @@ function renderAiSessionSelect() {
 
 async function renameAiSession(summary) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const title = window.prompt(_t('ai.sessionName') || '', summary.title || '');
+  const title = await promptText({ title: _t('ai.sessionName'), value: summary.title || '', confirmText: _t('dialog.save') });
   if (title === null) return;
   const next = title.trim().slice(0, 80);
   if (!next) { showToast(_t('toast.sessionNameEmpty') || ''); return; }
@@ -20432,14 +23509,20 @@ function fmtTime(ts) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 
-async function onAiSessionChange() {
+async function onAiSessionChange(selectedId) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const id = $('ai-session').value;
+  const id = typeof selectedId === 'string' ? selectedId : $('ai-session').value;
   if (!id) return;
+  const epoch = state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.loadingSessionId = id;
+  releaseAiPreparation(state.ai.preparationOwner, true);
+  stopAiChatReply();
   try {
     const r = await apiFetch('/api/ai/history?id=' + encodeURIComponent(id));
+    if (state.ai.sessionEpoch !== epoch) return;
     if (!r.ok) { showToast(_t('toast.loadSessionFail') || ''); return; }
     const s = (await r.json()).session;
+    if (state.ai.sessionEpoch !== epoch) return;
     if (!s) { showToast(_t('toast.sessionNotExist') || ''); return; }
     const savedProvider = (state.ai.providers || []).find(p => p.id === s.provider || p.name === s.provider);
     if (savedProvider) {
@@ -20449,14 +23532,23 @@ async function onAiSessionChange() {
       syncAiKey();
     }
     state.ai.messages = s.messages || [];
+    state.ai.capturedTarget = state.ai.conversationTarget = state.ai.lastSelection = null;
+    state.ai.targetOverride = null;
     state.ai.sessionId = s.id;
+    $('ai-session').value = s.id;
     state.ai.raw = '';
     state.ai.usage = null;
     state.ai.sessUsage = s.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     updateAiUsage();
     renderAiHistory();
     showToast(_t('toast.sessionLoaded') || '');
-  } catch (e) { showToast(_t('toast.loadSessionFail') || ''); }
+  } catch (e) { if (state.ai.sessionEpoch === epoch) showToast(_t('toast.loadSessionFail') || ''); }
+  finally {
+    if (state.ai.sessionEpoch === epoch) {
+      state.ai.loadingSessionId = null;
+      if (!state.ai.aborter) setAiBusy(false);
+    }
+  }
 }
 
 
@@ -20532,7 +23624,7 @@ function decorateAiAnswer(body) {
 
 /* Drop the latest answer (and the question that produced it) and ask again. */
 function regenerateLastAnswer() {
-  if (state.ai.busy) return;
+  if (state.ai.busy || state.ai.preparing) return;
   const msgs = state.ai.messages || [];
   if (!msgs.length || msgs[msgs.length - 1].role !== 'assistant') return;
   msgs.pop();
@@ -20631,7 +23723,7 @@ function renderAiHistory() {
       ab.className = 'ai-msg ai';
       const tag = document.createElement('div');
       tag.className = 'ai-msg-tag';
-      setAiTag(tag, _t('ai.assistant') || '', (m.model || '') + fmtAiUsage(m.usage));
+      setAiTag(tag, _t('ai.assistant') || '', (m.model || '') + (m.incomplete ? ' ' + (_t('ai.stoppedSuffix') || '') : fmtAiUsage(m.usage)));
       const body = document.createElement('div');
       body.className = 'ai-msg-body';
       body.innerHTML = renderSafeMarkdown(m.content);
@@ -20647,17 +23739,20 @@ function renderAiHistory() {
   updateAiRawButtons();
 }
 
-async function saveCurrentSession(silent) {
+async function saveCurrentSession(silent, context) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const epoch = state.ai.sessionEpoch;
+  const ticket = state.ai.sessionSaveEpoch = (state.ai.sessionSaveEpoch || 0) + 1;
+  const current = () => state.ai.sessionEpoch === epoch && state.ai.sessionSaveEpoch === ticket && (!context || state.ai.aborter === context.owner);
   const msgs = (state.ai.messages || []).filter(m => m && !m.ephemeral);
   if (!msgs.length) { if (!silent) showToast((state.ai.messages || []).length ? (_t('toast.incognitoNoSave') || '') : (_t('toast.noConversationContent') || '')); return false; }
   const title = ($('ai-prompt').value.trim() || msgs[0].content || (_t('ai.untitledSession') || '')).slice(0, 40).replace(/\s+/g, ' ');
   const sess = {
-    id: state.ai.sessionId || undefined,
+    id: (context ? context.sessionId : state.ai.sessionId) || undefined,
     title: title,
-    provider: $('ai-provider').value,
-    model: $('ai-model').value,
-    doc: state.mode === 'file' ? (state.file || '') : (state.sourceName || ''),
+    provider: context ? context.provider : $('ai-provider').value,
+    model: context ? context.model : $('ai-model').value,
+    doc: context ? context.doc : state.mode === 'file' ? (state.file || '') : (state.sourceName || ''),
     messages: msgs,
     usage: state.ai.sessUsage,
   };
@@ -20668,31 +23763,26 @@ async function saveCurrentSession(silent) {
     });
     const d = await r.json();
     if (!r.ok || !d.ok) throw new Error(d.error || (_t('toast.saveFailed') || ''));
+    if (!current()) return false;
     state.ai.sessionId = d.session.id;
     await loadAiSessions();
+    if (!current()) return false;
     $('ai-session').value = state.ai.sessionId;
     if (!silent) showToast(_t('toast.sessionSaved') || '');
     return true;
-  } catch (e) { if (!silent) showToast((_t('toast.saveFailed') || '') + e.message); return false; }
+  } catch (e) { if (current() && !silent) showToast((_t('toast.saveFailed') || '') + e.message); return false; }
 }
 
 async function deleteCurrentSession() {
   const id = $('ai-session').value;
-  if (!id) return;
-  try {
-    const r = await apiFetch('/api/ai/history', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', id }),
-    });
-    const d = await r.json();
-    if (!r.ok || !d.ok) throw new Error(d.error || '删除失败');
-    if (state.ai.sessionId === id) { state.ai.sessionId = null; state.ai.messages = []; clearAiOutput(); }
-    await loadAiSessions();
-    showToast(_t('toast.sessionDeleted') || '');
-  } catch (e) { showToast((_t('toast.deleteFailed') || '') + e.message); }
+  if (id) return deleteAiSessionById(id);
 }
 
 function clearAiContext() {
+  state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.loadingSessionId = null;
+  releaseAiPreparation(state.ai.preparationOwner, true);
+  stopAiChatReply(); setAiBusy(false);
   state.ai.capturedTarget = null;
   state.ai.conversationTarget = null;
   state.ai.lastSelection = null;
@@ -20710,7 +23800,20 @@ function clearAiContext() {
 }
 
 
+function releaseAiPreparation(owner, onlyPreparing = false) {
+  if (!owner || state.ai.preparationOwner !== owner || (onlyPreparing && owner.phase !== 'preparing')) return;
+  state.ai.preparing = false; state.ai.preparationOwner = null;
+}
+
+function stopAiChatReply() {
+  const owner = state.ai.aborter;
+  if (owner?.kind !== 'chat') return;
+  owner.abort(); releaseAiPreparation(owner.preparationOwner);
+  state.ai.aborter = null; setAiBusy(false);
+}
+
 function clearAiOutput() {
+  stopAiChatReply();
   state.ai.raw = '';
   state.ai.aborter = null;
   const out = $('ai-output');
@@ -20746,21 +23849,30 @@ function mergeAiProviders(custom, presets) {
   return [...(custom || []), ...(presets || [])];
 }
 
+function aiProviderGroup(provider) {
+  if (provider.source_only) return 'ai.sourcePrefix';
+  if (isLocalAiProvider(provider)) return 'ai.localServices';
+  return provider.custom ? 'ai.customConnections' : 'ai.officialPresets';
+}
+
 function fillAiProviders(merged, current) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const sel = $('ai-provider');
   const curId = (current && (current.provider_id || current.provider)) || (merged[0] && merged[0].id) || '';
   sel.innerHTML = '';
-  const customGroup = document.createElement('optgroup'); customGroup.label = _t('ai.customConnections') || '';
-  const presetGroup = document.createElement('optgroup'); presetGroup.label = _t('ai.officialPresets') || '';
+  const groups = new Map(['ai.localServices', 'ai.customConnections', 'ai.officialPresets'].map(key => {
+    const group = document.createElement('optgroup');
+    group.label = _t(key);
+    group.dataset.i18nLabel = key;
+    return [key, group];
+  }));
   merged.forEach(p => {
     const o = document.createElement('option');
     o.value = p.id;
     o.textContent = p.name;
-    (p.custom ? customGroup : presetGroup).appendChild(o);
+    groups.get(aiProviderGroup(p)).appendChild(o);
   });
-  if (customGroup.children.length) sel.appendChild(customGroup);
-  if (presetGroup.children.length) sel.appendChild(presetGroup);
+  for (const group of groups.values()) if (group.children.length) sel.appendChild(group);
   if (curId) sel.value = curId;
   const cards = $('ai-provider-cards');
   const search = $('ai-provider-search');
@@ -20779,9 +23891,14 @@ function fillAiProviders(merged, current) {
         const title = document.createElement('strong'); title.textContent = p.name || p.id;
         const meta = document.createElement('span');
         const caps = p.capabilities && typeof p.capabilities === 'object' ? Object.keys(p.capabilities).filter(k => p.capabilities[k]).slice(0, 3) : [];
-        const capLabels = { chat: _t('ai.aiResult') || '', models: _t('ai.model') || '', vision: _t('ai.explain') || '', tools: _t('ai.advanced') || '' };
-        const kind = p.source_only ? (_t('ai.sourcePrefix') || '') : (p.custom ? (_t('ai.customConnections') || '') : (_t('ai.officialPresets') || ''));
-        meta.textContent = kind + (caps.length ? ' · ' + caps.map(k => capLabels[k] || k).join(' · ') : '');
+        const capLabels = { chat: 'ai.aiResult', models: 'ai.model', vision: 'ai.explain', tools: 'ai.advanced' };
+        for (const key of [aiProviderGroup(p), ...caps.map(k => capLabels[k]).filter(Boolean)]) {
+          if (meta.childNodes.length) meta.append(' · ');
+          const label = document.createElement('span');
+          label.dataset.i18n = key;
+          label.textContent = _t(key);
+          meta.append(label);
+        }
         const status = document.createElement('i'); status.className = 'ai-provider-state'; status.setAttribute('aria-label', p.has_key ? (_t('ai.keyConfigured') || '') : (_t('ai.noKeyConfigured') || '')); status.textContent = p.has_key ? '●' : '○';
         card.append(title, meta, status);
         if (!p.source_only) card.addEventListener('click', () => { sel.value = p.id; onAiProviderChange(); fillAiProviders(merged, { provider_id: p.id, model: $('ai-model').value }); });
@@ -20812,7 +23929,7 @@ async function resolveSharedAiConnection() {
   return {
     provider: provider.id || provider.name || '',
     credential_id: provider.credential_id || undefined,
-    model: selectedModel || current.model || (provider.models || [])[0] || '',
+    model: selectedModel || (provider.id === currentId ? current.model : '') || (provider.models || [])[0] || '',
     base_url: provider.base_url || undefined,
     mode: provider.mode || (provider.format === 'anthropic' ? 'messages' : 'auto'),
     endpoint_mode: provider.endpoint_mode || 'prefix',
@@ -20938,11 +24055,11 @@ function syncAiKey() {
   inp.value = '';
    inp.placeholder = (p.key_source && p.key_source.indexOf('env:') === 0)
      ? (_t('ai.readFromEnv', { env: p.key_source.slice(4) }) || '')
-     : (isLocalAiProvider(p) ? (_t('ai.apiKeyOllama') || '') : (_t('ai.apiKeyRequired') || ''));
+     : (isLocalAiProvider(p) ? '' : (_t('ai.apiKeyRequired') || ''));
   if (status) {
     status.textContent = p.has_key
       ? (p.key_source ? (_t('ai.keyReady', { source: p.key_source }) || '') : (_t('ai.keyConfigured') || ''))
-       : (isLocalAiProvider(p) ? (_t('ai.localNoKey') || '') : (_t('ai.noKeyConfigured') || ''));
+      : (_t('ai.noKeyConfigured') || '');
   }
   updateAiConnectionSummary();
 }
@@ -20969,21 +24086,38 @@ async function copyText(value, success) {
 async function deleteAiSessionById(id) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!id) return;
+  state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
+  const wasCurrent = state.ai.sessionId === id;
+  const selected = wasCurrent || state.ai.loadingSessionId === id;
+  const epoch = selected ? (state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1) : state.ai.sessionEpoch;
+  if (selected) {
+    state.ai.loadingSessionId = null;
+    releaseAiPreparation(state.ai.preparationOwner, true); stopAiChatReply();
+    if (wasCurrent) { state.ai.sessionId = null; $('ai-session').value = ''; }
+  }
   try {
     const r = await apiFetch('/api/ai/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id }) });
     const d = await r.json(); if (!r.ok || !d.ok) throw new Error(d.error || (_t('toast.deleteFailed') || ''));
-    if (state.ai.sessionId === id) clearAiContext();
+    if (wasCurrent && state.ai.sessionEpoch === epoch) clearAiContext();
     await loadAiSessions(); showToast(_t('toast.sessionDeleted') || '');
   } catch (e) { showToast((_t('toast.deleteFailed') || '') + e.message); }
 }
 
 async function clearAiSessions() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!(state.ai.sessions || []).length || !window.confirm(_t('toast.clearSessionsConfirm') || '')) return;
+  if (!(state.ai.sessions || []).length || !await confirmAction({
+    title: _t('ai.clearHistory'), message: _t('toast.clearSessionsConfirm'), confirmText: _t('ai.clearHistory'), danger: true,
+  })) return;
+  const epoch = state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
+  state.ai.loadingSessionId = null;
+  releaseAiPreparation(state.ai.preparationOwner, true);
+  stopAiChatReply();
   try {
     const r = await apiFetch('/api/ai/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || (_t('toast.clearFailed') || ''));
-    state.ai.sessionId = null; state.ai.sessions = []; fillAiSessions(); showToast(_t('toast.sessionsCleared') || '');
+    if (state.ai.sessionEpoch === epoch) { state.ai.sessionId = null; $('ai-session').value = ''; }
+    await loadAiSessions(); showToast(_t('toast.sessionsCleared') || '');
   } catch (e) { showToast((_t('toast.clearFailed') || '') + e.message); }
 }
 
@@ -21000,14 +24134,20 @@ function newAiProvider() {
   custom.push(p);
   state.ai.providers = mergeAiProviders(custom, state.ai.config.presets || []);
   fillAiProviders(state.ai.providers, { provider_id: p.id, model: '' });
-  $('ai-provider-name').focus(); $('ai-provider-name').select();
+  const nameField = $('ai-provider-name');
+  nameField.closest('details').open = true;
+  nameField.focus();
+  nameField.select();
 }
 
 async function deleteAiProvider() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const p = currentAiProvider();
   if (!p || !p.custom || !state.ai.config) return;
-  if (!window.confirm(_t('toast.customConnDeleteConfirm', { name: p.name }) || ('删除自定义连接“' + p.name + '”？此操作不会影响官方预设。'))) return;
+  if (!await confirmAction({
+    title: _t('ai.deleteProvider'), message: _t('toast.customConnDeleteConfirm', { name: p.name }), confirmText: _t('ai.delete'), danger: true,
+  })) return;
+  if (currentAiProvider()?.id !== p.id || !state.ai.config) return;
   const custom = (state.ai.config.custom || []).filter(c => c.id !== p.id);
   const fallback = (state.ai.config.presets || [])[0] || custom[0] || {};
   const current = { provider_id: fallback.id || '', model: '' };
@@ -21255,7 +24395,7 @@ async function loadAiModels() {
   const endpointMode = $('ai-endpoint-mode') ? ($('ai-endpoint-mode').value || 'prefix') : 'prefix';
   if (!baseUrl) { showToast(_t('toast.enterBaseUrlFirst') || ''); return; }
   let p = currentAiProvider();
-  const local = isLocalAiProvider(p);
+  const local = isLocalAiProvider({ ...p, base_url: baseUrl });
   if (!local && !key && !(p && p.has_key)) { showToast(_t('toast.enterApiKeyFirst') || ''); return; }
   // Persist a newly entered key before discovery so the provider endpoint
   // receives only an opaque credential_id, never a raw secret.
@@ -21347,18 +24487,24 @@ function updateAiUsage() {
 
 async function runAi(action) {
   if (state.ai.busy || state.ai.preparing) return;
+  state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.loadingSessionId = null;
+  const owner = { phase: 'preparing' };
+  state.ai.preparationOwner = owner;
   state.ai.preparing = true;
-  try { return await runAiRequest(action); }
-  finally { state.ai.preparing = false; }
+  try { return await runAiRequest(action, owner); }
+  finally { releaseAiPreparation(owner); }
 }
 
-async function runAiRequest(action) {
+async function runAiRequest(action, preparationOwner) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const epoch = state.ai.sessionEpoch;
+  const current = () => state.ai.sessionEpoch === epoch && (!preparationOwner || state.ai.preparationOwner === preparationOwner);
   state.ai.lastAction = action || (currentAiTemplate() && currentAiTemplate().action) || '';
   captureAiSelection();
   const reviewTab = getActiveTab();
   const reviewStamp = reviewTab && window.ReadMDReview ? await ReadMDReview.capture(reviewTab) : null;
-  if (reviewTab && getActiveTab() !== reviewTab) return;
+  if (!current() || (reviewTab && getActiveTab() !== reviewTab)) return;
   const target = state.ai.targetOverride;
   const targetInfo = target != null
     ? { text: target, isSelection: true, exact: false, from: -1, to: -1, source: getCurrentDocumentText(), tabId: state.activeTabId }
@@ -21371,6 +24517,7 @@ async function runAiRequest(action) {
   const prompt = $('ai-prompt').value.trim();
   if (!text?.trim() && !prompt) { showToast(_t('toast.noDocContentNotice') || ''); return; }
   if (!(await ensureAiConfigured())) return;
+  if (!current() || (reviewTab && getActiveTab() !== reviewTab)) return;
   const p = currentAiProvider();
   if (!p) return;
   state.ai.conversationTarget = targetInfo;
@@ -21409,6 +24556,7 @@ async function runAiRequest(action) {
   // prevents the request from racing the config write and lets the server
   // resolve the opaque credential_id instead of receiving a raw key.
   if (!(await saveAiSelection(true))) return;
+  if (!current() || (reviewTab && getActiveTab() !== reviewTab)) return;
   const activeProvider = currentAiProvider() || p;
   let requestHeaders = {};
   try { requestHeaders = readAiCustomHeaders(); } catch (e) { return; }
@@ -21417,7 +24565,8 @@ async function runAiRequest(action) {
   if (action === 'modify') {
     if (!reviewTab || !reviewStamp || (isSelection && !currentSelectionSnapshot.exact)) { showToast(_t('review.conflict')); return; }
     if (!state.editing) await toggleEdit();
-    if (getActiveTab() !== reviewTab || !state.editing) return;
+    if (!current() || getActiveTab() !== reviewTab || !state.editing) return;
+    if (preparationOwner) preparationOwner.phase = 'task';
     setAiBusy(true);
     const taskId = window.ReadMDTask?.newTaskId('review-ai') || ('review-ai-' + crypto.randomUUID());
     if (window.ReadMDAiHarness && window.READMD_ENGINE === 'rust') {
@@ -21456,6 +24605,7 @@ async function runAiRequest(action) {
     finally { setAiBusy(false); state.ai.aborter = null; }
     return;
   }
+  if (preparationOwner) preparationOwner.phase = 'chat';
   const docs = text.length > 120000 ? text.slice(0, 120000) + '\n\n' + (_t('ai.contentTruncated') || '') : text;
   const fill = s => String(s || '').replace(/\{doc\}/g, docs).replace(/\{prompt\}/g, prompt || '');
   let userMsg;
@@ -21469,7 +24619,8 @@ async function runAiRequest(action) {
   else userMsg = docFollows + '\n\n' + docs;
 
 
-  const msgs = (state.ai.messages || []).slice(-40);
+  const previousMessages = state.ai.messages || [];
+  const msgs = previousMessages.slice(-40);
   msgs.push({ role: 'user', content: userMsg, ephemeral: isIncognito });
 
   const out = $('ai-output');
@@ -21479,7 +24630,7 @@ async function runAiRequest(action) {
   const scopeText = isSelection ? (_t('ai.scopeSelection') || '') : (_t('ai.scopeFull') || '');
   // "动作：提问（全文）" → "提问（全文）": the label prefix is noise in a chat header.
   const userTagText = (resolveAiActionLabel(action, tpl) + scopeText).replace(/^[^：:]{1,8}[：:]\s*/, '');
-  appendAiUserBubble(out, userTagText, userMsg, {
+  const userBubble = appendAiUserBubble(out, userTagText, userMsg, {
     scopeLabel: scopeText, prompt: prompt,
     docLines: docs.split('\n').length, docChars: docs.length,
   });
@@ -21497,14 +24648,26 @@ async function runAiRequest(action) {
   out.scrollTop = out.scrollHeight;
 
   state.ai.raw = '';
+  state.ai.usage = null;
   updateAiRawButtons();
   setAiBusy(true);
   const ctrl = new AbortController();
-  state.ai.aborter = ctrl;
+  const taskId = window.ReadMDTask?.newTaskId('chat') || ('chat-' + crypto.randomUUID());
+  let running = true, cancelPromise = null;
+  const cancel = () => {
+    cancelPromise ||= Promise.resolve(window.ReadMDReview?.cancelAi(taskId, () => running)).catch(() => 'unknown');
+  };
+  ctrl.signal.addEventListener('abort', cancel, { once: true });
+  const owner = { kind: 'chat', preparationOwner, abort: () => ctrl.abort() };
+  state.ai.aborter = owner;
+  const owns = () => state.ai.aborter === owner;
+  const ensureOwner = () => { if (!owns()) { ctrl.abort(); throw new DOMException('cancelled', 'AbortError'); } };
+  const saveContext = { owner, sessionId: state.ai.sessionId, provider: activeProvider.id, model,
+    doc: origin.path || origin.name || '' };
   let renderTimer = null;
   const render = () => {
     renderTimer = null;
-    if (!state.ai.raw) return;
+    if (!owns() || !state.ai.raw) return;
     const follow = out.scrollHeight - out.scrollTop - out.clientHeight < 100;
     aiBody.innerHTML = renderSafeMarkdown(state.ai.raw) + '<span class="streaming-cursor"></span>';
     if (follow) out.scrollTop = out.scrollHeight;
@@ -21513,8 +24676,9 @@ async function runAiRequest(action) {
   try {
     const r = await apiFetch('/api/ai/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
       body: JSON.stringify({
+        task_id: taskId, session: saveContext.sessionId || undefined, incognito: isIncognito,
         provider: activeProvider.id, model: model,
         credential_id: activeProvider.credential_id || undefined,
         base_url: baseUrl || undefined, mode: mode, endpoint_mode: endpointMode, headers: requestHeaders, stream: stream,
@@ -21532,56 +24696,30 @@ async function runAiRequest(action) {
       throw new Error(d.error || ('HTTP ' + r.status));
     }
     const contentType = (r.headers.get('content-type') || '').toLowerCase();
-    if (!stream || contentType.includes('application/json')) {
+    ensureOwner();
+    const accountUsage = usage => {
+      ensureOwner(); state.ai.usage = usage;
+      const s = state.ai.sessUsage;
+      s.prompt_tokens += usage.prompt_tokens || 0;
+      s.completion_tokens += usage.completion_tokens || 0;
+      s.total_tokens += usage.total_tokens || 0;
+      updateAiUsage();
+    };
+    if (contentType.includes('application/json')) {
       const data = await r.json().catch(() => ({}));
+      ensureOwner();
       if (data.error) throw new Error(data.error);
       const text = data.text || data.content || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].text)) || '';
       state.ai.raw = text;
-      if (data.usage) {
-        state.ai.usage = data.usage;
-        const s = state.ai.sessUsage;
-        s.prompt_tokens += data.usage.prompt_tokens || 0;
-        s.completion_tokens += data.usage.completion_tokens || 0;
-        s.total_tokens += data.usage.total_tokens || 0;
-        updateAiUsage();
-      }
+      if (data.usage) accountUsage(data.usage);
     } else {
-      const reader = r.body.getReader();
-      const dec = new TextDecoder('utf-8');
-      let buf = '';
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let idx;
-        while ((idx = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
-          if (line.indexOf('data:') !== 0) continue;
-          const data = line.slice(5).trim();
-          if (!data) continue;
-          let obj;
-          try { obj = JSON.parse(data); } catch (e) { continue; }
-          if (obj.type === 'error' || obj.error) throw new Error(obj.error || 'AI stream error');
-          if (obj.type === 'done' || obj.done) break;
-          const usage = obj.usage || (obj.type === 'usage' ? obj.usage : null);
-          if (usage) {
-            state.ai.usage = usage;
-            const s = state.ai.sessUsage;
-            s.prompt_tokens += usage.prompt_tokens || 0;
-            s.completion_tokens += usage.completion_tokens || 0;
-            s.total_tokens += usage.total_tokens || 0;
-            updateAiUsage();
-            continue;
-          }
-          const delta = obj.type === 'delta' ? obj.delta : obj.d;
-          if (delta === undefined) continue;
-          state.ai.raw += delta;
+      await window.ReadMDChatStream.consume(r, { taskId, signal: ctrl.signal, onUsage: accountUsage,
+        onDelta: delta => { ensureOwner(); state.ai.raw += delta;
           if (!renderTimer) renderTimer = setTimeout(render, state.ai.raw.length > 150000 ? 500 : 120);
-        }
-      }
+        } });
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
     }
+    ensureOwner();
     aiBody.innerHTML = renderSafeMarkdown(state.ai.raw);
     renderMath(aiBody);
     decorateAiAnswer(aiBody);
@@ -21597,13 +24735,15 @@ async function runAiRequest(action) {
       msgs.push(last);
       state.ai.messages = msgs;
       aiBody.appendChild(renderAiBubbleActions(state.ai.raw, last));
-      const saved = isIncognito ? false : await saveCurrentSession(true);
+      const saved = isIncognito ? false : await saveCurrentSession(true, saveContext);
+      ensureOwner();
       updateAiRawButtons();
       showToast(isIncognito ? (_t('toast.aiIncognitoDone') || '') : (saved ? (_t('toast.aiSavedDone') || '') : (_t('toast.aiSaveFailDone') || '')));
     } else {
       msgs.pop();
     }
   } catch (e) {
+    if (!owns()) return;
     if (e.name === 'AbortError') {
       setAiTag(aiTag, _t('ai.assistant') || '', model + ' ' + (_t('ai.stoppedSuffix') || ''));
       const typing = aiBody.querySelector('.ai-typing');
@@ -21614,6 +24754,7 @@ async function runAiRequest(action) {
         const last = {
           role: 'assistant',
           content: state.ai.raw,
+          incomplete: true,
           ephemeral: isIncognito,
           selectionContext: currentSelectionSnapshot
         };
@@ -21621,6 +24762,7 @@ async function runAiRequest(action) {
         msgs.push(last);
         state.ai.messages = msgs;
         aiBody.appendChild(renderAiBubbleActions(state.ai.raw, last));
+        updateAiRawButtons();
       }
       showToast(_t('ai.stopped') || '');
     } else {
@@ -21629,21 +24771,37 @@ async function runAiRequest(action) {
       const hint = aiErrorHint(e);
       setAiConnectionState(hint.kind, hint.summary);
       showToast(hint.message);
-      aiBody.innerHTML = '<p class="ai-err">' + String(e.message).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</p>';
+      const key = 'error.' + (e.code || ''), localized = _t(key);
+      const message = e.code === 'ai_session_save_failed' ? _t('toast.aiSaveFailDone') : localized !== key ? localized : hint.message;
+      aiBody.innerHTML = (state.ai.raw ? renderSafeMarkdown(state.ai.raw) : '') + '<p class="ai-err">' + String(message).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</p>';
+      if (state.ai.raw) {
+        msgs.push({ role: 'assistant', content: state.ai.raw, incomplete: true, ephemeral: isIncognito, selectionContext: currentSelectionSnapshot });
+        state.ai.messages = msgs;
+        renderMath(aiBody); updateAiRawButtons();
+      }
       const retryBtn = document.createElement('button');
       retryBtn.type = 'button';
       retryBtn.className = 'ai-bubble-act-btn ai-retry-btn';
       retryBtn.setAttribute('aria-label', _t('reader.refresh') || '重试');
       retryBtn.innerHTML = '<svg class="tb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;margin-right:4px;"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> <span>' + (_t('reader.refresh') || '重试') + '</span>';
       retryBtn.onclick = () => {
+        if (state.ai.busy || state.ai.preparing || state.ai.sessionEpoch !== epoch) return;
+        if (getActiveTab() !== reviewTab || getCurrentDocumentText() !== currentSelectionSnapshot.source || $('ai-prompt').value.trim() !== prompt || getAiTargetText().text !== text) {
+          showToast(_t('review.conflict')); return;
+        }
+        if (state.ai.messages === msgs) state.ai.messages = previousMessages;
+        userBubble.remove();
         aiBubble.remove();
         runAi(action);
       };
       aiBody.appendChild(retryBtn);
     }
   } finally {
-    setAiBusy(false);
-    state.ai.aborter = null;
+    if (renderTimer) clearTimeout(renderTimer);
+    ctrl.signal.removeEventListener('abort', cancel);
+    if (cancelPromise) await cancelPromise;
+    running = false;
+    if (owns()) { setAiBusy(false); state.ai.aborter = null; }
   }
 }
 
@@ -21696,14 +24854,14 @@ function aiConversationMarkdown(session) {
   if (s.provider) lines.push('> ' + (_t('ai.providerPrefix') || '') + String(s.provider).slice(0, 120));
   if (s.model) lines.push('> ' + (_t('ai.modelPrefix') || '') + String(s.model).slice(0, 160));
   if (s.updated || s.created) lines.push('> ' + (_t('ai.timePrefix') || '') + fmtTime(s.updated || s.created));
-  (s.messages || []).forEach(m => { if (m && (m.role === 'user' || m.role === 'assistant') && m.content) lines.push('', '## ' + (m.role === 'user' ? (_t('ai.userRole') || '') : (_t('ai.assistantRole') || '')), '', String(m.content)); });
+  (s.messages || []).forEach(m => { if (m && (m.role === 'user' || m.role === 'assistant') && m.content) lines.push('', '## ' + (m.role === 'user' ? (_t('ai.userRole') || '') : (_t('ai.assistantRole') || '') + (m.incomplete ? ' ' + (_t('ai.stoppedSuffix') || '') : '')), '', String(m.content)); });
   return lines.join('\n').trim() + '\n';
 }
 
 async function selectedConversationMarkdown() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   let id = state.ai.sessionId || $('ai-session').value;
-  if (!id && (state.ai.messages || []).length) return aiConversationMarkdown({ title: _t('ai.currentSession') || '', provider: $('ai-provider').value, model: $('ai-model').value, messages: state.ai.messages });
+  if ((state.ai.messages || []).length) return aiConversationMarkdown({ title: (state.ai.sessions || []).find(s => s.id === id)?.title || (_t('ai.currentSession') || ''), provider: $('ai-provider').value, model: $('ai-model').value, messages: state.ai.messages });
   if (!id) throw new Error(_t('toast.selectOrFinishSession') || '');
   const r = await apiFetch('/api/ai/history?id=' + encodeURIComponent(id)); const d = await r.json();
   if (!r.ok || !d.session) throw new Error(d.error || (_t('toast.sessionNotExist') || ''));
@@ -21823,7 +24981,8 @@ function bindAiResize() {
 
 function aiErrorHint(error) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const raw = String((error && error.message) || error || (_t('toast.unknownError') || ''));
+  const raw = error?.status ? 'HTTP ' + error.status : String((error && error.message) || error || (_t('toast.unknownError') || ''));
+  if (error?.code === 'ai_session_save_failed' || /ai_session_save_failed/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('error.ai_session_save_failed') };
   if (/provider_model_unavailable/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('ai.selectModel') };
   if (/401|403|auth|key|token|鉴权|密钥/i.test(raw)) return { kind: 'error', summary: _t('ai.authFailSummary') || '', message: _t('ai.authFailMsg') || '' };
   if (/429|rate.?limit|限流|too many/i.test(raw)) return { kind: 'warn', summary: _t('ai.rateLimitSummary') || '', message: _t('ai.rateLimitMsg') || '' };
@@ -22052,7 +25211,7 @@ window.addEventListener('readmd:language-changed', () => {
     return true;
   }
   async function createCopy() {
-    const origin = getActiveTab(); if (!origin || origin._restoreUnavailable) return;
+    const origin = getActiveTab(); if (!origin || origin._restoreUnavailable || origin.mode === 'office-preview') return;
     const snap = capture(origin);
     const base = snap.name.replace(/\.[^.]+$/, '');
     let name = base + '-' + t('storage.copySuffix') + '.md', n = 2;
@@ -22110,6 +25269,7 @@ window.addEventListener('readmd:language-changed', () => {
       await flush();
       const data = await request();
       if (epoch !== listEpoch) return;
+      updateHistoryButton(data.entries);
       const list = $('document-history-list'); list.replaceChildren();
       for (const entry of data.entries) {
         const row = document.createElement('article'); row.className = 'document-history-row';
@@ -22146,6 +25306,15 @@ window.addEventListener('readmd:language-changed', () => {
     $('document-history-refresh').textContent = t('storage.refresh');
     $('document-history-modal').classList.remove('hidden'); await refresh();
   }
+  function updateHistoryButton(entries) {
+    if (entries) recoveryCount = entries.filter(entry => ['draft','discarded','math_draft','math_recovery'].includes(entry.kind)).length;
+    const button = $('btn-document-history');
+    if (!button) return;
+    const label = t('storage.history');
+    const hint = recoveryCount ? label + ' · ' + t('storage.recoveryAvailable', { count: recoveryCount }) : label;
+    button.title = hint;
+    button.setAttribute('aria-label', hint);
+  }
   function init() {
     if (initialized) return; initialized = true;
     $('btn-document-history').addEventListener('click', open);
@@ -22153,8 +25322,7 @@ window.addEventListener('readmd:language-changed', () => {
     if (!window.__STARTUP_PROBE__) setTimeout(async () => {
       try {
         const data = await request();
-        recoveryCount = data.entries.filter(entry => ['draft','discarded','math_draft','math_recovery'].includes(entry.kind)).length;
-        if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
+        updateHistoryButton(data.entries);
       } catch (_) { /* Opening recovery provides an explicit retry with feedback. */ }
     }, 3000);
     document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
@@ -22165,32 +25333,40 @@ window.addEventListener('readmd:language-changed', () => {
   async function prepareClose() {
     if (closing) return false;
     closing = true;
+    const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
     try {
       if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
       if (state.editing) syncActiveTabDirty();
-      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return false;
       if (await flush() === false) return false;
       if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
+      if (window.ReadMDMediaTranscribe && !await window.ReadMDMediaTranscribe.prepareClose()) return false;
       if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
       if (!await confirmExitChanges()) return false;
+      if (window.ReadMDCodeRuns && !await window.ReadMDCodeRuns.cancelAll()) { showToast(t('task.cancelRetry')); return false; }
       if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
       const unchanged=closeStamp();
-      if (await window.ReadMDSession?.flush() === false) return false;
+      if (await window.ReadMDSession?.flush(false, true) === false) return false;
       await queue;
-      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return false;
       if (!unchanged()) return false;
+      if (window.ReadMDOffice && !await window.ReadMDOffice.prepareClose()) return false;
       window.ipc?.postMessage('readmd:quit');
       return true;
-    } finally { closing = false; }
+    } finally { releaseCode?.(); closing = false; }
   }
   async function prepareInstall() {
+    const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
+    try {
     if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
     if (state.editing) syncActiveTabDirty();
     if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
     if (await flush() === false) return false;
     if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
+    if (window.ReadMDMediaTranscribe && !await window.ReadMDMediaTranscribe.prepareClose()) return false;
     if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
     if (!await confirmExitChanges()) return false;
+    if (window.ReadMDCodeRuns && !await window.ReadMDCodeRuns.cancelAll()) { showToast(t('task.cancelRetry')); return false; }
     if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
     const unchanged=closeStamp();
     if (await window.ReadMDSession?.flush() === false) return false;
@@ -22198,6 +25374,7 @@ window.addEventListener('readmd:language-changed', () => {
     if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
     if (!unchanged()) return false;
     return true;
+    } finally { releaseCode?.(); }
   }
   function closeStamp() {
     const tabs=[...state.tabs], expected=tabs.map(tab=>({tab,path:tab.path,content:capture(tab).content}));
@@ -22276,7 +25453,7 @@ window.addEventListener('readmd:language-changed', () => {
     mathDrafts, saveMathDraft, removeMathDraft, mathKept:()=>feedback('storage.draftKept') };
   window.addEventListener('readmd:language-changed', () => {
     if (lastFeedback) feedback(lastFeedback.key, lastFeedback.params, lastFeedback.failed);
-    if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
+    updateHistoryButton();
     if ($('document-history-modal') && !$('document-history-modal').classList.contains('hidden')) open();
   });
 })();
@@ -22440,7 +25617,7 @@ async function changeShare(start) {
 // only when opened. Creating a session never writes the source document.
 window.ReadMDCollaborationShare=(()=>{
   let active,loading,registry;
-  const tr=k=>i18n.t(k),current=()=>getActiveTab();
+  const tr=(k,args)=>i18n.t(k,args),current=()=>getActiveTab();
   const content=tab=>((current()===tab&&state.editing)?getEditContent():(tab?.isDirty?tab.content:tab?.original)??tab?.content??'').replace(/\r\n?/g,'\n');
   const identity=tab=>tab?.path?normalizePath(tab.path):(tab?.recoveryKey||'draft:'+tab?.id);
   function binding(operation,key,value){
@@ -22458,11 +25635,12 @@ window.ReadMDCollaborationShare=(()=>{
     const data=await r.json();if(!r.ok||!data.ok){const error=Error(data.error_code||'collaboration_failed');error.status=r.status;throw error;}return data;
   }
   function libraries(){
-    return loading||=(async()=>{for(const[name,url]of[['ReadMDCRDT','/assets/vendor/yjs.bundle.js'],['ReadMDCollaborationSession','/assets/collaboration/session.js']])if(!window[name])await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=url;script.onload=()=>window[name]?resolve():reject(Error('collaboration_failed'));script.onerror=reject;document.head.append(script);});})().catch(error=>{loading=null;throw error;});
+    return loading||=(async()=>{for(const[name,url]of[['ReadMDCRDT','/assets/vendor/yjs.bundle.js'],['ReadMDCollaborationSession','/assets/collaboration/session.js'],['ReadMDCollaborationReviews','/assets/collaboration/reviews.js']])if(!window[name])await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=url;script.onload=()=>window[name]?resolve():reject(Error('collaboration_failed'));script.onerror=reject;document.head.append(script);});})().catch(error=>{loading=null;throw error;});
   }
   function link(){const url=new URL(active.url);url.hash=new URLSearchParams({room:active.credential.room,token:active.credential.token,lang:i18n.currentLang||'en'});return url.href;}
   function bound(tab=current()){return !!(active?.session&&tab?.id===active.tabId);}
-  function status(key){const note=document.getElementById('collaboration-note');if(note)note.textContent=tr(key)+' · '+tr('collaboration.nativeSaveHint');if(active&&active.status!==key&&['collaboration.revoked','collaboration.storageError','collaboration.conflict'].includes(key))showToast(tr(key));if(active)active.status=key;}
+  function status(key){const note=document.getElementById('collaboration-note');const readOnly=key==='collaboration.reader'||key==='collaboration.reviewer';if(note)note.textContent=(readOnly?tr('collaboration.role')+': ':'')+tr(key)+(readOnly&&active?.session?.pending()?' · '+tr('storage.draftKept'):'')+' · '+tr('collaboration.nativeSaveHint');if(active&&active.status!==key&&['collaboration.revoked','collaboration.storageError','collaboration.conflict'].includes(key))showToast(tr(key));if(active)active.status=key;}
+  function syncStatus(target){const session=target.session;status(session.revoked()?'collaboration.revoked':!session.canEdit()?'collaboration.'+session.role():session.pending()?'collaboration.syncing':'collaboration.synced');}
   function selection(target){
     const Y=ReadMDCRDT,s=target.session,view=bound()&&state.editing?cmView:null;
     const range=view?.state.selection.main||{anchor:0,head:0};
@@ -22492,52 +25670,60 @@ window.ReadMDCollaborationShare=(()=>{
   async function synchronize(target=active){
     if(!target?.session||!target.ready||target.stopped||target.syncing)return;
     target.syncing=true;
-    try{const data=await target.session.sync();if(active!==target||!data)return;status(target.session.pending()?'collaboration.syncing':'collaboration.synced');const signature=JSON.stringify(data.peers);if(signature!==target.peerSignature){target.peerSignature=signature;target.peers=data.peers;target.member=data.member;target.generation=(target.generation||0)+1;if(bound()&&state.editing&&cmView)cmView.dispatch({});}}
-    catch(error){if(active!==target)return;if(error.status===403){target.stopped=true;status('collaboration.revoked');}else status('collaboration.offline');}
+    try{const data=await target.session.sync();if(active!==target||!data)return;syncStatus(target);target.reviews?.permissions();const signature=JSON.stringify(data.peers);if(signature!==target.peerSignature){target.peerSignature=signature;target.peers=data.peers;target.member=data.member;target.generation=(target.generation||0)+1;if(bound()&&state.editing&&cmView)cmView.dispatch({});}}
+    catch{if(active!==target)return;if(target.session.revoked()){clearInterval(target.timer);clearInterval(target.reviewTimer);target.reviews?.permissions();target.peers=[];target.generation=(target.generation||0)+1;document.getElementById('collaboration-open').hidden=true;if(bound()&&state.editing&&cmView)cmView.dispatch({});}if(!target.session.stopped())status(target.session.revoked()?'collaboration.revoked':'collaboration.offline');}
     finally{target.syncing=false;}
   }
   async function start(candidate){
     const button=document.getElementById('collaboration-start'),tab=state.tabs.includes(candidate)?candidate:current();if(active||!tab)return false;button.disabled=true;
-    const original=content(tab),valid=()=>state.tabs.includes(tab)&&content(tab)===original;let target,record;
+    const original=content(tab),valid=()=>state.tabs.includes(tab)&&content(tab)===original;let target,record,denied;
     try{
       record=await binding('get',identity(tab));await libraries();if(!valid())throw Error('transaction_conflict');
-      if(record){const resumed=await request('resume',{},record);target={...resumed,credential:record.credential,bindingKey:record.key};}
+      if(record){
+        if(tab.externalChanged||(tab.revision||'')!==record.baseRevision)throw Error('transaction_conflict');
+        try{const resumed=await request('resume',{},record);target={...resumed,credential:record.credential,bindingKey:record.key};}
+        catch(error){if(error.status!==403)throw error;denied=error;target={credential:record.credential,bindingKey:record.key};}
+      }
       else target=await request('create',{title:tab.name||'ReadMD.md',content:original});target.tabId=tab.id;
       if(!valid())throw Error('transaction_conflict');
       active=target;
-      const open=document.getElementById('collaboration-open');open.href=link();open.hidden=false;
-      if(record&&(tab.externalChanged||(tab.revision||'')!==record.baseRevision))throw Error('transaction_conflict');
       target.session=await ReadMDCollaborationSession.open({Y:ReadMDCRDT,...target.credential,reset:!!record?.discarded,api:(op,body)=>request(op,body,target),presence:()=>selection(target),onBeforeChange:()=>beforeChange(target),canApplyRemote:()=>!(bound()&&state.editing&&(cmView?.composing||cmView?.compositionStarted)),onStorageFailure:()=>{target.stopped=true;status('collaboration.storageError');}});
       if(record&&tab.isDirty&&target.session.text.toString()!==original)throw Error('transaction_conflict');
-      target.session.setMetadata({role:record?target.snapshot.role:'owner',title:tab.name});
+      target.session.setMetadata({role:record?target.snapshot?.role:'owner',title:tab.name});
       // Bootstrap the authoritative CRDT without inserting a duplicate copy.
-      await target.session.sync();if(!valid())throw Error('transaction_conflict');
+      if(denied)await target.session.revoke();
+      else try{await target.session.sync();}catch(error){if(!record||!target.session.revoked())throw error;}
+      if(!valid())throw Error('transaction_conflict');
+      if(target.session.revoked()&&!target.session.hasLocalCopy())throw denied||Object.assign(Error('collaboration_forbidden'),{status:403});
       if(!record&&target.session.text.toString()!==original)throw Error('transaction_conflict');
       target.ready=true;target.session.text.observe(event=>{if(event.transaction.origin!==target.session.local)applyText(target);});
-      await remember(target);applyText(target);status('collaboration.synced');
-      target.timer=setInterval(()=>synchronize(target),500);return true;
-    }catch(error){if(target){await target.session?.dispose().catch(()=>{});target.session=null;target.ready=false;if(!record){await request('close',{},target).catch(()=>{});await binding('delete',target.bindingKey||identity(tab)).catch(()=>{});}}if(error.status===403&&record){await binding('delete',record.key).catch(()=>{});record=null;}if(!record&&active===target)active=null;status(error.message==='transaction_conflict'?'collaboration.conflict':error.status===403?'collaboration.revoked':'collaboration.failed');button.disabled=!!active;return false;}
+      await remember(target);applyText(target);syncStatus(target);
+      const reviewPanel=document.getElementById('collaboration-review-panel');reviewPanel.hidden=false;
+      target.reviews=ReadMDCollaborationReviews.mount({root:document.getElementById('collaboration-reviews'),api:(op,body)=>request(op,body,target),session:target.session,tr,flush:async()=>{if(active!==target||!target.ready)throw Error('changed');const data=await target.session.sync();if(!data||target.session.pending())throw Error('changed');syncStatus(target);},getContent:()=>content(tab),getSelection:()=>bound()&&state.editing&&cmView?{from:cmView.state.selection.main.from,to:cmView.state.selection.main.to}:null});
+      if(!target.session.revoked()){const open=document.getElementById('collaboration-open');open.href=link();open.hidden=false;target.timer=setInterval(()=>synchronize(target),500);target.reviewTimer=setInterval(()=>target.reviews.refresh(),4000);}
+      return true;
+    }catch(error){if(target){await target.session?.dispose().catch(()=>{});target.session=null;target.ready=false;if(!record){await request('close',{},target).catch(()=>{});await binding('delete',target.bindingKey||identity(tab)).catch(()=>{});}}if(active===target)active=null;status(error.message==='transaction_conflict'?'collaboration.conflict':error.status===403?'collaboration.revoked':'collaboration.failed');button.disabled=!!active;return false;}
   }
   function onEditorUpdate(update){
     const target=active;if(!bound()||!target.ready||target.applying)return;
     if(!update.docChanged)return;
-    if(target.stopped||target.session.stopped())return;
+    if(target.stopped||!target.session.canEdit())return;
     const before=update.startState.doc.toString();
     if(before!==target.session.text.toString()){target.stopped=true;status('collaboration.conflict');return;}
     const changes=[];update.changes.iterChanges((from,to,_a,_b,insert)=>changes.push({from,to,insert:insert.toString()}));
     const isolated=update.transactions.some(tx=>!tx.isUserEvent('input.type')&&!tx.isUserEvent('delete.backward')&&!tx.isUserEvent('delete.forward'));
     target.session.applyChanges(changes,isolated);status('collaboration.syncing');
   }
-  function history(redo=false){if(!bound())return false;const target=active;if(!target.ready||target.stopped)return true;redo?target.session.undo.redo():target.session.undo.undo();void synchronize();return true;}
+  function history(redo=false){if(!bound())return false;const target=active;if(!target.ready||target.stopped||!target.session.canEdit())return true;redo?target.session.undo.redo():target.session.undo.undo();void synchronize();return true;}
   async function detach(tab=current(),discarded=false){
     const target=active;if(!target||(tab&&tab.id!==target.tabId))return true;
-    clearInterval(target.timer);target.ready=false;active=null;if(state.editing&&cmView)cmView.dispatch({});
+    clearInterval(target.timer);clearInterval(target.reviewTimer);target.reviews?.dispose();document.getElementById('collaboration-review-panel').hidden=true;target.ready=false;active=null;if(state.editing&&cmView)cmView.dispatch({});
     await remember(target,false,discarded).catch(()=>{});
     await target.session?.dispose().catch(()=>{});
     document.getElementById('collaboration-start').disabled=false;document.getElementById('collaboration-open').hidden=true;document.getElementById('collaboration-note').textContent='';return true;
   }
-  async function end(){const target=active;if(!target)return true;await synchronize(target);if(target.session?.pending()){status('collaboration.offline');return false;}try{await request('close');await detach(state.tabs.find(tab=>tab.id===target.tabId));if(target.bindingKey)await binding('delete',target.bindingKey);return true;}catch{status('collaboration.failed');return false;}}
-  async function prepareClose(){const target=active;if(!target?.session)return true;try{await target.session.checkpoint(true);await remember(target);try{await target.session.sync();}catch{status('collaboration.offline');}await target.session.checkpoint(true);return true;}catch{status('collaboration.storageError');return false;}}
+  async function end(){const target=active;if(!target)return true;await synchronize(target);const tab=state.tabs.find(tab=>tab.id===target.tabId);if(target.session?.revoked()?tab?.isDirty:target.session?.pending()){syncStatus(target);return false;}try{if(!target.session?.revoked())await request('close');await detach(tab);if(target.bindingKey)await binding('delete',target.bindingKey);return true;}catch{status('collaboration.failed');return false;}}
+  async function prepareClose(){const target=active;if(!target?.session)return true;try{await target.session.checkpoint(true);await remember(target);await synchronize(target);await target.session.checkpoint(true);return true;}catch{status('collaboration.storageError');return false;}}
   async function documentSaved(tab){if(bound(tab))try{await remember(active);}catch{active.stopped=true;status('collaboration.storageError');}}
   async function restore(){try{if(active)return;const records=await binding('all'),record=records.filter(r=>r.enabled).sort((a,b)=>b.updated-a.updated).find(r=>state.tabs.some(tab=>identity(tab)===r.key));if(record){const tab=state.tabs.find(tab=>identity(tab)===record.key);await start(tab);}}catch{/* Basic reading is independent of optional collaboration storage. */}}
   function editorExtension(CM){
@@ -22569,13 +25755,15 @@ window.ReadMDCollaborationShare=(()=>{
     const startButton=document.createElement('button');startButton.id='collaboration-start';startButton.className='tb-btn';startButton.type='button';startButton.dataset.i18n='collaboration.start';startButton.textContent=tr('collaboration.start');startButton.onclick=start;
     const open=document.createElement('a');open.id='collaboration-open';open.className='tb-btn';open.hidden=true;open.dataset.i18n='collaboration.open';open.textContent=tr('collaboration.open');open.target='_blank';open.rel='noopener noreferrer';open.onclick=e=>{if(window.py?.open_external){e.preventDefault();py.open_external(open.href);}};
     const close=document.createElement('button');close.type='button';close.id='collaboration-end';close.className='tb-btn';close.dataset.i18n='collaboration.close';close.textContent=tr('collaboration.close');close.onclick=end;
-    const note=document.createElement('p');note.id='collaboration-note';note.setAttribute('role','status');details.append(summary,startButton,open,close,note);panel.append(details);
+    const note=document.createElement('p');note.id='collaboration-note';note.setAttribute('role','status');
+    const reviewPanel=document.createElement('details');reviewPanel.id='collaboration-review-panel';reviewPanel.hidden=true;const reviewSummary=document.createElement('summary');reviewSummary.dataset.i18n='collaboration.review';reviewSummary.textContent=tr('collaboration.review');const reviews=document.createElement('div');reviews.id='collaboration-reviews';reviewPanel.append(reviewSummary,reviews);
+    details.append(summary,startButton,open,close,note,reviewPanel);panel.append(details);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
   addEventListener('online',()=>synchronize());
-  addEventListener('readmd:language-changed',()=>{if(active){if(active.status)status(active.status);document.getElementById('collaboration-open').href=link();active.generation=(active.generation||0)+1;if(bound()&&state.editing&&cmView)cmView.dispatch({});}});
-  addEventListener('beforeunload',event=>{if(active?.session?.pending()){event.preventDefault();event.returnValue='';}});
-  return {start,request,end,detach,bound,onEditorUpdate,history,editorExtension,restore,documentSaved,sync:synchronize,prepareClose,canEdit:()=>!bound()||!(active.stopped||active.session.stopped()),pending:()=>active?.session?.pending()||0};
+  addEventListener('readmd:language-changed',()=>{if(active){if(active.status)status(active.status);active.reviews?.language();if(active.url&&!active.session?.revoked())document.getElementById('collaboration-open').href=link();active.generation=(active.generation||0)+1;if(bound()&&state.editing&&cmView)cmView.dispatch({});}});
+  addEventListener('beforeunload',event=>{if(active?.session?.pending()||active?.session?.pendingReviews()){event.preventDefault();event.returnValue='';}});
+  return {start,request,end,detach,bound,onEditorUpdate,history,editorExtension,restore,documentSaved,sync:synchronize,prepareClose,canEdit:()=>!bound()||(!active.stopped&&active.session.canEdit()),pending:()=>active?.session?.pending()||0};
 })();
 
 ;
@@ -22587,7 +25775,67 @@ window.ReadMDCollaborationShare=(()=>{
 /* ---------------- 批量转换（转 MD） ---------------- */
 
 const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-let convertLastDir = null;
+
+// Optional extraction receipts are read-only. Older converters/jobs omit them.
+window.ReadMDConversionReport = (() => {
+  const codes = new Set(['original_layout', 'floating_objects', 'embedded_objects', 'presentation_effects', 'spreadsheet_formulas', 'formula_cache_missing', 'charts', 'native_math', 'review_markup', 'sheet_layout', 'hidden_content', 'header_footer', 'inspection_incomplete']);
+  const statuses = new Set(['preserved', 'extracted', 'review', 'not_preserved', 'not_checked']);
+  let modal;
+  function translated(node, key) { node.dataset.i18n = key; node.textContent = _t(key); return node; }
+  function entries(report) {
+    if (report?.schema !== 1 || report.scope !== 'structural' || !Array.isArray(report.findings)) return null;
+    return report.findings.slice(0, 128).filter(item => item && typeof item === 'object').map(item => ({
+      code: codes.has(item.code) ? item.code : 'inspection_incomplete',
+      status: codes.has(item.code) && statuses.has(item.status) ? item.status : 'not_checked',
+      count: Number.isSafeInteger(item.count) && item.count > 0 && item.count <= 1000000000 ? item.count : null,
+      warning: item.severity === 'warning',
+    }));
+  }
+  function content(items) {
+    const body = document.createElement('div'); body.className = 'conversion-fidelity-body';
+    const hint = translated(document.createElement('p'), 'convert.fidelity.scope'); body.appendChild(hint);
+    const list = document.createElement('ul');
+    for (const item of items) {
+      const row = document.createElement('li'); if (item.warning) row.className = 'conversion-fidelity-warning';
+      const name = translated(document.createElement('span'), 'convert.fidelity.code.' + item.code);
+      const state = translated(document.createElement('span'), 'convert.fidelity.status.' + item.status); state.className = 'conversion-fidelity-state';
+      row.append(name, state);
+      if (item.count !== null) { const count = document.createElement('span'); count.className = 'conversion-fidelity-count'; count.textContent = String(item.count); row.appendChild(count); }
+      list.appendChild(row);
+    }
+    if (items.length) body.appendChild(list);
+    else body.appendChild(translated(document.createElement('p'), 'convert.fidelity.status.not_checked'));
+    return body;
+  }
+  function attach(row, report) {
+    const items = entries(report); if (!items || row.querySelector('.conversion-fidelity')) return;
+    const details = document.createElement('details'); details.className = 'conversion-fidelity';
+    details.append(translated(document.createElement('summary'), 'convert.fidelity.title'), content(items));
+    // Expanding a report must not open its output file or activate the row.
+    details.addEventListener('click', event => event.stopPropagation());
+    details.addEventListener('keydown', event => event.stopPropagation());
+    row.appendChild(details);
+    if (row.dataset.out) {
+      row.setAttribute('role', 'group'); row.removeAttribute('tabindex');
+      const name = row.querySelector('.batch-name'); if (name) { name.tabIndex = 0; name.setAttribute('role', 'button'); }
+    }
+  }
+  function show(report, source) {
+    const items = entries(report); if (!items) return false;
+    if (!modal) {
+      modal = document.createElement('div'); modal.id = 'conversion-fidelity-modal'; modal.className = 'modal hidden'; modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-labelledby', 'conversion-fidelity-title');
+      const box = document.createElement('section'); box.className = 'modal-dialog conversion-fidelity-box';
+      const header = document.createElement('header'); header.className = 'modal-header';
+      const title = translated(document.createElement('h3'), 'convert.fidelity.title'); title.id = 'conversion-fidelity-title';
+      const close = translated(document.createElement('button'), 'toolbar.close'); close.type = 'button'; close.className = 'tb-btn'; close.dataset.modalClose = ''; close.onclick = () => window.ReadMDModal.close(modal); header.append(title, close);
+      const name = document.createElement('p'); name.id = 'conversion-fidelity-source';
+      const body = document.createElement('div'); body.id = 'conversion-fidelity-content'; box.append(header, name, body); modal.appendChild(box); document.body.appendChild(modal);
+    }
+    modal.querySelector('#conversion-fidelity-source').textContent = typeof source === 'string' ? source.split(/[\\/]/).pop().slice(0, 256) : '';
+    modal.querySelector('#conversion-fidelity-content').replaceChildren(content(items)); window.ReadMDModal.open(modal); return true;
+  }
+  return { show, attach };
+})();
 
 function currentSpeechLanguage() {
   try { return localStorage.getItem('readmd.transcribe.language') || 'auto'; }
@@ -22602,15 +25850,9 @@ function initSpeechLanguage() {
 }
 
 async function openConvertModal() {
-  const note = $('convert-note');
-  if (note) note.textContent = state.win7 ? (_t('convert.noteWin7') || 'Win7 版仅支持 docx / pdf 转 Markdown；转换结果自动保存为源文件同目录同名 .md。') : (_t('convert.note') || '转换结果自动保存为源文件同目录同名 .md（如 report.docx → report.md）。docx 公式、PDF 表格走专用解析，其余格式自动回退通用转换；输出经过严格校验（表格 / 代码围栏 / 公式 / 图片引用）。');
-  $('convert-modal').classList.remove('hidden');
-  initSpeechLanguage();
-  if (typeof batchFinished !== 'undefined' && !batchFinished && (batchJobId || Object.keys(batchRowsBySrc).length || (!batchOcrDone && $('convert-list').children.length))) return;
-  $('convert-list').innerHTML = '';
-  $('convert-status').textContent = '';
-  $('batch-cancel')?.classList.add('hidden');
-  $('convert-open-dir').classList.add('hidden');
+  openBatchModal();
+  await restoreBatchWorkbench();
+  void refreshBatchHistory();
 }
 
 function closeConvertModal() {
@@ -22645,14 +25887,12 @@ async function pickConvertFolder() {
   try { dir = await py.choose_folder(state.folder || state.dir || ''); } catch (e) { dir = null; }
   if (!dir) return;
   try {
-    const r = await apiFetch('/api/convert/collect?dir=' + encodeURIComponent(dir));
+    const r = await apiFetch('/api/convert/collect?workbench=1&dir=' + encodeURIComponent(dir));
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || (_t('convert.statusError') || '收集失败'));
+    if (!r.ok) throw new Error(apiMessage(d, 'convert.statusError'));
     const files = d.files || [];
     if (!files.length) { showToast(_t('convert.noConvertibleFiles') || '该目录下没有可转换的文件'); return; }
-    convertLastDir = dir;
     await startBatchConvert(files, $('convert-overwrite').checked);
-    batchFolderRoot = dir;
   } catch (e) { showToast((_t('toast.collectFilesFail') || '收集文件失败：') + e.message); }
 }
 
@@ -22697,8 +25937,9 @@ async function ocrFileOnce(path) {
     }
     if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return false; }
     if (!r.ok) { showToast(apiMessage(d, 'toast.ocrFail') || 'OCR 失败'); return false; }
-    if (!d.content || d.empty) { showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return false; }
+    if (!d.content || d.empty) { window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path); showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return false; }
     await renderVirtual('ocr', d.name, d.dir, d.content, d.fixes);
+    window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
     return true;
   } catch (e) { showToast((_t('toast.ocrFailPrefix') || 'OCR 失败：') + e.message); return false; }
   finally { busy(false); }
@@ -22815,9 +26056,8 @@ async function openPluginModal() {
   const modal = $('plugin-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
-  window.refreshOfflineCapabilityPack?.();
   setPluginListStatus(_t('plugin.loading'));
-  await refreshPluginList();
+  await Promise.all([window.refreshOfflineCapabilityPack?.(), refreshPluginList()]);
 }
 
 function closePluginModal() {
@@ -23077,11 +26317,10 @@ function renderPluginCards(plugins) {
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
-    metaParts.push(p.requires_model && isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
+    if (p.requires_model && isCached) metaParts.push(_t('plugin.cacheReady'));
 
     const capBadge = capName ? `
       <span class="plugin-capability-badge">
-        ${p.enabled ? '<span class="plugin-pulse-pip"></span>' : ''}
         ${escapeHtml(capName)}${isExclusive ? ' · ' + escapeHtml(_t('plugin.exclusiveNotice')) : ''}
       </span>
     ` : '';
@@ -23164,13 +26403,11 @@ function renderPluginCards(plugins) {
             <h4 class="plugin-card-title">${escapeHtml(title)}</h4>
             ${capBadge}
           </div>
-          <div class="plugin-card-submeta">
-            ${escapeHtml(metaParts.join(' · '))}
-          </div>
+          ${metaParts.length ? `<div class="plugin-card-submeta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+          <p class="plugin-card-desc">${escapeHtml(desc)}</p>
+          ${progressHtml}
         </div>
       </div>
-      <p class="plugin-card-desc">${escapeHtml(desc)}</p>
-      ${progressHtml}
       <div class="plugin-card-foot">
         <div class="plugin-foot-left">${footLeft}</div>
         <div class="plugin-foot-right">${footRight}</div>
@@ -23323,6 +26560,669 @@ async function startPluginUninstall(id, name) {
 
 ;
 'use strict';
+
+(function () {
+  const extensions = '.mp3,.wav,.m4a,.mp4,.flac,.ogg,.webm,.aac,.wma,.mkv,.mov,.avi';
+  const text = (key, values) => window.i18n.t('mediaTranscribe.' + key, values);
+  const taskKey = 'media-transcription';
+  const fallbackPreviewMs = 15_000;
+  let dialog, file, result, checkpoint, playback, audioContext;
+  let choosing = false, working = false, saving = false, loadingDraft = false, draftRead = false;
+  let activeTask, draftTimer, draftWrite, draftRevision = null, generation = 0, writtenGeneration = 0;
+
+  const field = name => dialog.querySelector('#media-' + name);
+  const setStatus = message => { field('status').textContent = message; };
+  const saveError = error => {
+    const message = window.i18n.t('storage.recoveryFailed', { error: errorMessage(error.message) });
+    field('storage-status').textContent = message;
+  };
+  const basename = path => path.split(/[\\/]/).pop();
+  const dirname = path => path.slice(0, path.length - basename(path).length);
+  const suggested = name => name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|\r\n]/g, '_') || 'transcript';
+
+  const errors = {
+    cancelled: 'task.cancelled',
+    file_not_found: 'error.file_not_found',
+    unsupported_media_format: 'error.unsupported_format',
+    ffmpeg_unavailable: 'mediaTranscribe.ffmpegMissing',
+    speech_engine_unavailable: 'plugin.native.unavailable',
+    speech_language_unavailable: 'convert.speechLanguage',
+    speech_no_result: 'toast.ocrNoText',
+    media_probe_failed: 'toast.convertFailed',
+    media_decode_failed: 'toast.convertFailed',
+    media_audio_empty: 'mediaTranscribe.rangeInvalid',
+    media_selection_invalid: 'mediaTranscribe.rangeInvalid',
+    media_audio_track_invalid: 'mediaTranscribe.rangeInvalid',
+    media_range_too_long: 'mediaTranscribe.rangeInvalid',
+    media_source_changed: 'mediaTranscribe.sourceChanged',
+    media_busy: 'mediaTranscribe.busy',
+    media_timeout: 'mediaTranscribe.timeout',
+    media_recognition_failed: 'toast.convertFailed',
+    media_playback_unavailable: 'export.previewFailed',
+    media_subtitles_extension: 'error.unsupported_format',
+    dialog_unavailable: 'error.dialog_unavailable',
+    target_open_in_another_tab: 'storage.targetOpen',
+    media_draft_conflict: 'error.review_save_conflict',
+    media_draft_invalid: 'toast.saveFailedSimple',
+    media_draft_unavailable: 'toast.saveFailedSimple',
+    media_resume_conflict: 'mediaTranscribe.rangeInvalid',
+    media_resume_required: 'ai.taskPaused',
+  };
+
+  function errorMessage(code) {
+    const label = window.i18n.t(Object.hasOwn(errors, code) ? errors[code] : 'toast.unknownError');
+    if (code === 'media_subtitles_extension') return label + ' (.vtt)';
+    if (code === 'speech_language_unavailable') return label + ' · ' + window.i18n.t('plugin.native.unavailable');
+    return label;
+  }
+
+  function translate() {
+    if (!dialog) return;
+    const t = key => window.i18n.t(key);
+    window.i18n.translateDOM(dialog);
+    if (!file?.media) return;
+    const decoderStatus = [t('plugin.ffmpegStatus'), t('plugin.ffmpegReady')];
+    if (!file.decoder.managed) decoderStatus.push('PATH');
+    field('decoder').textContent = decoderStatus.join(' · ');
+    const engine = file.recognizer.engine === 'whisper.cpp' ? 'whisper.cpp' : 'Windows';
+    field('recognizer').textContent = file.recognizer.available
+      ? [engine, t('plugin.category.audio')].join(' · ') : t('plugin.native.unavailable');
+    field('range-hint').textContent = text('maxRange', { seconds: selectionLimit() / 1000 });
+    field('language').options[0].textContent = t(speechAutoKey(file));
+    for (const option of field('track').options) {
+      option.textContent = trackLabel(file.media.tracks.find(track => track.index === Number(option.value)));
+    }
+  }
+
+  function init() {
+    if (dialog) return;
+    dialog = document.createElement('div');
+    dialog.id = 'media-transcribe-modal';
+    dialog.className = 'modal-overlay hidden';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'media-title');
+    dialog.innerHTML = `
+      <section class="modal-dialog media-transcribe-box">
+        <header class="modal-header">
+          <h3 id="media-title" data-i18n="convert.av"></h3>
+          <button id="media-close" type="button" class="tb-btn" data-modal-close data-i18n="toolbar.close"></button>
+        </header>
+        <div class="media-transcribe-body">
+          <div class="media-transcribe-file">
+            <button id="media-choose" type="button" class="tb-btn" data-modal-initial data-i18n="export.openFile"></button>
+            <span id="media-filename"></span>
+            <button id="media-clear-draft" type="button" class="tb-btn hidden" data-i18n="storage.delete"></button>
+          </div>
+          <input id="media-input" type="file" accept="${extensions}" hidden>
+          <div id="media-capabilities" class="media-transcribe-hints hidden">
+            <span id="media-decoder"></span>
+            <span id="media-recognizer"></span>
+          </div>
+          <fieldset id="media-selection" class="media-transcribe-selection hidden">
+            <label><span data-i18n="mediaTranscribe.audioTrack"></span><select id="media-track"></select></label>
+            <label><span data-i18n="convert.speechLanguage"></span><select id="media-language"></select></label>
+            <label><span data-i18n="mediaTranscribe.from"></span><input id="media-from" type="number" min="0" step=".001" aria-describedby="media-range-hint"></label>
+            <label><span data-i18n="mediaTranscribe.to"></span><input id="media-to" type="number" min="0" step=".001" aria-describedby="media-range-hint"></label>
+            <span id="media-range-hint"></span>
+          </fieldset>
+          <div id="media-result" class="media-transcribe-result hidden">
+            <label for="media-cue" data-i18n="mediaTranscribe.cues"></label>
+            <div class="media-transcribe-cue">
+              <select id="media-cue"></select>
+              <button id="media-play-cue" type="button" class="tb-btn" data-i18n="mediaTranscribe.playCue"></button>
+            </div>
+            <label for="media-cue-text" data-i18n="mediaTranscribe.cueText"></label>
+            <textarea id="media-cue-text" rows="4" maxlength="16000"></textarea>
+            <div class="media-transcribe-actions">
+              <button id="media-open-markdown" type="button" class="tb-btn" data-i18n="app.open"></button>
+              <button id="media-save-vtt" type="button" class="tb-btn"><span data-i18n="export.exportAction"></span> WebVTT</button>
+            </div>
+          </div>
+          <p id="media-progress" role="status" aria-live="polite"></p>
+          <p id="media-status" role="status" aria-live="polite"></p>
+          <p id="media-storage-status" role="status" aria-live="polite"></p>
+        </div>
+        <footer class="modal-footer media-transcribe-actions">
+          <button id="media-stop" type="button" class="tb-btn hidden" data-i18n="ai.stop"></button>
+          <button id="media-preview" type="button" class="tb-btn hidden" data-i18n="editor.preview"></button>
+          <button id="media-cancel" type="button" class="tb-btn hidden" data-i18n="task.cancel"></button>
+          <button id="media-start" type="button" class="tb-btn accent hidden" data-i18n="mediaTranscribe.start"></button>
+          <button id="media-resume" type="button" class="tb-btn accent hidden" data-i18n="ai.taskResume"></button>
+        </footer>
+      </section>`;
+    document.body.append(dialog);
+    field('close').addEventListener('click', close);
+    field('choose').addEventListener('click', choose);
+    field('clear-draft').addEventListener('click', clearDraft);
+    field('input').addEventListener('change', async event => {
+      const [selected] = event.target.files;
+      if (!selected) return;
+      await runTask(async task => {
+        const path = await uploadFile(selected);
+        if (path && !task.isCancelled()) await inspect(path, task.id);
+      }, false);
+    });
+    field('track').addEventListener('change', () => { resetRange(); markDraft(); });
+    for (const key of ['from', 'to', 'language']) {
+      field(key).addEventListener('input', () => { updateActions(); markDraft(); });
+    }
+    field('preview').addEventListener('click', () => {
+      const selected = selection();
+      if (selected) play(file, selected);
+    });
+    field('stop').addEventListener('click', stopPlayback);
+    field('cancel').addEventListener('click', () => {
+      if (activeTask?.stepping) activeTask.stopRequested = true;
+    });
+    field('start').addEventListener('click', () => start(false));
+    field('resume').addEventListener('click', () => start(true));
+    field('cue').addEventListener('change', setCueLabel);
+    field('cue-text').addEventListener('input', event => {
+      const cue = currentCue();
+      if (cue) { cue.text = event.target.value; markDraft(); }
+    });
+    field('play-cue').addEventListener('click', () => {
+      const cue = currentCue();
+      if (cue) play(result.file, { track: result.track, start_ms: cue.start_ms, end_ms: cue.end_ms });
+    });
+    field('open-markdown').addEventListener('click', openMarkdown);
+    field('save-vtt').addEventListener('click', saveVtt);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flushDraft(); });
+    window.addEventListener('pagehide', () => { flushDraft(); });
+  }
+
+  async function open() {
+    await window.__readmdPreferencesReady;
+    init();
+    translate();
+    updateActions();
+    ReadMDModal.open(dialog);
+    if (!draftRead && !loadingDraft) await restoreDraft();
+  }
+
+  async function close() {
+    if (working || choosing || saving || loadingDraft) return;
+    stopPlayback();
+    await flushDraft();
+    ReadMDModal.close(dialog);
+  }
+
+  function currentRange() {
+    if (!file.media) return file.range;
+    return {
+      track: Number(field('track').value), from: field('from').value,
+      to: field('to').value, language: field('language').value,
+    };
+  }
+
+  function captureDraft() {
+    if (!file) return null;
+    const transcript = result && Object.fromEntries(
+      ['name', 'track', 'start_ms', 'end_ms', 'language', 'engine', 'cues'].map(key => [key, result[key]]),
+    );
+    return {
+      path: file.path, source_revision: file.source_revision,
+      range: currentRange(), transcript: transcript || null,
+    };
+  }
+
+  function markDraft() {
+    generation++;
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(flushDraft, 250);
+  }
+
+  function flushDraft() {
+    clearTimeout(draftTimer);
+    if (draftWrite) return draftWrite;
+    if (writtenGeneration === generation) return Promise.resolve(true);
+    draftWrite = (async () => {
+      try {
+        if (!draftRead) {
+          const saved = await request({ operation: 'draft_load' });
+          if (saved.draft) throw Error('media_draft_conflict');
+          draftRevision = saved.revision;
+          draftRead = true;
+        }
+        while (writtenGeneration !== generation) {
+          const writing = generation;
+          const saved = await request({
+            operation: 'draft_save', revision: draftRevision, draft: captureDraft(),
+          });
+          draftRevision = saved.revision;
+          checkpoint = saved.checkpoint || null;
+          writtenGeneration = writing;
+        }
+        field('storage-status').textContent = file ? window.i18n.t('storage.kind.draft') : '';
+        return true;
+      } catch (error) {
+        saveError(error);
+        return false;
+      }
+    })().finally(() => { draftWrite = null; });
+    return draftWrite;
+  }
+
+  async function restoreDraft() {
+    loadingDraft = true;
+    updateActions();
+    try {
+      const saved = await request({ operation: 'draft_load' });
+      draftRevision = saved.revision;
+      checkpoint = saved.checkpoint || null;
+      draftRead = true;
+      if (!saved.draft) return;
+      const draft = saved.draft;
+      // Keep corrected captions usable even when the original cannot be reopened.
+      file = {
+        path: draft.path, source_revision: draft.source_revision,
+        range: draft.range, max_preview_ms: fallbackPreviewMs,
+      };
+      field('filename').textContent = basename(file.path);
+      if (draft.transcript) renderCues(draft.transcript);
+      field('storage-status').textContent = window.i18n.t('storage.kind.draft');
+      await runTask(task => inspect(draft.path, task.id, draft));
+    } catch (error) {
+      saveError(error);
+    } finally {
+      loadingDraft = false;
+      updateActions();
+    }
+  }
+
+  async function clearDraft() {
+    if (!file || working || choosing || saving || loadingDraft) return;
+    const t = key => window.i18n.t(key);
+    if (!await confirmAction({
+      title: t('storage.delete'), message: t('storage.deleteConfirm'),
+      confirmText: t('storage.delete'), cancelText: t('common.cancel'), danger: true,
+    })) return;
+    saving = true;
+    updateActions();
+    try {
+      if (!await flushDraft()) return;
+      const removed = await request({ operation: 'draft_save', revision: draftRevision, draft: null });
+      draftRevision = removed.revision;
+      stopPlayback();
+      file = null;
+      result = null;
+      checkpoint = null;
+      field('filename').textContent = '';
+      for (const key of ['selection', 'capabilities', 'result']) field(key).classList.add('hidden');
+      field('storage-status').textContent = '';
+      setStatus('');
+    } catch (error) {
+      saveError(error);
+    } finally {
+      saving = false;
+      updateActions();
+    }
+  }
+
+  async function prepareClose() {
+    if (!dialog) return true;
+    const job = activeTask;
+    if (job) {
+      if (!job.canCancel) return false;
+      if (job.stepping) job.stopRequested = true;
+      if (!job.stepping || job.processing) {
+        const cancelled = await ReadMDTask.requestCancel(job.id);
+        if (cancelled === 'unknown' && job === activeTask && (!job.stepping || job.processing)) {
+          showToast(window.i18n.t('task.cancelRetry'));
+          return false;
+        }
+      }
+      await job.done.catch(() => {});
+    }
+    if (choosing || saving) return false;
+    await stopPlayback();
+    return flushDraft();
+  }
+
+  async function choose() {
+    if (working || choosing || saving || loadingDraft) return;
+    if (!hasPy) {
+      field('input').value = '';
+      field('input').click();
+      return;
+    }
+    choosing = true;
+    updateActions();
+    try {
+      const path = await py.choose_any_file();
+      if (path) await runTask(task => inspect(path, task.id));
+    } catch (error) {
+      setStatus(errorMessage(error.message));
+    } finally {
+      choosing = false;
+      updateActions();
+    }
+  }
+
+  async function request(payload) {
+    const body = JSON.stringify(payload);
+    const response = await apiFetch('/api/transcribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+      keepalive: payload.operation === 'draft_save' && document.hidden && body.length < 20_000,
+    });
+    if (response.ok && payload.operation === 'preview') return response.arrayBuffer();
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw Error(data.error_code || 'media_request_failed');
+    return data;
+  }
+
+  async function runTask(run, canCancel = true, stepping = false) {
+    if (working) return;
+    working = true;
+    updateActions();
+    const id = ReadMDTask.newTaskId('media');
+    const job = activeTask = { id, canCancel, stepping };
+    job.done = ReadMDTask.run(taskKey, context => run({
+      ...context, id, stopped: () => job.stopRequested || context.isCancelled(),
+      processing: running => { job.processing = running; },
+    }), {
+      status: field('status'),
+      cancel: canCancel ? { id, button: field('cancel') } : undefined,
+    });
+    try {
+      await job.done;
+    } catch (error) {
+      setStatus(errorMessage(error.message));
+    } finally {
+      activeTask = null;
+      working = false;
+      updateActions();
+    }
+  }
+
+  function speechAutoKey(origin) {
+    return origin.recognizer.engine === 'whisper.cpp' ? 'ocr.engineAuto' : 'convert.speechAuto';
+  }
+
+  function trackLabel(track) {
+    return [text('audioTrack') + ' ' + (file.media.tracks.indexOf(track) + 1),
+      track.title, track.language, track.codec].filter(Boolean).join(' · ');
+  }
+
+  async function inspect(path, taskId, restored) {
+    const data = await request({
+      path, operation: 'inspect', task_id: taskId, source_revision: restored?.source_revision,
+    });
+    const priorRange = file?.source_revision === data.source_revision ? currentRange() : null;
+    stopPlayback();
+    file = { ...data, path };
+    if (priorRange) {
+      if (result) result.file = file;
+    } else {
+      result = null;
+      checkpoint = null;
+      field('result').classList.add('hidden');
+    }
+    field('filename').textContent = basename(path);
+    field('track').replaceChildren(...file.media.tracks.map(track => new Option(trackLabel(track), track.index)));
+    const preferredTrack = file.media.tracks.find(track => track.index === priorRange?.track)
+      || file.media.tracks.find(track => track.default) || file.media.tracks[0];
+    field('track').value = preferredTrack.index;
+    const preferred = priorRange?.language || currentSpeechLanguage();
+    const languages = (file.recognizer.languages || []).filter(language => language.code !== 'auto');
+    field('language').replaceChildren(new Option(window.i18n.t(speechAutoKey(file)), 'auto'),
+      ...languages.map(language => new Option(language.name, language.code)));
+    field('language').value = languages.find(language => language.code === preferred || language.code.split('-')[0] === preferred)?.code || 'auto';
+    field('capabilities').classList.remove('hidden');
+    field('selection').classList.remove('hidden');
+    resetRange();
+    if (preferredTrack.index === priorRange?.track) {
+      field('from').value = priorRange.from;
+      field('to').value = priorRange.to;
+    }
+    translate();
+    if (!restored) { markDraft(); await flushDraft(); }
+  }
+
+  function selectionLimit() {
+    return file.max_task_selection_ms ?? file.max_selection_ms;
+  }
+
+  function resetRange() {
+    const track = file.media.tracks.find(track => track.index === Number(field('track').value));
+    const limit = track.start_ms + selectionLimit();
+    const end = Math.min(track.end_ms ?? file.media.duration_ms ?? limit, limit);
+    field('from').value = track.start_ms / 1000;
+    field('to').value = end / 1000;
+    updateActions();
+  }
+
+  function selection() {
+    if (!file?.media) return null;
+    const from = Math.round(field('from').valueAsNumber * 1000);
+    const to = Math.round(field('to').valueAsNumber * 1000);
+    if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to <= from) return null;
+    return { track: Number(field('track').value), start_ms: from, end_ms: to };
+  }
+
+  function updateActions() {
+    const locked = working || choosing || saving || loadingDraft;
+    const interval = selection();
+    field('close').disabled = locked;
+    field('choose').disabled = locked;
+    field('clear-draft').classList.toggle('hidden', !file);
+    field('clear-draft').disabled = locked;
+    field('selection').disabled = locked;
+    field('language').disabled = !file?.recognizer?.available;
+    field('preview').classList.toggle('hidden', !file?.media);
+    field('preview').disabled = locked || !interval;
+    const available = Boolean(file?.media && file.recognizer.available);
+    const paused = checkpoint && !checkpoint.done;
+    const matches = paused && interval && samePlan(checkpoint, interval, field('language').value);
+    field('start').classList.toggle('hidden', !available || Boolean(matches));
+    field('start').disabled = locked || !interval || interval.end_ms - interval.start_ms > selectionLimit();
+    field('resume').classList.toggle('hidden', !available || !paused);
+    field('resume').disabled = locked;
+    field('stop').classList.toggle('hidden', !playback);
+    for (const key of ['cue', 'cue-text', 'play-cue', 'save-vtt', 'open-markdown']) field(key).disabled = locked;
+    field('progress').textContent = paused && !working
+      ? window.i18n.t('ai.taskPaused') + ' · ' + checkpointProgress(checkpoint) : '';
+  }
+
+  function samePlan(saved, interval, language) {
+    return saved.language === language && ['track', 'start_ms', 'end_ms']
+      .every(key => saved.selection[key] === interval[key]);
+  }
+
+  function checkpointProgress(saved) {
+    const { start_ms: from, end_ms: to } = saved.selection;
+    return timestamp(saved.next_ms - from, false) + ' / ' + timestamp(to - from, false);
+  }
+
+  function applyCheckpoint(data) {
+    draftRevision = data.revision;
+    checkpoint = data.checkpoint || null;
+    if (data.draft?.transcript) renderCues(data.draft.transcript);
+    field('storage-status').textContent = window.i18n.t('storage.kind.draft');
+    updateActions();
+  }
+
+  async function start(resume) {
+    const continuation = resume ? checkpoint : null;
+    const interval = continuation?.selection || selection();
+    if (!file?.recognizer?.available || !interval || working || (resume && (!continuation || continuation.done))) return;
+    const language = continuation?.language || field('language').value;
+    if (continuation) {
+      field('track').value = interval.track;
+      field('from').value = interval.start_ms / 1000;
+      field('to').value = interval.end_ms / 1000;
+      field('language').value = language;
+      markDraft();
+    }
+    stopPlayback();
+    await runTask(async task => {
+      if (!await flushDraft()) return;
+      let current = continuation;
+      try {
+        while (!task.stopped()) {
+          task.processing(true);
+          let outcome;
+          try {
+            outcome = await request({
+              path: file.path, source_revision: file.source_revision, operation: 'transcribe_step',
+              ...interval, language, task_id: task.id, draft_revision: draftRevision,
+              checkpoint_id: current?.id || null, cursor_ms: current?.next_ms ?? null,
+            });
+          } finally {
+            task.processing(false);
+          }
+          applyCheckpoint(outcome);
+          if (!checkpoint) throw Error('media_request_failed');
+          if (checkpoint.done) {
+            if (!checkpoint.has_cues) setStatus(errorMessage('speech_no_result'));
+            return;
+          }
+          if (current?.next_ms === checkpoint.next_ms) throw Error('media_resume_conflict');
+          current = checkpoint;
+          task.progress(checkpointProgress(current));
+        }
+        if (!checkpoint || checkpoint.done) setStatus(window.i18n.t('task.cancelled'));
+      } catch (error) {
+        try {
+          const data = await request({ operation: 'draft_load' });
+          if (data.draft?.path === file.path && data.draft.source_revision === file.source_revision) applyCheckpoint(data);
+        } catch (_) { /* Keep already displayed committed cues. */ }
+        throw error;
+      }
+    }, true, true);
+  }
+
+  function renderCues(data) {
+    result = { ...data, file };
+    field('cue').replaceChildren(...result.cues.map((cue, index) =>
+      new Option(`${timestamp(cue.start_ms)} – ${timestamp(cue.end_ms)}`, index)));
+    field('result').classList.remove('hidden');
+    setCueLabel();
+  }
+
+  function currentCue() {
+    return result?.cues[Number(field('cue').value)];
+  }
+
+  function setCueLabel() {
+    field('cue-text').value = currentCue()?.text || '';
+  }
+
+  function stopPlayback() {
+    if (!playback) return;
+    const active = playback;
+    playback = null;
+    if (active.node) active.node.stop();
+    updateActions();
+    if (active.requested) return ReadMDTask.requestCancel(active.id);
+  }
+
+  async function play(origin, interval) {
+    stopPlayback();
+    const active = { id: ReadMDTask.newTaskId('media-preview'), requested: false, node: null };
+    playback = active;
+    updateActions();
+    try {
+      const Context = window.AudioContext || window.webkitAudioContext;
+      if (!Context) throw Error('media_playback_unavailable');
+      audioContext ||= new Context();
+      await audioContext.resume();
+      if (playback !== active) return;
+      active.requested = true;
+      const bytes = await request({
+        path: origin.path, source_revision: origin.source_revision, operation: 'preview',
+        ...interval, task_id: active.id,
+        end_ms: Math.min(interval.end_ms, interval.start_ms + origin.max_preview_ms),
+      });
+      active.requested = false;
+      if (playback !== active) return;
+      const buffer = await audioContext.decodeAudioData(bytes);
+      if (playback !== active) return;
+      active.node = audioContext.createBufferSource();
+      active.node.buffer = buffer;
+      active.node.connect(audioContext.destination);
+      active.node.addEventListener('ended', () => {
+        if (playback === active) { playback = null; updateActions(); }
+      }, { once: true });
+      active.node.start();
+    } catch (error) {
+      if (playback !== active) return;
+      playback = null;
+      setStatus(errorMessage(error.message));
+      updateActions();
+    }
+  }
+
+  function timestamp(time, precision = true) {
+    const digits = value => String(value).padStart(2, '0');
+    const hours = Math.floor(time / 3600000);
+    const short = digits(Math.floor(time / 60000) % 60) + ':' + digits(Math.floor(time / 1000) % 60);
+    if (!precision && !hours) return short;
+    return digits(hours) + ':' + short + (precision ? '.' + String(time % 1000).padStart(3, '0') : '');
+  }
+
+  function writtenCues() {
+    return result.cues.filter(cue => cue.text.trim());
+  }
+
+  function vtt() {
+    return 'WEBVTT\n\n' + writtenCues().map(cue => {
+      const plain = cue.text.split(/\r\n|\r|\n/).map(line => line.trim()).filter(Boolean).join('\n');
+      const safe = plain.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `${timestamp(cue.start_ms)} --> ${timestamp(cue.end_ms)}\n${safe}\n\n`;
+    }).join('');
+  }
+
+  async function saveVtt() {
+    if (!result || saving || working) return;
+    saving = true;
+    updateActions();
+    const content = vtt();
+    const name = suggested(result.name) + '.vtt';
+    try {
+      if (hasPy) {
+        const saved = await py.save_as(content, name, [], {
+          format: 'vtt', dir: dirname(result.file.path), result: true,
+          blocked_paths: [result.file.path, ...state.tabs.map(tab => tab.path)].filter(Boolean),
+        });
+        if (saved?.ok) setStatus(window.i18n.t('storage.saved'));
+        return;
+      }
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(new Blob([content], { type: 'text/vtt;charset=utf-8' }));
+      anchor.download = name;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(anchor.href), 3000);
+    } catch (error) {
+      setStatus(errorMessage(error.details?.error_code || error.message));
+    } finally {
+      saving = false;
+      updateActions();
+    }
+  }
+
+  async function openMarkdown() {
+    if (!result || working || saving) return;
+    const escape = value => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]()#+.!|<>&-]/g, '\\$&');
+    const {name, file: origin, start_ms, end_ms, track, language, engine} = result;
+    const content = [
+      `---\ntitle: ${JSON.stringify(name)}\nmedia_start_ms: ${start_ms}\nmedia_end_ms: ${end_ms}\naudio_track: ${track}\nlanguage: ${JSON.stringify(language)}\nmodel: ${JSON.stringify(engine)}\n---`,
+      '# ' + escape(name),
+      ...writtenCues().map(cue => '**[' + timestamp(cue.start_ms, false) + ']** ' + escape(cue.text.trim())),
+    ].join('\n\n') + '\n';
+    await close();
+    closeConvertModal();
+    await renderVirtual('media', suggested(name) + '.md', dirname(origin.path), content, [], { originPath: origin.path });
+  }
+
+  window.ReadMDMediaTranscribe = { prepareClose };
+  document.getElementById('convert-media-transcribe')?.addEventListener('click', open);
+  window.addEventListener('readmd:language-changed', translate);
+})();
+
+;
+'use strict';
 /* ============================================================
    ReadMD Features - Unified Batch Workbench (convert + OCR)
    ============================================================ */
@@ -23341,8 +27241,9 @@ let batchDocsDone = false;
 let batchOcrDone = false;
 let batchFinished = false;
 let batchCount = { ok: 0, skipped: 0, error: 0, canceled: 0 };
-/** 文件夹批量时所选的根目录；“打开结果目录”优先用它。 */
-let batchFolderRoot = '';
+let batchAttempt = 0;
+let batchOutputDir = '';
+let batchOutputParent = '';
 const batchRowsBySrc = Object.create(null);
 
 function batchT(k, p) {
@@ -23350,6 +27251,16 @@ function batchT(k, p) {
 }
 
 function batchFailureMessage(item) {
+  const batchKey = {
+    output_exists: 'convert.existsTitle',
+    empty_output: 'note.convert_no_text',
+    batch_interrupted: 'batch.incompleteResult',
+    batch_running: 'batch.alreadyRunning',
+    batch_attempt_changed: 'audit.retryLoad',
+    batch_no_retry_items: 'ai.taskCompleted',
+    batch_start_failed: 'error.conversion_failed',
+  }[item?.error_code];
+  if (batchKey) return batchT(batchKey);
   const message = apiMessage(item, 'error.conversion_failed');
   const details = item?.error_details;
   if (!details || typeof details !== 'object' || Array.isArray(details)) return message;
@@ -23372,34 +27283,57 @@ function batchFailureMessage(item) {
 }
 
 function openBatchModal() {
-  if (isBatchRunning()) {
-    $('convert-modal')?.classList.remove('hidden');
-    return;
-  }
+  $('convert-modal')?.classList.remove('hidden');
   if (typeof initSpeechLanguage === 'function') initSpeechLanguage();
+  updateBatchOutputChoice();
+}
+
+function resetBatchRun() {
   stopBatchPoll();
   batchGeneration++;
-  setBatchTriggersBusy(false);
   batchJobId = null;
+  batchAttempt = 0;
+  batchOutputDir = '';
   batchCancelRequested = false;
   batchCancelPending = false;
   batchCancelAcknowledged = false;
   batchOcrCanceled = false;
   batchFinished = false;
   batchCount = { ok: 0, skipped: 0, error: 0, canceled: 0 };
-  batchFolderRoot = '';
   for (const k in batchRowsBySrc) delete batchRowsBySrc[k];
-  const modal = $('convert-modal');
-  if (modal) modal.classList.remove('hidden');
-  // Batch and single-file conversion share one surface; never leak the
-  // single-file "open output" action into a fresh batch run.
   $('convert-open-dir')?.classList.add('hidden');
+  $('batch-retry')?.classList.add('hidden');
   $('convert-list').innerHTML = '';
   $('convert-status').textContent = '';
-  const note = $('convert-note');
-  if (note) note.textContent = batchT('batch.note') || '';
   $('batch-cancel').classList.add('hidden');
   $('batch-cancel').disabled = false;
+}
+
+function updateBatchOutputChoice() {
+  const output = $('convert-output-parent');
+  if (!output) return;
+  output.textContent = batchOutputParent || batchT('batch.defaultOutput');
+  if (batchOutputParent) delete output.dataset.i18n;
+  else output.dataset.i18n = 'batch.defaultOutput';
+  output.title = batchOutputParent;
+  $('convert-output-settings')?.classList.toggle('hidden', !hasPy || typeof py.choose_folder !== 'function');
+  $('convert-output-reset')?.classList.toggle('hidden', !batchOutputParent);
+}
+
+async function chooseBatchOutputParent() {
+  if (isBatchRunning() || !hasPy) return;
+  try {
+    const path = await py.choose_folder(batchOutputParent || state.folder || state.dir || '');
+    if (typeof path === 'string' && path && !isBatchRunning()) {
+      batchOutputParent = path;
+      updateBatchOutputChoice();
+    }
+  } catch (_) { showToast(batchT('toast.readFolderFail')); }
+}
+
+function resetBatchOutputParent() {
+  batchOutputParent = '';
+  updateBatchOutputChoice();
 }
 
 function closeBatchModal() {
@@ -23419,6 +27353,9 @@ function makeBatchRow(path) {
   nm.className = 'batch-name';
   nm.textContent = path.split(/[\\/]/).pop();
   nm.title = path;
+  const output = document.createElement('span');
+  output.className = 'batch-output-name';
+  nm.appendChild(output);
   const st = document.createElement('span');
   st.className = 'batch-state';
   st.textContent = batchT('batch.statusQueued') || '';
@@ -23468,7 +27405,8 @@ function setBatchRow(row, status, title) {
 function countBatchRow(row, status) {
   if (row.dataset.done || !Object.hasOwn(batchCount, status)) return;
   row.dataset.done = '1';
-  if (status in batchCount) batchCount[status]++;
+  row.dataset.result = status;
+  batchCount[status]++;
 }
 
 async function enqueueBatchFiles(paths, overwrite) {
@@ -23505,6 +27443,7 @@ async function enqueueBatchFiles(paths, overwrite) {
   if (!list.length) { if (input.length) showToast(batchT('convert.noConvertibleFiles')); return; }
   if (list.some(p => IMG_RE.test(p)) && moduleBlocked('ocr')) return;
   if (list.some(p => !IMG_RE.test(p)) && moduleBlocked('convert')) return;
+  resetBatchRun();
   openBatchModal();
   const docs = [], images = [];
   const listEl = $('convert-list');
@@ -23521,27 +27460,140 @@ async function enqueueBatchFiles(paths, overwrite) {
   $('batch-cancel').classList.remove('hidden');
   $('convert-status').textContent = batchT('batch.preparing') || '';
   const generation = batchGeneration;
-  if (docs.length) runBatchDocsLane(docs, overwrite, generation);
+  if (docs.length) runBatchDocsLane(docs, generation);
   if (images.length) runBatchOcrLane(images, overwrite, generation);
 }
 
-async function runBatchDocsLane(paths, overwrite, generation) {
+async function postBatch(payload) {
+  const response = await apiFetch('/api/convert/batch', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, confirm: true, workbench: true }),
+  });
+  return { response, data: await response.json().catch(() => ({})) };
+}
+
+async function runBatchDocsLane(paths, generation) {
+  const job = window.crypto?.randomUUID?.().replaceAll('-', '');
+  const requestedJob = job ? 'b-' + job : '';
+  let submitted = false;
   try {
-    if (!(await ensureModule('convert'))) throw new Error('convert_module_unavailable');
-    const r = await apiFetch('/api/convert/batch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths, overwrite: !!overwrite, confirm: true, language: typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto' }),
-    });
-    const d = await r.json().catch(() => ({}));
+    if (!(await ensureModule('convert'))) throw new Error(batchT('convert.moduleUnavailable'));
+    const payload = { paths, language: typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto' };
+    if (requestedJob) payload.job = requestedJob;
+    if (batchOutputParent) payload.output_parent = batchOutputParent;
+    submitted = true;
+    const { response, data } = await postBatch(payload);
     if (generation !== batchGeneration) return;
-    if (!r.ok || typeof d.job !== 'string' || !d.job) throw new Error(d.error_code || ('http_' + r.status));
-    batchJobId = d.job;
+    if (!response.ok && response.status < 500 && data.error_code !== 'batch_job_exists') {
+      failBatchDocsLane(batchFailureMessage(data));
+      return;
+    }
+    if (!response.ok || typeof data.job !== 'string' || !data.job) throw new Error(batchFailureMessage(data));
+    batchJobId = data.job;
     if (batchCancelRequested) sendBatchCancel();
-    pollBatchJob(d.job);
+    pollBatchJob(data.job);
   } catch (e) {
     if (generation !== batchGeneration) return;
-    failBatchDocsLane(e && e.message);
+    // The POST response can be lost after the worker persisted its receipt.
+    // Look up that precise job before releasing the workbench.
+    if (submitted && requestedJob) {
+      batchJobId = requestedJob;
+      pollBatchJob(requestedJob, e?.message);
+    } else failBatchDocsLane(e?.message);
   }
+}
+
+async function refreshBatchHistory() {
+  const select = $('batch-history');
+  if (!select) return;
+  const generation = batchGeneration;
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await apiFetch('/api/convert/progress?history=1', { signal: controller.signal });
+    const history = response.ok ? (await response.json()).batches : null;
+    if (generation !== batchGeneration || !Array.isArray(history)) return;
+    const options = history.map(batch => {
+      const option = document.createElement('option');
+      option.value = batch.job;
+      const timestamp = new Date(batch.modified).toLocaleString(window.i18n?.currentLang);
+      const name = batch.name || batch.job.slice(0, 10);
+      option.textContent = `${timestamp} · ${name}${batch.total > 1 ? ` (${batch.total})` : ''}`;
+      return option;
+    });
+    const blank = document.createElement('option');
+    blank.hidden = true;
+    blank.value = '';
+    select.replaceChildren(blank, ...options);
+    select.value = batchJobId || '';
+    $('batch-history-control')?.classList.toggle('hidden', options.length === 0);
+  } catch (_) { /* Keep the existing history choices during a transport failure. */ }
+  finally { clearTimeout(deadline); }
+}
+
+async function restoreBatchWorkbench(selected = '') {
+  if (isBatchRunning() || (batchFinished && (!selected || selected === batchJobId))) return;
+  let generation = batchGeneration;
+  let following = false;
+  setBatchTriggersBusy(true);
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 15000);
+  try {
+    const query = selected ? 'job=' + encodeURIComponent(selected) : 'latest=1';
+    const r = await apiFetch('/api/convert/progress?' + query, { signal: controller.signal });
+    if (generation !== batchGeneration || (!selected && r.status === 404)) return;
+    if (!r.ok) throw new Error(batchFailureMessage(await r.json().catch(() => ({}))));
+    const d = await r.json();
+    if (generation !== batchGeneration || !d.job || !Array.isArray(d.items)
+      || !Number.isSafeInteger(d.attempt) || typeof d.finished !== 'boolean') return;
+    resetBatchRun();
+    generation = batchGeneration;
+    batchJobId = d.job;
+    batchOcrDone = true;
+    batchDocsDone = d.finished;
+    renderBatchProgress(d);
+    if (d.finished) maybeFinishBatch();
+    else {
+      $('batch-cancel').classList.remove('hidden');
+      pollBatchJob(d.job);
+      following = true;
+    }
+  } catch (e) {
+    if (generation === batchGeneration) $('convert-status').textContent = e?.message || batchT('batch.reconnecting');
+  } finally {
+    clearTimeout(deadline);
+    if (generation === batchGeneration && !following) setBatchTriggersBusy(false);
+    if ($('batch-history')) $('batch-history').value = batchJobId || '';
+  }
+}
+
+async function retryBatchDocs() {
+  if (!batchJobId || !batchAttempt || isBatchRunning()) return;
+  const job = batchJobId;
+  const attempt = batchAttempt;
+  batchGeneration++;
+  batchFinished = false;
+  batchDocsDone = false;
+  batchCancelRequested = false;
+  batchCancelPending = false;
+  batchCancelAcknowledged = false;
+  setBatchTriggersBusy(true);
+  $('batch-retry')?.classList.add('hidden');
+  $('batch-cancel').disabled = false;
+  $('convert-status').textContent = batchT('batch.preparing');
+  try {
+    const { response, data } = await postBatch({ retry: job, attempt });
+    if (!response.ok && response.status !== 409 && response.status < 500) {
+      batchDocsDone = true;
+      maybeFinishBatch();
+      showToast(batchFailureMessage(data));
+      return;
+    }
+  } catch (_) {
+    // Polling will show the current attempt even when the reply was lost.
+  }
+  $('batch-cancel').classList.remove('hidden');
+  pollBatchJob(job);
 }
 
 async function sendBatchCancel() {
@@ -23571,10 +27623,11 @@ async function sendBatchCancel() {
   }
 }
 
-function pollBatchJob(jid) {
+function pollBatchJob(jid, submissionError) {
   stopBatchPoll();
   const generation = batchGeneration;
   let failures = 0;
+  let missingRetries = submissionError ? 2 : 0;
   const current = () => generation === batchGeneration && jid === batchJobId && !batchDocsDone;
   const poll = async () => {
     if (!current()) return;
@@ -23584,13 +27637,22 @@ function pollBatchJob(jid) {
     try {
       const r = await apiFetch('/api/convert/progress?job=' + encodeURIComponent(jid), { signal: controller.signal });
       if (!current()) return;
-      if (r.status === 404) { failBatchDocsLane(batchT('batch.jobMissing')); return; }
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (r.status === 404) {
+        if (missingRetries > 0) { missingRetries--; throw new Error(); }
+        failBatchDocsLane(submissionError || batchT('batch.jobMissing'));
+        return;
+      }
+      if (!r.ok) {
+        const fault = await r.json().catch(() => ({}));
+        throw new Error(apiMessage(fault));
+      }
       const d = await r.json();
       if (!current()) return;
       if (!Array.isArray(d.items) || typeof d.finished !== 'boolean') throw new Error('invalid_progress');
       failures = 0;
+      missingRetries = 0;
       renderBatchProgress(d);
+      if (batchCancelRequested) sendBatchCancel();
       if (d.finished) {
         // A malformed final response cannot leave rows indefinitely running.
         for (const row of Object.values(batchRowsBySrc)) {
@@ -23599,12 +27661,13 @@ function pollBatchJob(jid) {
         batchDocsDone = true;
         maybeFinishBatch();
       }
-    } catch (_) {
+    } catch (error) {
       if (!current()) return;
       failures++;
       // A transport failure says nothing about files still being written by
       // the kernel. Keep ownership of the job and reconnect with backoff.
-      $('convert-status').textContent = batchT('batch.reconnecting');
+      $('convert-status').textContent = error?.message === 'invalid_progress'
+        ? batchT('batch.reconnecting') : (error?.message || batchT('batch.reconnecting'));
     } finally {
       clearTimeout(deadline);
       if (batchPollAbort === controller) batchPollAbort = null;
@@ -23628,13 +27691,43 @@ function failBatchDocsLane(message) {
 }
 
 function renderBatchProgress(d) {
+  if (Number.isSafeInteger(d.attempt) && d.attempt > batchAttempt && typeof d.output_dir === 'string') {
+    batchAttempt = d.attempt;
+    batchOutputDir = d.output_dir;
+    const sources = new Set(d.items.map(it => it.src));
+    for (const [source, row] of Object.entries(batchRowsBySrc)) {
+      if (!sources.has(source)) {
+        row.remove();
+        if (row.dataset.result) batchCount[row.dataset.result]--;
+        delete batchRowsBySrc[source];
+      }
+    }
+    for (const it of d.items) {
+      const previous = batchRowsBySrc[it.src];
+      if (previous?.dataset.result === 'ok') continue;
+      const row = makeBatchRow(it.src);
+      if (previous) {
+        previous.replaceWith(row);
+        if (previous.dataset.result) batchCount[previous.dataset.result]--;
+      } else $('convert-list').appendChild(row);
+      batchRowsBySrc[it.src] = row;
+    }
+  }
   (d.items || []).forEach(it => {
     const row = batchRowsBySrc[it.src];
     if (!row || row.dataset.done) return;
     const status = it.status || 'queued';
+    if (it.planned_out) {
+      const output = row.querySelector('.batch-output-name');
+      if (output) {
+        output.textContent = it.planned_out.split(/[\\/]/).pop();
+        output.title = it.planned_out;
+      }
+    }
     if (status !== 'queued') {
       if ((status === 'ok' || status === 'skipped') && it.out) row.dataset.out = it.out;
       setBatchRow(row, status, status === 'error' ? batchFailureMessage(it) : it.error || '');
+      if (status === 'ok') window.ReadMDConversionReport?.attach(row, it.fidelity_report);
       countBatchRow(row, status);
     }
   });
@@ -23674,6 +27767,7 @@ async function runBatchOcrLane(items, overwrite, generation) {
         if (d.out && (d.saved || d.skipped)) row.dataset.out = d.out;
         const status = d.skipped ? 'skipped' : 'ok';
         setBatchRow(row, status);
+        if (status === 'ok') window.ReadMDConversionReport?.attach(row, d.fidelity_report);
         countBatchRow(row, status);
       } else {
         const code = d.error_code || 'ocr_failed';
@@ -23711,9 +27805,10 @@ function showBatchOpenDir() {
   if (!btn) return;
   const outs = Array.from($('convert-list').querySelectorAll('.batch-item'))
     .map(r => r.dataset.out).filter(Boolean);
-  if (!outs.length) { btn.classList.add('hidden'); return; }
-  const dir = (typeof batchFolderRoot === 'string' && batchFolderRoot) || commonOutputDir(outs);
+  if (!batchOutputDir && !outs.length) { btn.classList.add('hidden'); return; }
+  const dir = batchOutputDir || commonOutputDir(outs);
   btn.classList.remove('hidden');
+  btn.title = dir;
   btn.onclick = async () => {
     try {
       const r = await apiFetch('/api/system/open-path', {
@@ -23739,7 +27834,7 @@ function isBatchRunning() {
 /** The pickers stay disabled while a batch is running (no parallel jobs). */
 function setBatchTriggersBusy(on) {
   batchActive = on;
-  ['convert-files', 'convert-folder', 'convert-speech-language', 'convert-overwrite'].forEach(id => {
+  ['convert-files', 'convert-folder', 'convert-speech-language', 'convert-overwrite', 'convert-output-choose', 'convert-output-reset', 'batch-history'].forEach(id => {
     const el = $(id);
     if (!el) return;
     el.disabled = on;
@@ -23760,6 +27855,10 @@ function maybeFinishBatch() {
   }
   $('convert-status').textContent = text;
   $('batch-cancel').classList.add('hidden');
+  const retry = batchAttempt > 0 && Object.values(batchRowsBySrc)
+    .some(row => ['error', 'canceled'].includes(row.dataset.result));
+  $('batch-retry')?.classList.toggle('hidden', !retry);
+  if (batchAttempt) void refreshBatchHistory();
 }
 
 function onBatchCancel() {
@@ -24116,10 +28215,25 @@ function initBubbleInteractions() {
 
 let currentActivePetSlug = '';
 
+function petSelection(status = activePetSettingsStatus) {
+  return status?.preferences?.renderer === 'live2d'
+    ? { renderer: 'live2d', slug: 'arch-chan' }
+    : { renderer: 'hermes-sprite', slug: currentActivePetSlug };
+}
+
 function getActivePetSlug() {
-  if (currentActivePetSlug) return currentActivePetSlug;
-  const select = $('pet-gallery');
-  return (select && select.value) ? select.value : '';
+  return petSelection().slug;
+}
+
+function petCharacterName(slug, fallback = '') {
+  if (!slug || slug === 'hermes') return petT('pet.gallery.hermes', null, '伴读使者');
+  if (slug === 'arch-chan') return petT('pet.renderer.live2d', null, 'Arch-Chan');
+  if (slug === 'bongocat') return 'BongoCat';
+  return petT('pet.preset.' + slug) || fallback || slug;
+}
+
+function petNeedsDesktop({ renderer, slug }) {
+  return renderer === 'live2d' || slug === 'bongocat';
 }
 
 const PET_ROLE_PERSONALITIES = {
@@ -24263,25 +28377,8 @@ function syncPetWidgetVisibility(status) {
     widget.classList.remove('hidden');
     const prefs = (status && status.preferences) || {};
     applyWidgetAppearance(prefs.scale, prefs.opacity);
-    const charEl = $('pet-character');
-    if (charEl) {
-      const isLive2d = (prefs.renderer === 'live2d');
-      const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
-      const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-      charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
-      if (isLive2d) {
-        charEl.classList.add('is-arch-chan', 'is-live2d');
-        charEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-      } else if (isAnimSprite) {
-        charEl.classList.add('hermes-sprite', 'is-hermes', 'is-sprite-anim');
-        charEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-      } else {
-        charEl.classList.add('is-sprite-avatar');
-        charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-      }
-      if (!isLive2d) paintPetPreview(charEl,activeSlug);
-      else charEl.classList.remove('pet-authored-preview');
-    }
+    const { renderer, slug } = petSelection(status);
+    setPetCharacterPreview($('pet-character'), renderer, status.active_slug ?? slug);
     restoreWidgetPosition();
   } else {
     widget.classList.add('hidden');
@@ -24475,10 +28572,14 @@ function initPetDirectManipulation() {
 }
 
 function handlePetInteractiveClick() {
-  paintPetPreview($('pet-character'), currentActivePetSlug, 1);
-  setTimeout(() => paintPetPreview($('pet-character'), currentActivePetSlug), 1200);
   const char = $('pet-character');
   if (char) {
+    if (!char.classList.contains('is-live2d')) {
+      paintPetPreview(char, getActivePetSlug(), 'waving', 1);
+      setTimeout(() => {
+        if (!char.classList.contains('is-live2d')) paintPetPreview(char, getActivePetSlug());
+      }, 1200);
+    }
     char.classList.add('pet-bounce');
     setTimeout(() => {
       char.classList.remove('pet-bounce', 'hermes-waving');
@@ -24609,16 +28710,21 @@ async function refreshPetMenuStatus() {
 
 function renderPetSettings(status) {
   activePetSettingsStatus = status || null;
-  window.dispatchEvent(new CustomEvent('readmd:pet-state', { detail: status }));
+  if (typeof status?.active_slug === 'string') currentActivePetSlug = status.active_slug;
   const preferences = status && status.preferences ? status.preferences : {};
   const enabled = $('pet-enabled');
-  const renderer = $('pet-renderer');
   const scale = $('pet-scale');
   const opacity = $('pet-opacity');
 
   if (enabled) enabled.checked = Boolean(status && status.enabled);
-  if (renderer) renderer.value = preferences.renderer || 'hermes-sprite';
-  if ($('pet-runtime')) $('pet-runtime').value = status?.in_app === false ? 'desktop' : 'in-app';
+  const requiresDesktop = petNeedsDesktop(petSelection());
+  const isInApp = !requiresDesktop && status?.in_app !== false;
+  const inApp = $('pet-runtime-in-app'), desktop = $('pet-runtime-desktop');
+  if (inApp && desktop) {
+    inApp.disabled = requiresDesktop;
+    inApp.checked = isInApp;
+    desktop.checked = !isInApp;
+  }
   if (scale) scale.value = String(petPercent(preferences.scale, 0.22));
   if (opacity) opacity.value = String(petPercent(preferences.opacity, 1.0));
 
@@ -24627,7 +28733,6 @@ function renderPetSettings(status) {
   }
   updatePetRangeLabels();
 
-  const isInApp = $('pet-runtime')?.value === 'in-app' || status?.in_app !== false;
   const isInstalled = Boolean(status && (status.adapter?.available ?? status.installed));
   const isRunning = Boolean(status?.enabled && (isInApp || (status?.adapter?.running ?? status?.running)));
   const installBtn = $('pet-install');
@@ -24653,25 +28758,17 @@ function renderPetSettings(status) {
     }
   }
   if (installBtn) {
-    if (isInApp) {
-      installBtn.classList.add('hidden');
-    } else {
-      installBtn.classList.remove('hidden');
-      if (isInstalled) {
-        installBtn.className = 'tb-btn danger';
-        installBtn.textContent = petT('pet.disable');
-        installBtn.dataset.action = 'uninstall';
-      } else {
-        installBtn.className = 'tb-btn accent';
-        installBtn.textContent = petT('pet.enable');
-        installBtn.dataset.action = 'install';
-      }
+    installBtn.classList.toggle('hidden', isInApp || !isInstalled);
+    if (isInstalled) {
+      installBtn.classList.add('danger');
+      installBtn.classList.remove('accent');
+      installBtn.textContent = petT('pet.disable');
+      installBtn.dataset.action = 'uninstall';
     }
   }
 
   // 动态切换舞台角色外观预览 (Hermes vs Arch-Chan)
-  const currentRenderer = (renderer ? renderer.value : '') || (preferences && preferences.renderer) || 'hermes-sprite';
-  updateCharacterPreview(currentRenderer);
+  updateCharacterPreview();
 
   const statusDot = $('pet-status-dot');
   const statusText = $('pet-status-text');
@@ -24699,28 +28796,55 @@ function renderPetSettings(status) {
     } else if (isInApp || isInstalled) {
       statusLine.textContent = '';
     } else {
-      statusLine.textContent = petT('pet.statusEnableHint');
+      statusLine.textContent = petT('pet.runtime.install');
     }
   }
 
   syncPetWidgetVisibility(status);
+  window.dispatchEvent(new CustomEvent('readmd:pet-state', { detail: status }));
 }
 
 const petPreviewImages = new Map();
+const petPreviewRequests = new WeakMap();
+function petPreviewSource(slug) {
+  if (slug === 'bongocat') return '/assets/pet/bongocat-cover.png';
+  if (!slug || slug === 'hermes') return '/assets/pet/hermes-sprite.png';
+  return `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
+}
 function paintPetPreview(element, slug = '', row = 0, frame = 0) {
   if (!element || element.closest('.hidden')) return;
-  const src = slug === 'bongocat' ? '/assets/pet/bongocat-preview.png' : !slug || slug === 'hermes' ? '/assets/pet/hermes-sprite.png' : `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
+  const src = petPreviewSource(slug);
+  const request = Symbol();
+  petPreviewRequests.set(element, request);
   element.dataset.petPreviewSource = src;
+  if (slug === 'bongocat') {
+    element.classList.remove('is-sprite-anim', 'is-sprite-avatar');
+    element.classList.add('pet-authored-preview', 'is-bongocat-preview');
+    element.style.backgroundImage = `url("${src}")`;
+    return;
+  }
+  element.classList.remove('is-bongocat-preview');
+  if (!element.classList.contains('pet-authored-preview')) element.style.backgroundImage = `url("${src}")`;
   let loading = petPreviewImages.get(src);
-  if (!loading) { loading = new Promise(resolve => { const image = new Image(); image.onload=()=>resolve(image); image.onerror=()=>resolve(null); image.src=src; }); petPreviewImages.set(src,loading); }
+  if (!loading) {
+    if (petPreviewImages.size >= 12) petPreviewImages.delete(petPreviewImages.keys().next().value);
+    loading = new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = src;
+    });
+    petPreviewImages.set(src, loading);
+  }
   loading.then(image => {
-    if (!image || element.dataset.petPreviewSource !== src) return;
+    if (!image || petPreviewRequests.get(element) !== request) return;
     const v2=image.naturalWidth===1536 && image.naturalHeight===2288;
     const duo=image.naturalWidth===1536 && image.naturalHeight===1024;
     const fw=v2?192:duo?384:image.naturalWidth, fh=v2?208:duo?512:image.naturalHeight;
+    const actionRow = row === 'waving' ? (v2 ? 3 : duo ? 1 : 0) : row;
     const canvas=document.createElement('canvas'); canvas.width=fw;canvas.height=fh;
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(image, Math.min(frame,Math.floor(image.naturalWidth/fw)-1)*fw,Math.min(row,Math.floor(image.naturalHeight/fh)-1)*fh,fw,fh,0,0,fw,fh);
+    ctx.drawImage(image, Math.min(frame,Math.floor(image.naturalWidth/fw)-1)*fw,Math.min(actionRow,Math.floor(image.naturalHeight/fh)-1)*fh,fw,fh,0,0,fw,fh);
     const pixels=ctx.getImageData(0,0,fw,fh).data; let l=fw,t=fh,r=0,b=0;
     for(let y=0;y<fh;y++) for(let x=0;x<fw;x++) if(pixels[(y*fw+x)*4+3]>32) {l=Math.min(l,x);t=Math.min(t,y);r=Math.max(r,x+1);b=Math.max(b,y+1);}
     if(r<=l || b<=t) return;
@@ -24731,58 +28855,34 @@ function paintPetPreview(element, slug = '', row = 0, frame = 0) {
 }
 window.paintPetPreview = paintPetPreview;
 
-function updateCharacterPreview(rendererVal) {
-  const charEl = document.querySelector('.pet-preview-character');
-  const widgetCharEl = $('pet-character');
-  const slugEl = $('pet-active-slug');
-  const isLive2d = rendererVal === 'live2d';
-  const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
-  const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-  if (charEl && !charEl.closest('.hidden')) {
-    charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'is-sprite-anim', 'is-sprite-avatar');
-    if (isLive2d) {
-      charEl.classList.add('is-arch-chan', 'is-live2d');
-      charEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-    } else if (isAnimSprite) {
-      charEl.classList.add('is-hermes', 'is-sprite-anim');
-      charEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-    } else {
-      charEl.classList.add('is-sprite-avatar');
-      charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-    }
+function setPetCharacterPreview(element, renderer, slug) {
+  if (!element || element.closest('.hidden')) return;
+  element.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite',
+    'is-sprite-anim', 'is-sprite-avatar', 'is-bongocat-preview', 'pet-authored-preview');
+  if (renderer === 'live2d') {
+    petPreviewRequests.delete(element);
+    delete element.dataset.petPreviewSource;
+    element.classList.add('is-arch-chan', 'is-live2d');
+    element.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
+    return;
   }
-  if (widgetCharEl && !widgetCharEl.closest('.hidden')) {
-    widgetCharEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
-    if (isLive2d) {
-      widgetCharEl.classList.add('is-arch-chan', 'is-live2d');
-      widgetCharEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-    } else if (isAnimSprite) {
-      widgetCharEl.classList.add('hermes-sprite', 'is-hermes', 'is-sprite-anim');
-      widgetCharEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-    } else {
-      widgetCharEl.classList.add('is-sprite-avatar');
-      widgetCharEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-    }
+  if (!slug || slug === 'hermes') {
+    element.classList.add('is-hermes', 'is-sprite-anim');
+    if (element.id === 'pet-character') element.classList.add('hermes-sprite');
+  } else {
+    element.classList.add('is-sprite-avatar');
   }
-  $('pet-sound')?.closest('.apple-list-row')?.classList.toggle('hidden', activeSlug !== 'bongocat');
-  if (!isLive2d) { paintPetPreview(charEl,activeSlug); paintPetPreview(widgetCharEl,activeSlug); }
-  else { charEl?.classList.remove('pet-authored-preview'); widgetCharEl?.classList.remove('pet-authored-preview'); }
-  if (slugEl) {
-    if (isLive2d) {
-      slugEl.textContent = petT('pet.renderer.live2d') || 'Arch-Chan';
-    } else {
-      const optionText = $('pet-gallery')?.selectedOptions?.[0]?.textContent;
-      const fallbackName = (activeSlug && petT('pet.preset.' + activeSlug)) || activeSlug || petT('pet.gallery.hermes') || '伴读使者';
-      slugEl.textContent = optionText || fallbackName;
-    }
-  }
-  const galleryRow = $('pet-gallery-row');
-  if (galleryRow) {
-    galleryRow.classList.toggle('hidden', isLive2d);
-  }
-  if (isLive2d && $('pet-runtime')) {
-    $('pet-runtime').value = 'desktop';
-  }
+  paintPetPreview(element, slug);
+}
+
+function updateCharacterPreview() {
+  const { renderer, slug } = petSelection();
+  setPetCharacterPreview($('pet-preview-character'), renderer, slug);
+  const name = $('pet-active-slug');
+  const pet = currentGalleryPets.find(item => item.slug === slug);
+  if (name) name.textContent = petCharacterName(slug, pet?.display_name);
+  $('pet-sound')?.closest('.apple-list-row')?.classList.toggle('hidden', slug !== 'bongocat');
+  updatePetDeleteButtonVisibility(slug);
 }
 
 function updatePetRangeLabels() {
@@ -24815,22 +28915,19 @@ function closePetSettings() {
 }
 
 let petSettingsVersion = 0, petSettingsQueue = Promise.resolve();
-function capturePetSettings() {
+function capturePetSettings(selection = petSelection()) {
     const enabled = Boolean($('pet-enabled')?.checked);
     const scale = Number($('pet-scale')?.value || 22) / 100;
     const opacity = Number($('pet-opacity')?.value || 100) / 100;
-    const renderer = $('pet-renderer')?.value || 'hermes-sprite';
-
-    const activeSlug = (typeof currentActivePetSlug !== 'undefined' && currentActivePetSlug) || $('pet-gallery')?.value || undefined;
-    if ((renderer === 'live2d' || activeSlug === 'bongocat') && $('pet-runtime')) $('pet-runtime').value = 'desktop';
-    const isDesktopChoice = $('pet-runtime')?.value === 'desktop';
+    const { renderer, slug } = selection;
+    const isDesktopChoice = petNeedsDesktop(selection) || $('pet-runtime-desktop')?.checked === true;
     return {
       enabled,
       scale,
       opacity,
       renderer,
       in_app: !isDesktopChoice,
-      character: renderer === 'live2d' ? 'arch-chan' : (activeSlug || ''),
+      character: renderer === 'live2d' ? undefined : slug,
       always_on_top: $('pet-topmost')?.checked !== false,
       lock_position: $('pet-lock-position')?.checked === true,
       bubbles: $('pet-bubble-toggle')?.checked !== false,
@@ -24839,8 +28936,8 @@ function capturePetSettings() {
     };
 
 }
-function savePetSettings() {
-  const config=capturePetSettings(), version=++petSettingsVersion;
+function savePetSettings(selection) {
+  const config=capturePetSettings(selection), version=++petSettingsVersion;
   const save=()=>version === petSettingsVersion ? applyPetSettings(config,version) : {ok:true,superseded:true};
   petSettingsQueue=petSettingsQueue.then(save,save);
   return petSettingsQueue;
@@ -24881,11 +28978,11 @@ async function openPetSettings() {
   if (!modal) return;
   modal.classList.remove('hidden');
   window.dispatchEvent(new CustomEvent('readmd:pet-open-settings'));
-  const immediateRenderer = $('pet-renderer')?.value || 'hermes-sprite';
-  updateCharacterPreview(immediateRenderer);
+  updateCharacterPreview();
+  const version = petSettingsVersion;
   try {
     const status = await fetchPetRuntimeStatus();
-    renderPetSettings(status);
+    if (version === petSettingsVersion) renderPetSettings(status);
     await refreshPetGallery();
   } catch (_error) {
     console.warn('Failed to load pet status:', _error);
@@ -24952,9 +29049,7 @@ async function pollPetControls() {
         else if (target === 'ai') { if (typeof openAIPanel === 'function') openAIPanel(); }
       } else if (payload && payload.pending) {
         try { await petNativeApi()?.show_window?.(); } catch (_) {}
-        const trigger = $('btn-more');
-        const menu = $('more-menu');
-        if (trigger && menu && !menu.classList.contains('open')) trigger.click();
+        if (typeof showSide === 'function') showSide('settings');
       }
     }
   } catch (_error) { /* optional native bridge */ }
@@ -24990,10 +29085,12 @@ function initPetSystem() {
     if (!btn || btn.disabled) return;
     const isUninstall = btn?.dataset.action === 'uninstall';
 
-    if (isUninstall) {
-      const confirmText = petT('pet.uninstallConfirm') || '是否卸载桌宠伴侣插件？卸载后将移除本地扩展组件。';
-      if (!window.confirm(confirmText)) return;
-    }
+    if (isUninstall && !await confirmAction({
+      title: petT('pet.disable'),
+      message: petT('pet.uninstallConfirm'),
+      confirmText: petT('pet.disable'),
+      danger: true,
+    })) return;
 
     const endpoint = isUninstall ? '/api/pets/uninstall' : '/api/pets/install';
     const pendingText = isUninstall ? (petT('pet.uninstalling') || '正在卸载…') : (petT('pet.installing') || '正在安装…');
@@ -25054,14 +29151,7 @@ function initPetSystem() {
 
   for (const id of ['pet-topmost','pet-lock-position','pet-sound','pet-bubble-toggle']) $(id)?.addEventListener('change', () => { void savePetSettings(); });
   $('pet-enabled')?.addEventListener('change', () => { void savePetSettings(); });
-  $('pet-runtime')?.addEventListener('change', (e) => {
-    const isDesktop = e.target.value === 'desktop';
-    const installRuntimeBtn = $('pet-install-runtime');
-    const installBtn = $('pet-install');
-    if (installRuntimeBtn) installRuntimeBtn.classList.toggle('hidden', !isDesktop);
-    if (installBtn) installBtn.classList.toggle('hidden', !isDesktop);
-    void savePetSettings();
-  });
+  $('pet-runtime')?.addEventListener('change', () => { void savePetSettings(); });
   async function handlePetUpdateClick(btn) {
     if (btn) {
       btn.disabled = true;
@@ -25175,44 +29265,27 @@ function initPetSystem() {
     } catch (error) { showToast(petT('pet.configFailed', { code: error.message })); }
     finally { e.target.value = ''; }
   });
-  $('pet-gallery')?.addEventListener('change', async e => {
-    currentActivePetSlug = e.target.value;
-    updatePetDeleteButtonVisibility(e.target.value);
-    const result = await petGalleryRequest('/api/pets/active', { slug: e.target.value, confirm: true });
-    if (!result.ok) showToast(petT('pet.configFailed', { code: result.error_code || result.code }));
-    await refreshPetGallery();
-    if (result.ok) await requestConfigurePet({});
-  });
+  $('pet-gallery-import-button')?.addEventListener('click', () => $('pet-gallery-import').click());
   $('pet-gallery-delete')?.addEventListener('click', async () => {
-    const select = $('pet-gallery');
-    const slug = select ? select.value : '';
-    if (!slug) return;
-    const selectedOption = select.selectedOptions && select.selectedOptions[0];
-    const petName = selectedOption ? selectedOption.textContent : slug;
-    const confirmMsg = petT('pet.gallery.deleteConfirm', { name: petName }) || `确定要删除自定义桌宠精灵图「${petName}」吗？`;
-    let confirmed = false;
-    if (typeof confirmAction === 'function') {
-      confirmed = await confirmAction({
-        title: petT('pet.gallery.delete') || '删除',
-        message: confirmMsg,
-        danger: true,
-      });
-    } else {
-      confirmed = window.confirm(confirmMsg);
-    }
-    if (!confirmed) return;
-
+    const slug = getActivePetSlug();
+    const pet = currentGalleryPets.find(item => item.slug === slug && !item.is_builtin);
+    if (!pet) return;
+    const name = petCharacterName(slug, pet.display_name);
+    if (!await confirmAction({
+      title: petT('pet.gallery.delete'),
+      message: petT('pet.gallery.deleteConfirm', { name }),
+      confirmText: petT('pet.gallery.delete'),
+      danger: true,
+    })) return;
     const result = await petGalleryRequest('/api/pets/remove', { slug, confirm: true });
-    if (result.ok) {
-      showToast(petT('pet.gallery.deleteSuccess') || '已删除自定义桌宠精灵图');
-      await refreshPetGallery();
-      await requestConfigurePet({});
-    } else {
+    if (!result.ok) {
       showToast(petT('pet.configFailed', { code: result.error_code || result.code }));
+      return;
     }
-  });
-  $('pet-renderer')?.addEventListener('change', (e) => {
-    updateCharacterPreview(e.target.value);
+    showToast(petT('pet.gallery.deleteSuccess'));
+    await refreshPetGallery();
+    await requestConfigurePet({});
+    renderPetSettings(await fetchPetRuntimeStatus());
   });
   // A range drag is already a local edit before its final change event.
   // Invalidate an older status response so it cannot reset the thumb mid-drag.
@@ -25365,15 +29438,8 @@ async function installDefaultPetRuntime() {
 let currentGalleryPets = [];
 
 function updatePetDeleteButtonVisibility(slug) {
-  const deleteBtn = $('pet-gallery-delete');
-  if (deleteBtn) {
-    const isBuiltin = !slug || slug === 'hermes' || currentGalleryPets.some(p => p.slug === slug && p.is_builtin);
-    if (isBuiltin) {
-      deleteBtn.classList.add('hidden');
-    } else {
-      deleteBtn.classList.remove('hidden');
-    }
-  }
+  const removable = currentGalleryPets.some(pet => pet.slug === slug && !pet.is_builtin);
+  $('pet-gallery-delete')?.classList.toggle('hidden', !removable);
 }
 
 async function refreshPetGallery() {
@@ -25381,29 +29447,8 @@ async function refreshPetGallery() {
   if (!result.ok) return;
   currentGalleryPets = result.pets || [];
   currentActivePetSlug = result.active || '';
+  updateCharacterPreview();
   window.dispatchEvent(new CustomEvent('readmd:pet-gallery', { detail: result }));
-  const select = $('pet-gallery');
-  if (select) {
-    select.replaceChildren(new Option(petT('pet.gallery.hermes') || '伴读使者', ''), new Option('BongoCat','bongocat'));
-    const allGalleryPets = [...currentGalleryPets];
-    if (Array.isArray(result.catalog)) {
-      for (const item of result.catalog) {
-        if (!allGalleryPets.some(p => p.slug === item.slug)) {
-          allGalleryPets.push({
-            slug: item.slug,
-            display_name: item.zh_name || item.en_name || item.display_name || item.slug,
-          });
-        }
-      }
-    }
-    for (const pet of allGalleryPets) {
-      const label = (pet.slug && petT('pet.preset.' + pet.slug)) || pet.display_name || pet.slug;
-      select.add(new Option(label, pet.slug));
-    }
-    select.value = result.active || '';
-    updatePetDeleteButtonVisibility(select.value);
-  }
-  updateCharacterPreview($('pet-renderer')?.value || activePetSettingsStatus?.preferences?.renderer || 'hermes-sprite');
 }
 
 ;
@@ -25422,9 +29467,6 @@ async function refreshPetGallery() {
     'ux.petActions': '快捷互动',
     'ux.petHello': '打个招呼',
     'ux.petGreeting': '我在这里，陪你读完这一页。',
-    'ux.petPreviewHint': '角色外观预览 · 拖放文件到桌宠即可转换',
-    'ux.petLive2d': 'Live2D · 独立桌面',
-    'ux.petSprite': '精灵动画',
     'ai.title': 'AI 助手',
     'pet.gallery.hermes': '伴读使者'
   };
@@ -25433,8 +29475,8 @@ async function refreshPetGallery() {
     if (val && val !== key) return val;
     return FALLBACKS[key] || key;
   };
-  let gallery = { pets: [], active: '', catalog: [] }, status = null, activeTab = 'characters', initialized = false;
-  let choosing = false, lastTap = 0, query = '', catalogPets = [];
+  let gallery = { pets: [], catalog: [] }, activeTab = 'characters', initialized = false;
+  let choosing = false, lastTap = 0, query = '', catalogPets = [], greetingTimer, previewObserver;
   try { window.petQuietMode = localStorage.getItem('readmd.pet.quiet') === 'true'; } catch (_) { window.petQuietMode = false; }
 
   function getFavorites() {
@@ -25474,34 +29516,28 @@ async function refreshPetGallery() {
     } catch (_) {}
   }
 
-  function translateWorkbench() {
-    const box = document.getElementById('pet-settings-box');
-    if (!box) return;
-    const tabs = box.querySelector('.pet-workbench-tabs');
-    if (tabs) {
-      tabs.setAttribute('aria-label', t('ux.petSections'));
-      tabs.querySelectorAll('button[data-pet-section]').forEach(btn => {
-        const key = btn.getAttribute('data-i18n');
-        if (key) btn.textContent = t(key);
-      });
+  function previewGreeting(speech) {
+    const roleLine = typeof getRoleSpecificQuote === 'function' && getRoleSpecificQuote('pokesNormal');
+    const contextualLine = typeof getContextualGreeting === 'function' && getContextualGreeting();
+    const line = roleLine || contextualLine || t('ux.petGreeting');
+    speech.textContent = line;
+    const widget = document.getElementById('readmd-pet-widget');
+    if (widget && !widget.classList.contains('hidden')) window.showPetBubble?.(line, 4500, 2);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const art = document.getElementById('pet-preview-character');
+    const slug = window.getActivePetSlug?.();
+    if (!art || art.classList.contains('is-live2d') || slug === 'bongocat') {
+      document.getElementById('pet-preview-aura')?.animate?.([
+        { transform: 'translateY(0)' }, { transform: 'translateY(-4px)' }, { transform: 'translateY(0)' }
+      ], { duration: 350, easing: 'ease-out' });
+      return;
     }
-    const companion = box.querySelector('.pet-companion-controls');
-    if (companion) {
-      companion.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
-        if (key) el.textContent = t(key);
-      });
-    }
-    const hint = box.querySelector('.pet-workbench-preview-hint');
-    if (hint) {
-      hint.textContent = t('ux.petPreviewHint');
-    }
-    const search = document.getElementById('pet-roster-search');
-    if (search) search.placeholder = t('toolbar.search');
-    for (const [id, key] of [['pet-quick-chat', 'ai.title'], ['pet-quick-quiet', 'ux.petQuiet']]) {
-      const button = document.getElementById(id);
-      if (button) { button.title = t(key); button.setAttribute('aria-label', t(key)); }
-    }
+    clearTimeout(greetingTimer);
+    window.paintPetPreview?.(art, slug, 'waving', 1);
+    greetingTimer = setTimeout(() => {
+      if (window.getActivePetSlug?.() === slug && !art.classList.contains('is-live2d')) window.paintPetPreview?.(art, slug);
+    }, 850);
   }
 
   function init() {
@@ -25518,57 +29554,42 @@ async function refreshPetGallery() {
       button.dataset.petSection = id;
       button.setAttribute('data-i18n', key);
       button.textContent = t(key);
-      button.onclick = () => { activeTab = id; renderTabs(); };
+      button.onclick = () => { activeTab = id; renderTabs(); renderRoster(); };
       tabs.appendChild(button);
     }
     box.querySelector('.pet-sheet-body').before(tabs);
     const list = box.querySelector('.apple-grouped-list');
     list.querySelectorAll('.apple-list-row').forEach(row => {
-      row.dataset.petSectionContent ||= row.querySelector('#pet-gallery') ? 'characters' : row.querySelector('#pet-bubble-toggle') ? 'companion' : 'settings';
+      row.dataset.petSectionContent ||= row.querySelector('#pet-bubble-toggle') ? 'companion' : 'settings';
     });
+    const tools = box.querySelector('.pet-library-tools');
+    const search = document.getElementById('pet-roster-search');
+    search.oninput = () => { query = search.value.trim().toLocaleLowerCase(); renderRoster(); };
+    const feedback = document.createElement('p');
+    feedback.id = 'pet-choice-feedback';
+    feedback.dataset.petSectionContent = 'characters';
+    feedback.setAttribute('role', 'status');
+    tools.after(feedback);
+
     const roster = document.createElement('section');
     roster.id = 'pet-roster';
     roster.dataset.petSectionContent = 'characters';
-    list.prepend(roster);
-    const search = document.createElement('input');
-    search.id = 'pet-roster-search'; search.type = 'search';
-    search.dataset.petSectionContent = 'characters';
-    search.placeholder = t('toolbar.search'); search.setAttribute('aria-label', t('toolbar.search'));
-    search.oninput = () => { query = search.value.trim().toLocaleLowerCase(); if (list) list.scrollTop = 0; renderRoster(); };
-    roster.before(search);
-
-    const rendererRow = document.getElementById('pet-renderer-row') || document.getElementById('pet-renderer')?.closest('.apple-list-row');
-    if (rendererRow) {
-      rendererRow.dataset.petSectionContent = 'characters';
-      search.before(rendererRow);
-    }
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect) {
-      rendererSelect.addEventListener('change', () => {
-        rendererSelect.dataset.userChanged = 'true';
-        if (list) list.scrollTop = 0;
-        renderRoster();
-      });
-    }
-
-    const galleryRow = document.getElementById('pet-gallery-row') || document.getElementById('pet-gallery')?.closest('.apple-list-row');
-    if (galleryRow) {
-      galleryRow.dataset.petSectionContent = 'characters';
-      search.after(galleryRow);
-    }
-
-    const feedback = document.createElement('p');
-    feedback.id = 'pet-choice-feedback'; feedback.setAttribute('role', 'status');
-    roster.after(feedback);
+    feedback.after(roster);
+    previewObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        previewObserver.unobserve(entry.target);
+        paintPetPreview(entry.target, entry.target.dataset.previewSlug);
+      }
+    });
 
     const companion = document.createElement('section');
     companion.dataset.petSectionContent = 'companion';
     companion.className = 'pet-companion-controls';
-    companion.innerHTML = `<h4 data-i18n="ux.petStyle">${t('ux.petStyle')}</h4><div class="pet-mode-buttons"><button id="pet-mode-social" type="button" data-i18n="ux.petSocial">${t('ux.petSocial')}</button><button id="pet-mode-quiet" type="button" data-i18n="ux.petQuiet">${t('ux.petQuiet')}</button></div><p data-i18n="ux.petQuietHint">${t('ux.petQuietHint')}</p><h4 data-i18n="ux.petActions">${t('ux.petActions')}</h4><div class="pet-action-buttons"><button id="pet-say-hello" type="button" data-i18n="ux.petHello">${t('ux.petHello')}</button><button id="pet-chat-open" type="button"><span data-i18n="ai.title">${t('ai.title')}</span> ↗</button></div>`;
+    companion.innerHTML = `<h4 data-i18n="ux.petStyle">${t('ux.petStyle')}</h4><div class="pet-mode-buttons"><button id="pet-mode-social" type="button" data-i18n="ux.petSocial">${t('ux.petSocial')}</button><button id="pet-mode-quiet" type="button" data-i18n="ux.petQuiet">${t('ux.petQuiet')}</button></div><p data-i18n="ux.petQuietHint">${t('ux.petQuietHint')}</p><h4 data-i18n="ux.petActions">${t('ux.petActions')}</h4><div class="pet-action-buttons"><button id="pet-chat-open" type="button"><span data-i18n="ai.title">${t('ai.title')}</span> ↗</button></div>`;
     list.appendChild(companion);
     companion.querySelector('#pet-mode-social').onclick = () => quiet(false);
     companion.querySelector('#pet-mode-quiet').onclick = () => quiet(true);
-    companion.querySelector('#pet-say-hello').onclick = () => { if (typeof handlePetInteractiveClick === 'function') handlePetInteractiveClick(); else window.showPetBubble?.(t('ux.petGreeting'), 3500, 2); };
     const chat = () => { window.closePetSettings?.(); window.openAiPanelWithPrompt?.(null, '', null); };
     companion.querySelector('#pet-chat-open').onclick = chat;
     const quickbar = document.querySelector('.pet-widget-quick-bar');
@@ -25580,22 +29601,27 @@ async function refreshPetGallery() {
       const button = document.createElement('button');
       button.id = id; button.type = 'button'; button.className = 'pet-quick-btn';
       button.title = t(key); button.setAttribute('aria-label', t(key));
+      button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
       button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${icon}</svg>`;
       button.onclick = action; quickbar.prepend(button);
     }
     const preview = box.querySelector('.pet-preview-stage');
-    const enabledRow = document.getElementById('pet-enabled')?.closest('.apple-list-row');
-    if (enabledRow) { delete enabledRow.dataset.petSectionContent; preview.appendChild(enabledRow); }
+    const greeting = document.createElement('button');
+    greeting.id = 'pet-say-hello';
+    greeting.type = 'button';
+    greeting.className = 'tb-btn secondary';
+    greeting.dataset.i18n = 'ux.petHello';
+    greeting.textContent = t('ux.petHello');
+    greeting.setAttribute('aria-controls', 'pet-interaction-preview');
+    preview.appendChild(greeting);
     const speech = document.createElement('p');
     speech.id = 'pet-interaction-preview'; speech.setAttribute('role', 'status'); preview.appendChild(speech);
+    greeting.onclick = () => previewGreeting(speech);
+    const enabledRow = document.getElementById('pet-enabled')?.closest('.apple-list-row');
+    if (enabledRow) { delete enabledRow.dataset.petSectionContent; preview.appendChild(enabledRow); }
     window.addEventListener('readmd:pet-message', e => {
-      if (!document.getElementById('pet-settings-modal')?.classList.contains('hidden')) speech.textContent = e.detail.text;
+      if (!document.getElementById('pet-settings-modal')?.classList.contains('hidden') && speech.textContent !== e.detail.text) speech.textContent = e.detail.text;
     });
-    const hint = document.createElement('p');
-    hint.className = 'pet-workbench-preview-hint';
-    hint.setAttribute('data-i18n', 'ux.petPreviewHint');
-    hint.textContent = t('ux.petPreviewHint');
-    preview.appendChild(hint);
     quiet(window.petQuietMode, false);
     void loadCatalog();
     renderTabs();
@@ -25627,213 +29653,144 @@ async function refreshPetGallery() {
     document.querySelectorAll('[data-pet-section-content]').forEach(el => el.classList.toggle('pet-section-inactive', el.dataset.petSectionContent !== activeTab));
   }
   async function choose(renderer, slug) {
-    if (choosing) return; choosing = true;
-    const previousSlug = gallery.active;
-    gallery.active = slug;
-    if (typeof currentActivePetSlug !== 'undefined') currentActivePetSlug = slug;
-    renderRoster();
+    const current = petSelection();
+    if (choosing || current.renderer === renderer && current.slug === slug) return;
+    const previousSlug = currentActivePetSlug;
     const feedback = document.getElementById('pet-choice-feedback');
+    choosing = true;
     feedback.textContent = '';
+    renderRoster();
     let changedGallery = false;
     try {
       if (renderer === 'hermes-sprite') {
-        const result = await petGalleryRequest('/api/pets/active', { slug, confirm: true });
-        if (!result.ok) throw new Error(result.error_code || result.code);
+        const active = await petGalleryRequest('/api/pets/active', { slug, confirm: true });
+        if (!active.ok) throw new Error(active.error_code || active.code || 'pet_active_failed');
         changedGallery = true;
-        await refreshPetGallery();
       }
-      const rendererSelect = document.getElementById('pet-renderer');
-      if (rendererSelect) {
-        rendererSelect.value = renderer;
-        delete rendererSelect.dataset.userChanged;
-      }
-      if (renderer === 'live2d' || slug === 'bongocat') document.getElementById('pet-runtime').value = 'desktop';
-      const result = await savePetSettings();
-      if (!result?.ok) throw new Error(result?.code || 'pet_config_failed');
+      const result = await savePetSettings({ renderer, slug });
+      if (!result?.ok || result.superseded) throw new Error(result?.code || 'pet_config_failed');
     } catch (error) {
-      if (changedGallery) {
-        gallery.active = previousSlug;
-        if (typeof currentActivePetSlug !== 'undefined') currentActivePetSlug = previousSlug;
-        await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true }).catch(() => null);
-        await refreshPetGallery().catch(() => null);
-      }
+      if (changedGallery) await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true });
       feedback.textContent = petT('pet.configFailed', { code: error.message });
-    }
-    finally {
-      choosing = false; renderRoster();
-      Array.from(document.querySelectorAll('#pet-roster button')).find(button => button.dataset.slug === slug && button.dataset.renderer === renderer)?.focus({ preventScroll: true });
+    } finally {
+      await refreshPetGallery();
+      choosing = false;
+      renderRoster();
+      focusRosterButton(slug);
     }
   }
+
+  function focusRosterButton(slug, favorite = false) {
+    const selector = favorite ? '.pet-fav-btn' : '.pet-character-card';
+    [...document.querySelectorAll('#pet-roster ' + selector)]
+      .find(button => (favorite ? button.dataset.favoriteSlug : button.dataset.slug) === slug)?.focus({ preventScroll: true });
+  }
+
+  function rosterItems() {
+    const featured = [
+      { slug: 'mochi', display_name: '糯米 / Mochi' },
+      { slug: 'moss', display_name: '苔苔 / Moss' },
+      { slug: 'amber', display_name: '琥珀 / Amber' },
+      { slug: '' }, { slug: 'bongocat' }, { slug: 'arch-chan', renderer: 'live2d' },
+    ];
+    const items = new Map(featured.map(pet => [pet.slug, pet]));
+    for (const pet of [...(gallery.pets || []), ...(catalogPets.length ? catalogPets : (gallery.catalog || []))]) {
+      if (!items.has(pet.slug)) items.set(pet.slug, pet);
+    }
+    return [...items.values()];
+  }
+
   function renderRoster() {
-    // Cache catalog/state at startup; build previews when settings is visible.
-    // Creating Image objects inside a hidden gallery downloads every sprite.
-    if (document.getElementById('pet-settings-modal')?.classList.contains('hidden')) return;
-    const host = document.getElementById('pet-roster'); if (!host) return;
-    const focused = host.contains(document.activeElement) ? document.activeElement.dataset : null;
-    const focusedSlug = focused?.slug, focusedRenderer = focused?.renderer;
+    const box = document.getElementById('pet-settings-box');
+    const host = document.getElementById('pet-roster');
+    if (!host || box.closest('.hidden') || activeTab !== 'characters') return;
+    const focused = host.contains(document.activeElement) ? document.activeElement : null;
     host.setAttribute('aria-busy', String(choosing));
-    host.replaceChildren();
-    host.scrollTop = 0;
-    const select = document.getElementById('pet-gallery'); if (select) select.disabled = choosing;
-
-    const rendererSelect = document.getElementById('pet-renderer');
-    const filterRenderer = rendererSelect?.value || (status?.preferences?.renderer === 'live2d' ? 'live2d' : 'hermes-sprite');
-
-    const defaultPetName = t('pet.gallery.hermes') || '伴读使者';
-
-    // Group 0: User's 3 created pets
-    const customSlugs = ['mochi', 'moss', 'amber'];
-    const customPets = [
-      { slug: 'mochi', display_name: '糯米 / Mochi', renderer: 'hermes-sprite', groupPriority: 0 },
-      { slug: 'moss', display_name: '苔苔 / Moss', renderer: 'hermes-sprite', groupPriority: 0 },
-      { slug: 'amber', display_name: '琥珀 / Amber', renderer: 'hermes-sprite', groupPriority: 0 }
-    ];
-
-    // Group 1: 伴读使者
-    const companionPet = { slug: '', display_name: defaultPetName, renderer: 'hermes-sprite', groupPriority: 1 };
-
-    // Group 2: 73 loaded sprite pets from catalog
-    const spriteCatalog = (catalogPets.length ? catalogPets : (gallery.catalog || [])).map(p => ({
-      slug: p.slug,
-      display_name: p.zh_name || p.display_name || p.name || p.slug,
-      renderer: 'hermes-sprite',
-      groupPriority: 2
-    }));
-
-    // Other installed pets from gallery (e.g. test custom-cat or user imports)
-    const otherInstalled = (gallery.pets || [])
-      .filter(p => !customSlugs.includes(p.slug) && p.slug !== '' && !spriteCatalog.some(c => c.slug === p.slug))
-      .map(p => ({
-        ...p,
-        renderer: 'hermes-sprite',
-        groupPriority: 2
-      }));
-
-    // Live2D pets
-    const live2dPets = [
-      { slug: 'arch-chan', display_name: 'Arch-Chan', renderer: 'live2d', groupPriority: 0 }
-    ];
-
-    const allItems = [...customPets, companionPet, {slug:'bongocat',display_name:'BongoCat',renderer:'hermes-sprite',groupPriority:1}, ...spriteCatalog, ...otherInstalled, ...live2dPets];
-    allItems.forEach((it, idx) => { it.originalIndex = idx; });
-
-    // Filter by selected renderer:
-    const filtered = allItems.filter(item => {
-      if (item.renderer !== filterRenderer) return false;
-      const label = (item.slug && petT('pet.preset.' + item.slug)) || item.display_name || item.slug;
-      if (query && !`${label} ${item.slug} ${item.renderer}`.toLocaleLowerCase().includes(query)) return false;
-      return true;
+    box.querySelectorAll('.pet-workbench-tabs button, .pet-library-tools button').forEach(button => {
+      button.disabled = choosing;
     });
+    document.getElementById('pet-status-card').inert = choosing;
+    previewObserver.disconnect();
 
     const favorites = getFavorites();
-    filtered.sort((a, b) => {
-      const favA = favorites.has(a.slug) ? 0 : 1;
-      const favB = favorites.has(b.slug) ? 0 : 1;
-      if (favA !== favB) return favA - favB;
-      if (a.groupPriority !== b.groupPriority) return a.groupPriority - b.groupPriority;
-      return a.originalIndex - b.originalIndex;
-    });
-
-    for (const item of filtered) {
-      const label = (item.slug && petT('pet.preset.' + item.slug)) || item.display_name || item.slug;
-      const live = item.renderer === 'live2d';
+    const selection = petSelection();
+    const entries = rosterItems().map(pet => ({
+      slug: pet.slug,
+      renderer: pet.renderer || 'hermes-sprite',
+      name: petCharacterName(pet.slug, pet.display_name || pet.zh_name || pet.name),
+    })).filter(pet => !query || [pet.name, pet.slug, pet.renderer].join(' ').toLocaleLowerCase().includes(query));
+    entries.sort((a, b) => Number(favorites.has(b.slug)) - Number(favorites.has(a.slug)));
+    const cards = document.createDocumentFragment();
+    for (const pet of entries) {
+      const card = document.createElement('div');
+      card.className = 'pet-roster-item';
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'pet-character-card';
       button.disabled = choosing;
-      const currentActive = status?.active_slug ?? gallery.active;
-      const selected = live
-        ? status?.preferences?.renderer === 'live2d'
-        : status?.preferences?.renderer !== 'live2d' && item.slug === currentActive;
-      button.setAttribute('aria-pressed', String(selected));
-      button.dataset.renderer = item.renderer;
-      button.dataset.slug = item.slug;
-
-      const favBtn = document.createElement('span');
-      favBtn.role = 'button';
-      favBtn.tabIndex = 0;
-      const isFav = favorites.has(item.slug);
-      favBtn.className = 'pet-fav-btn' + (isFav ? ' is-favorite' : '');
-      const favLabel = window.i18n ? window.i18n.t(isFav ? 'pet.favorited' : 'pet.favorite') : (isFav ? '已收藏' : '收藏');
-      favBtn.setAttribute('aria-label', favLabel);
-      favBtn.title = favLabel;
-      favBtn.innerHTML = `<svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-      const onFavClick = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        toggleFavorite(item.slug);
-      };
-      favBtn.onclick = onFavClick;
-      favBtn.onkeydown = (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.stopPropagation();
-          e.preventDefault();
-          toggleFavorite(item.slug);
-        }
-      };
-      button.appendChild(favBtn);
+      button.setAttribute('aria-pressed', String(pet.slug === selection.slug && pet.renderer === selection.renderer));
+      button.dataset.renderer = pet.renderer;
+      button.dataset.slug = pet.slug;
+      button.onclick = () => choose(pet.renderer, pet.slug);
 
       const art = document.createElement('span');
-      art.className = live ? 'pet-card-art live2d' : 'pet-card-art sprite';
-      art.style.backgroundImage = live
-        ? 'url("/assets/pet/arch-chan-avatar.png")'
-        : item.slug === 'bongocat'
-          ? 'url("/assets/pet/bongocat-preview.png")'
-        : item.slug
-          ? `url("/api/pets/thumb?slug=${encodeURIComponent(item.slug)}")`
-          : 'url("/assets/pet/hermes-sprite.png")';
-
-      if (!live) window.paintPetPreview?.(art,item.slug);
+      art.className = 'pet-card-art';
+      art.setAttribute('aria-hidden', 'true');
+      art.dataset.previewSlug = pet.slug;
+      if (pet.renderer === 'live2d') art.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
+      else previewObserver.observe(art);
       const name = document.createElement('strong');
-      name.textContent = label;
-      const kind = document.createElement('small');
-      const kindKey = live ? 'pet.behavior.live2d' : item.slug === 'bongocat' ? 'pet.behavior.bongo' : 'pet.behavior.sprite';
-      kind.setAttribute('data-i18n', kindKey);
-      kind.textContent = t(kindKey);
-
-      button.append(art, name, kind);
-      button.onclick = () => choose(item.renderer, item.slug);
-      host.appendChild(button);
-
-      if (!choosing && focusedSlug === item.slug && focusedRenderer === item.renderer) {
-        button.focus({ preventScroll: true });
+      name.textContent = pet.name;
+      button.append(art, name);
+      if (petNeedsDesktop(pet)) {
+        const desktop = document.createElement('small');
+        desktop.title = t('pet.runtime.desktop');
+        desktop.textContent = pet.renderer === 'live2d' ? 'Live2D' : t('pet.behavior.bongo');
+        button.append(desktop);
       }
+
+      const favorite = document.createElement('button');
+      favorite.type = 'button';
+      favorite.className = 'pet-fav-btn';
+      favorite.dataset.favoriteSlug = pet.slug;
+      const selected = favorites.has(pet.slug);
+      favorite.setAttribute('aria-pressed', String(selected));
+      const label = t(selected ? 'pet.favorited' : 'pet.favorite');
+      favorite.setAttribute('aria-label', label + ' · ' + pet.name);
+      favorite.title = label;
+      favorite.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.3"/></svg>';
+      favorite.onclick = () => toggleFavorite(pet.slug);
+      card.append(button, favorite);
+      cards.append(card);
     }
-    if (!host.childElementCount) {
+    if (!entries.length) {
       const empty = document.createElement('p');
+      empty.className = 'pet-roster-empty';
       empty.textContent = t('ux.noResults');
-      host.appendChild(empty);
+      cards.append(empty);
+    }
+    host.replaceChildren(cards);
+    if (!choosing && focused) {
+      const favorite = focused.classList.contains('pet-fav-btn');
+      focusRosterButton(favorite ? focused.dataset.favoriteSlug : focused.dataset.slug, favorite);
     }
   }
 
   window.addEventListener('readmd:pet-state', e => {
-    status = e.detail;
-    if (typeof status?.preferences?.quiet === 'boolean') quiet(status.preferences.quiet, false);
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect && status?.preferences?.renderer && !rendererSelect.dataset.userChanged) {
-      rendererSelect.value = status.preferences.renderer;
-    }
+    const savedQuiet = e.detail?.preferences?.quiet;
+    if (typeof savedQuiet === 'boolean') quiet(savedQuiet, false);
     renderRoster();
   });
   window.addEventListener('readmd:pet-gallery', e => {
     gallery = e.detail;
-    if (Array.isArray(gallery.catalog) && gallery.catalog.length) {
-      catalogPets = gallery.catalog;
-    }
+    if (Array.isArray(gallery.catalog) && gallery.catalog.length) catalogPets = gallery.catalog;
     renderRoster();
   });
-  window.addEventListener('readmd:language-changed', () => { translateWorkbench(); renderRoster(); });
-  window.addEventListener('readmd:pet-open-settings', () => {
-    const box = document.getElementById('pet-settings-box');
-    if (box) box.dataset.petTab = activeTab;
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect && status?.preferences?.renderer) {
-      rendererSelect.value = status.preferences.renderer;
-      delete rendererSelect.dataset.userChanged;
-    }
-    translateWorkbench();
+  window.addEventListener('readmd:language-changed', () => {
+    updateCharacterPreview();
     renderRoster();
   });
+  window.addEventListener('readmd:pet-open-settings', renderRoster);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 
@@ -26364,16 +30321,31 @@ let exportNumberingControl = null;
 
 function getExportPresetNames() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const lang = window.i18n?.currentLang || 'en';
   return {
     minimal: _t('export.presetMinimal') || '',
     classic: _t('export.presetClassic') || '',
     business: _t('export.presetBusiness') || '',
-    ...Object.fromEntries((state.export.catalog || []).map(p=>[p.id,_t(p.label)]))
+    ...Object.fromEntries((state.export.catalog || []).map(p => [p.id, p.names?.[lang] || p.names?.en || _t(p.label)]))
   };
 }
 
 function getExportSections() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const tableOptions = { title: _t('export.secTable') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
+      { k: 'table.style', label: _t('export.tableStyle'), type: 'select', opts: [['grid', _t('export.tableGrid')], ['three-line', _t('export.tableThreeLine')]] },
+      { k: 'table.headerBg', label: _t('export.tableHeaderBg') || '', type: 'color' },
+      { k: 'table.headerColor', label: _t('export.tableHeaderColor') || '', type: 'color' },
+      { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' },
+      { k: 'table.borderColor', label: _t('export.tableBorderColor') || '', type: 'color' },
+      { k: 'table.borderWidth', label: _t('export.tableBorderWidth') || '', type: 'number', min: 0, max: 3, step: 0.25 },
+      { k: 'table.banded', label: _t('export.tableBanded') || '', type: 'checkbox' },
+      { k: 'table.bandColor', label: _t('export.tableBandColor') || '', type: 'color' },
+      { k: 'table.cellSize', label: _t('export.tableCellSize') || '', type: 'number', min: 7, max: 16 },
+      { k: 'table.cellPadding', label: _t('export.tableCellPadding') || '', type: 'number', min: 0, max: 20 },
+      { k: 'table.align', label: _t('export.align') || '', type: 'select', opts: [['left', _t('export.alignLeft') || ''], ['center', _t('export.alignCenter') || ''], ['right', _t('export.alignRight') || ''], ['justify', _t('export.alignJustify') || '']] },
+      { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 },
+    ]};
   const sections = [
     /* --- EPUB 电子书专属参数 --- */
     { title: _t('export.secEpubMeta') || '', fmts: ['epub'], fields: [
@@ -26474,20 +30446,7 @@ function getExportSections() {
       { k: 'footnotes.longNote', label: _t('export.noteLongNote'), type:'select', opts:[['split',_t('export.noteLongNoteSplit')],['keepParagraphs',_t('export.noteLongNoteKeepParagraphs')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'split' },
     ]},
     { title: _t('export.secHeadings') || '', fmts: ['pdf', 'docx', 'html', 'epub'], headingRows: true },
-    { title: _t('export.secTable') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
-      { k: 'table.style', label: _t('export.tableStyle'), type: 'select', opts: [['grid', _t('export.tableGrid')], ['three-line', _t('export.tableThreeLine')]] },
-      { k: 'table.headerBg', label: _t('export.tableHeaderBg') || '', type: 'color' },
-      { k: 'table.headerColor', label: _t('export.tableHeaderColor') || '', type: 'color' },
-      { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' },
-      { k: 'table.borderColor', label: _t('export.tableBorderColor') || '', type: 'color' },
-      { k: 'table.borderWidth', label: _t('export.tableBorderWidth') || '', type: 'number', min: 0, max: 3, step: 0.25 },
-      { k: 'table.banded', label: _t('export.tableBanded') || '', type: 'checkbox' },
-      { k: 'table.bandColor', label: _t('export.tableBandColor') || '', type: 'color' },
-      { k: 'table.cellSize', label: _t('export.tableCellSize') || '', type: 'number', min: 7, max: 16 },
-      { k: 'table.cellPadding', label: _t('export.tableCellPadding') || '', type: 'number', min: 0, max: 20 },
-      { k: 'table.align', label: _t('export.align') || '', type: 'select', opts: [['left', _t('export.alignLeft') || ''], ['center', _t('export.alignCenter') || ''], ['right', _t('export.alignRight') || ''], ['justify', _t('export.alignJustify') || '']] },
-      { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 },
-    ]},
+    tableOptions,
     { title: _t('export.secCode') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
       { k: 'code.bg', label: _t('export.codeBg') || '', type: 'color' },
       { k: 'code.color', label: _t('export.codeColor') || '', type: 'color' },
@@ -26543,9 +30502,16 @@ function getExportSections() {
     { title: _t('export.secSlides') || '', fmts: ['pptx'], fields: [
       { k: 'theme', label: _t('export.slidesTheme') || '', type: 'select', opts: ['black', 'white', 'league', 'beige', 'night', 'serif', 'simple', 'solarized', 'blood', 'moon', 'sky'] },
       { k: 'transition', label: _t('export.slidesTransition') || '', type: 'select', opts: ['slide', 'fade', 'zoom', 'none'] },
+      { k: 'pptxTitleFade', label: [_t('editor.headingWord'), _t('presentation.transitionFade')].join(' · '), type: 'checkbox', default: false },
       { k: 'slidesHint', label: _t('export.slidesHint') || '', type: 'note', full: true },
     ]},
   ];
+  if (state.export.fmt === 'pptx') {
+    return [...sections.filter(section => section.fmts?.includes('pptx')), {
+      ...tableOptions, fmts: ['pptx'],
+      fields: tableOptions.fields.filter(field => !['table.cellPadding', 'table.cellSize'].includes(field.k)),
+    }];
+  }
   const texPdf = state.export.fmt === 'pdf' && ['xelatex','pdflatex'].includes(state.export.options?.pdf?.engine);
   if (!texPdf) return sections;
   // Show only controls actually supported by the selected output engine.
@@ -26675,7 +30641,7 @@ function effectiveExportOptions(options) {return exportProfileSession()?.request
 async function openExportModal() {
   const epoch = ++exportOpenEpoch;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (state.mode === 'welcome' || state.mode === 'unavailable') {
+  if (state.mode === 'welcome' || state.mode === 'unavailable' || state.mode === 'office-preview') {
     showToast(_t('toast.openDocumentToUse') || '');
     return;
   }
@@ -27282,17 +31248,24 @@ function cancelNativeExportPreview() {
   nativeExportPreview.generation++;
   clearTimeout(nativeExportPreview.timer);
   nativeExportPreview.controller?.abort();
-  if (nativeExportPreview.taskId) apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:nativeExportPreview.taskId})}).catch(()=>{});
+  if (nativeExportPreview.taskId) void window.ReadMDTask.requestCancel(nativeExportPreview.taskId);
   nativeExportPreview.taskId='';
   nativeExportPreview.pageController?.abort();
   nativeExportPreview.pagePending = false;
+  nativeExportPreview.pageCache.clear();
+  nativeExportPreview.feedback = null;
+  previewAction(null);
   if (nativeExportPreview.blobUrl) URL.revokeObjectURL(nativeExportPreview.blobUrl);
   nativeExportPreview.signature = ''; nativeExportPreview.data = null; nativeExportPreview.missingCapability = null; nativeExportPreview.blobUrl = '';
-  document.querySelectorAll('.export-slide-frame').forEach(frame => { frame._readmdDispose?.(); frame.remove(); });
+  document.querySelectorAll('.export-slide-frame, .export-epub-frame').forEach(frame => { frame._readmdDispose?.(); frame.remove(); });
   $('export-preview-mini-page')?.classList.remove('is-slide-preview', 'is-source-preview', 'is-html-preview');
   $('export-preview-card')?.classList.remove('is-slide-preview');
   $('export-preview-modal')?.classList.remove('is-slide-preview');
-  $('export-preview-mini-page')?.classList.remove('is-native-preview');
+  const miniPage = $('export-preview-mini-page');
+  if (miniPage) {
+    miniPage.classList.remove('is-native-preview');
+    miniPage.style.height = '';
+  }
   $('export-preview-card')?.classList.remove('hidden');
   $('export-preview-capability')?.remove();
   document.querySelectorAll('#export-preview-mini-content, #export-preview-modal .export-preview-paper-wrapper').forEach(host => {
@@ -27349,6 +31322,46 @@ async function prepareExportFigures(content,options,signal) {
   }
   return {...options,figures:{...figures,rendered:snapshots}};
 }
+// The mini preview is itself a button. Keep Cancel/Retry beside it so both
+// controls stay keyboard accessible, including when the full preview is open.
+function previewAction(key, action) {
+  for (const id of ['export-preview-action', 'export-preview-full-action']) {
+    const button = $(id); if (!button) continue;
+    button.hidden = !key; button.onclick = action || null;
+    if (key) { button.dataset.i18n = key; button.textContent = _t(key); }
+  }
+}
+
+function renderPreviewFeedback() {
+  const {message, retry, key} = nativeExportPreview.feedback;
+  const mini = $('export-preview-mini-content');
+  if (mini) { mini.textContent = message; mini.setAttribute('aria-busy', 'false'); }
+  const meta = $('export-preview-paper-meta');
+  if (meta) meta.textContent = message;
+  previewAction(key, retry);
+  const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
+  if (wrapper) {
+    wrapper.textContent = message;
+    wrapper.setAttribute('aria-busy', 'false');
+  }
+  for (const id of ['export-preview-prev-btn', 'export-preview-next-btn']) {
+    const control = $(id); if (control) control.disabled = true;
+  }
+}
+
+// Keep the current image even when it alone exceeds the history budget.
+function keepPreviewPage(page, result) {
+  const cache = nativeExportPreview.pageCache;
+  cache.delete(page); cache.set(page, result);
+  let bytes = 0;
+  const size = value => value.png.length + (value.text?.length || 0);
+  for (const value of cache.values()) bytes += size(value);
+  while (cache.size > 1 && (cache.size > 8 || bytes > EXPORT_PREVIEW_CACHE_BYTES)) {
+    const oldest = cache.keys().next().value;
+    bytes -= size(cache.get(oldest)); cache.delete(oldest);
+  }
+}
+
 function renderNativeExportCapabilityRequired(generation) {
   const missing = nativeExportPreview.missingCapability;
   if (!missing) return;
@@ -27381,9 +31394,16 @@ function renderNativeExportCapabilityRequired(generation) {
 function requestNativeExportPreview(fmt, options, content, suggestedName, presetName) {
   const payload = { format: fmt, content, baseDir: state.dir || '', suggestedName, options };
   const originTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const review = window.ReadMDReview?.snapshot?.(originTab);
+  const sourceSignature = JSON.stringify([
+    originTab?.id ?? state.activeTabId,
+    originTab?.path || originTab?.reviewPath || state.file,
+    review?.document_id, review?.generation, review?.review_revision,
+  ]);
   const signature = JSON.stringify(payload);
-  if (nativeExportPreview.signature === signature) {
+  if (nativeExportPreview.signature === signature && nativeExportPreview.sourceSignature === sourceSignature) {
     if (nativeExportPreview.data) renderNativeExportPreview(presetName, options);
+    else if (nativeExportPreview.feedback) renderPreviewFeedback();
     else if (nativeExportPreview.missingCapability) renderNativeExportCapabilityRequired(nativeExportPreview.generation);
     else if (!$('export-preview-modal')?.classList.contains('hidden')) {
       const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
@@ -27395,7 +31415,8 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
   cancelNativeExportPreview();
   nativeExportPreview.lastFormat = fmt;
   const generation = nativeExportPreview.generation;
-  nativeExportPreview.signature = signature; nativeExportPreview.page = 1; nativeExportPreview.pageCache.clear();
+  nativeExportPreview.signature = signature; nativeExportPreview.sourceSignature = sourceSignature;
+  nativeExportPreview.page = 1; nativeExportPreview.pageCache.clear();
   const mini = $('export-preview-mini-content');
   if (mini) window.ReadMDTask.loading(mini, 'export.previewGenerating');
   $('export-preview-mini-page')?.classList.add('is-native-preview');
@@ -27405,6 +31426,18 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
     const wrapper = $('export-preview-modal').querySelector('.export-preview-paper-wrapper');
     if (wrapper) window.ReadMDTask.loading(wrapper, 'export.previewGenerating');
   }
+  const retry = () => {
+    if (nativeExportPreview.sourceSignature !== sourceSignature || nativeExportPreview.signature !== signature) return;
+    nativeExportPreview.signature = ''; updateExportLivePreview();
+  };
+  const stop = () => {
+    if (generation !== nativeExportPreview.generation) return;
+    cancelNativeExportPreview();
+    nativeExportPreview.signature = signature; nativeExportPreview.sourceSignature = sourceSignature;
+    nativeExportPreview.feedback = {message: _t('task.cancelled'), key: 'plugin.retry', retry};
+    renderPreviewFeedback();
+  };
+  previewAction('common.cancel', stop);
   nativeExportPreview.timer = setTimeout(async () => {
     const controller = new AbortController(); nativeExportPreview.controller = controller;
     const taskId=crypto.randomUUID();nativeExportPreview.taskId=taskId;
@@ -27429,14 +31462,11 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
         previewPayload = {...payload, ...legacyIdentity, task_id:taskId};
       }
       if(generation!==nativeExportPreview.generation)return;
-      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewPayload), signal: controller.signal });
+      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...previewPayload, delivery:'pages'}), signal: controller.signal });
       const data = await response.json();
       if (generation !== nativeExportPreview.generation) return;
       if (!response.ok || !data.ok) {
-        const capability = {publication_fonts_unavailable:'fonts', typst_engine_unavailable:'typst', latex_engine_unavailable:'latex'}[data.error_code];
-        if(capability){
-          nativeExportPreview.missingCapability = {id:capability, code:data.error_code}; renderNativeExportCapabilityRequired(generation); return;
-        }
+        if (data.error_code) throw exportSnapshotFailure(data.error_code);
         throw new Error(apiMessage(data,'export.previewFailed'));
       }
       const previewBytes = frozenPreview ? JSON.stringify(data).length : 0;
@@ -27447,15 +31477,13 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
       applyNativeExportPreview(data, presetName, options);
     } catch (error) {
       if (generation !== nativeExportPreview.generation || error.name === 'AbortError') return;
-      const capability = {publication_fonts_unavailable:'fonts', typst_engine_unavailable:'typst', latex_engine_unavailable:'latex'}[error.code];
+      const capability = {publication_fonts_unavailable:'fonts', typst_engine_unavailable:'typst', latex_engine_unavailable:'latex', pdf_engine_unavailable:'pdfium'}[error.code];
       if (capability) {
-        nativeExportPreview.missingCapability = { id: capability, code: error.code }; renderNativeExportCapabilityRequired(generation); return;
+        previewAction(null); nativeExportPreview.missingCapability = { id: capability, code: error.code }; renderNativeExportCapabilityRequired(generation); return;
       }
       const reason = error.code ? apiMessage({ error_code: error.code }, 'export.previewFailed') : error.message;
-      if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + reason; mini.setAttribute('aria-busy', 'false'); }
-      const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
-      if (wrapper) { wrapper.textContent = _t('export.previewFailed'); wrapper.setAttribute('aria-busy', 'false'); }
-      nativeExportPreview.signature = '';
+      nativeExportPreview.feedback = {message: _t('export.previewFailed') + ' · ' + reason, key: 'plugin.retry', retry};
+      renderPreviewFeedback();
     } finally {
       if (nativeExportPreview.taskId === taskId) nativeExportPreview.taskId='';
     }
@@ -27463,8 +31491,8 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
 }
 
 function applyNativeExportPreview(data, presetName, options) {
+  previewAction(null);
   nativeExportPreview.data = data;
-  if (data.firstPage) nativeExportPreview.pageCache.set(1, data.firstPage);
   if (data.pdf && !data.firstPage) {
     const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
     nativeExportPreview.blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
@@ -27485,19 +31513,28 @@ function renderNativeExportPreview(presetName, options) {
   const miniPage = $('export-preview-mini-page');
   if (miniPage) {
     miniPage.classList.add('is-native-preview');
+    const [left, bottom, right, top] = data.dimensions || [];
+    const width = right - left, height = top - bottom;
+    const miniHeight = width > 0 && height > 0 ? 110 * height / width : 148;
+    miniPage.style.height = miniHeight + 'px';
     const viewport = miniPage.parentElement;
-    if (viewport) miniPage.style.transform = 'scale(' + Math.min(2.5, (viewport.clientWidth - 32) / 110, (viewport.clientHeight - 32) / 148) + ')';
+    if (viewport) miniPage.style.transform = 'scale(' + Math.max(0, Math.min(2.5,
+      (viewport.clientWidth - 32) / 110, (viewport.clientHeight - 32) / miniHeight)) + ')';
   }
   const image = (png, className) => {
     const img = document.createElement('img'); img.className = className;
     img.src = 'data:image/png;base64,' + png; img.alt = _t('export.actualPreview'); return img;
   };
-  const accessible = () => { const p = document.createElement('p'); p.className = 'export-preview-accessible'; p.textContent = data.text || ''; return p; };
+  const accessible = text => { const p = document.createElement('p'); p.className = 'export-preview-accessible'; p.textContent = text || ''; return p; };
   if (mini) {
     mini.replaceChildren(); mini.setAttribute('aria-busy', 'false');
     if (data.firstPage) mini.appendChild(image(data.firstPage, 'export-native-page-image'));
-    else mini.appendChild(document.createTextNode(_t('export.actualPreview')));
-    mini.appendChild(accessible());
+    else if (nativeExportPreview.blobUrl) {
+      const frame = document.createElement('iframe'); frame.className = 'export-native-pdf-frame';
+      frame.title = _t('export.actualPreview'); frame.tabIndex = -1; frame.style.pointerEvents = 'none';
+      frame.src = nativeExportPreview.blobUrl + '#page=1&zoom=page-fit&toolbar=0'; mini.append(frame);
+    }
+    mini.appendChild(accessible(data.text));
   }
   const pageText = _t('export.previewPagesMeta', { total: data.pages });
   const meta = $('export-preview-paper-meta');
@@ -27512,15 +31549,16 @@ function renderNativeExportPreview(presetName, options) {
   wrapper.setAttribute('aria-busy', 'false'); wrapper.replaceChildren();
   const host = document.createElement('div'); host.id = 'export-preview-full-page';
   const sheet = document.createElement('div'); sheet.className = 'export-preview-page-sheet export-native-sheet'; sheet.dataset.page = String(nativeExportPreview.page);
-  const dims = data.dimensions || [];
+  const cached = nativeExportPreview.pageCache.get(nativeExportPreview.page);
+  const dims = cached?.dimensions || data.dimensions || [];
   if (dims.length === 4) { sheet.style.width = (dims[2] - dims[0]) * 96 / 72 + 'px'; sheet.style.height = (dims[3] - dims[1]) * 96 / 72 + 'px'; }
-  const png = nativeExportPreview.pageCache.get(nativeExportPreview.page);
+  const png = nativeExportPreview.page === 1 ? data.firstPage : cached?.png;
   if (png) sheet.appendChild(image(png, 'export-native-page-image'));
   else {
     const frame = document.createElement('iframe'); frame.className = 'export-native-pdf-frame'; frame.title = _t('export.actualPreview');
     frame.src = nativeExportPreview.blobUrl + '#page=' + nativeExportPreview.page + '&zoom=page-fit'; sheet.appendChild(frame);
   }
-  sheet.appendChild(accessible()); host.appendChild(sheet); wrapper.appendChild(host);
+  sheet.appendChild(accessible(cached?.text ?? data.text)); host.appendChild(sheet); wrapper.appendChild(host);
   const pagesMeta = $('export-preview-pages-meta');
   if (pagesMeta) pagesMeta.textContent = `${nativeExportPreview.page} / ${data.pages}${data.mode === 'shared-layout' ? ' · ' + _t('export.docxLayoutReference') + ' (' + (data.previewEngine === 'typst' ? 'Typst' : _t('export.pdfEngineNative')) + ')' : ''}`;
   const changePage = async delta => {
@@ -27531,30 +31569,45 @@ function renderNativeExportPreview(presetName, options) {
     const controller = new AbortController();
     nativeExportPreview.pageController = controller;
     nativeExportPreview.pagePending = true;
-    const deadline = setTimeout(() => controller.abort(), 15000);
+    const taskId = crypto.randomUUID();
+    nativeExportPreview.taskId = taskId;
+    const deadline = setTimeout(() => { controller.abort(); void window.ReadMDTask.requestCancel(taskId); }, 15000);
     ['export-preview-prev-btn', 'export-preview-next-btn'].forEach(id => { if ($(id)) $(id).disabled = true; });
     let failure = '';
     try {
-      if (data.firstPage && !nativeExportPreview.pageCache.has(page)) {
+      if (page !== 1 && data.firstPage && !nativeExportPreview.pageCache.has(page)) {
         window.ReadMDTask.loading(wrapper, 'export.previewGenerating');
-        const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: data.key, page }), signal: controller.signal });
+        const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: data.key, page, task_id:taskId }), signal: controller.signal });
         const result = await response.json();
         if (generation !== nativeExportPreview.generation) return;
-        if (!response.ok || !result.ok || typeof result.png !== 'string' || !result.png) throw new Error(result.error || _t('export.previewFailed'));
-        nativeExportPreview.pageCache.set(page, result.png);
+        if (!response.ok || !result.ok || typeof result.png !== 'string' || !result.png) throw exportSnapshotFailure(result.error_code || 'preview_generation_failed');
+        keepPreviewPage(page, result);
       }
       if (generation !== nativeExportPreview.generation) return;
       nativeExportPreview.page = page;
-    } catch (error) { failure = error.message; }
+    } catch (error) { failure = error.code || error.message; }
     finally {
       clearTimeout(deadline);
+      if (nativeExportPreview.taskId === taskId) nativeExportPreview.taskId = '';
       if (generation === nativeExportPreview.generation) {
         nativeExportPreview.pagePending = false;
         nativeExportPreview.pageController = null;
         renderNativeExportPreview(presetName, options);
         if (failure) {
-          if (pagesMeta) pagesMeta.textContent = `${nativeExportPreview.page} / ${data.pages} · ${_t('export.previewFailed')}`;
-          showToast(_t('export.previewFailed'));
+          if (failure === 'preview_expired') {
+            // Re-render this same frozen document. The Rust artifact can be
+            // evicted while its lightweight response is still kept by the UI.
+            for (const frozen of [exportSnapshotCache, ...exportPreviewSnapshots.values()]) {
+              if (frozen?.previewData === data) { frozen.previewData = null; frozen.previewDataBytes = 0; }
+            }
+            const retry = () => { if (generation === nativeExportPreview.generation) { nativeExportPreview.signature = ''; updateExportLivePreview(); } };
+            nativeExportPreview.data = null;
+            nativeExportPreview.feedback = {message: _t('error.preview_expired'), key: 'plugin.retry', retry};
+            renderPreviewFeedback();
+          } else {
+            if (pagesMeta) pagesMeta.textContent += ' · ' + _t('export.previewFailed');
+            showToast(_t('export.previewFailed'));
+          }
         }
       }
     }
@@ -27711,19 +31764,39 @@ function renderSourceExportPreview(data, presetName) {
   for (const id of ['export-preview-prev-btn', 'export-preview-next-btn']) { const button = $(id); if (button) { button.disabled = true; button.classList.remove('is-visible'); button.onclick = null; } }
 }
 
+const epubPreviewFrames = new WeakMap();
+
 function renderEpubExportPreview(data, presetName) {
-  const frame=()=>{
-    const el=document.createElement('iframe');el.className='export-epub-frame';el.title=_t('export.actualPreview');
-    el.addEventListener('load',()=>{
+  const generation = nativeExportPreview.generation;
+  const title = _t('export.actualPreview');
+  const reuseFrame = host => {
+    const frame = host.querySelector('.export-epub-frame');
+    const mounted = epubPreviewFrames.get(frame);
+    if (!mounted || mounted.generation !== generation || mounted.data !== data) return false;
+    // A link can navigate the frame away from the preview document.
+    const url = frame.contentDocument?.URL;
+    if (url !== 'about:srcdoc' && (mounted.loaded || url !== 'about:blank')) return false;
+    frame.title = title;
+    return true;
+  };
+  const createFrame = () => {
+    const el = document.createElement('iframe');
+    el.className = 'export-epub-frame';
+    el.title = title;
+    const mounted = { generation, data, loaded: false };
+    epubPreviewFrames.set(el, mounted);
+    el.addEventListener('load', () => {
+      const doc = el.contentDocument;
+      if (doc?.URL === 'about:srcdoc') mounted.loaded = true;
       // srcdoc inherits the host URL as its base. A bare #anchor would load
       // that URL inside the frame (blocked by the native CSP), so keep EPUB
       // chapter/footnote navigation in the already loaded viewing document.
-      el.contentDocument?.addEventListener('click',event=>{
+      doc?.addEventListener('click',event=>{
         const link=event.target.closest('a[href]'),href=link?.getAttribute('href');
         if(!href?.startsWith('#'))return;
         event.preventDefault();
         let id;try{id=decodeURIComponent(href.slice(1));}catch(_){return;}
-        const target=el.contentDocument.getElementById(id);
+        const target=doc.getElementById(id);
         if(!target)return;
         target.scrollIntoView({block:'start'});
         // Fractional device scaling can round the anchor above the viewport.
@@ -27731,18 +31804,29 @@ function renderEpubExportPreview(data, presetName) {
         el.contentWindow.scrollBy(0,-8);
       });
     });
-    el.setAttribute('sandbox','allow-same-origin');el.srcdoc=data.html;return el;
+    el.setAttribute('sandbox', 'allow-same-origin');
+    el.srcdoc = data.html;
+    return el;
   };
   const mini=$('export-preview-mini-content'),miniPage=$('export-preview-mini-page');
   miniPage?.classList.add('is-native-preview');
   if(miniPage?.parentElement)miniPage.style.transform='scale('+Math.min(2.5,(miniPage.parentElement.clientWidth-32)/110,(miniPage.parentElement.clientHeight-32)/148)+')';
-  if(mini){mini.replaceChildren(frame());mini.setAttribute('aria-busy','false');}
-  const meta=$('export-preview-paper-meta');if(meta)meta.textContent='EPUB · '+_t('export.actualPreview')+' · '+presetName;
+  if (mini) {
+    if (!reuseFrame(mini)) mini.replaceChildren(createFrame());
+    mini.setAttribute('aria-busy', 'false');
+  }
+  const meta=$('export-preview-paper-meta');if(meta)meta.textContent='EPUB · '+title+' · '+presetName;
   let style=$('export-preview-dynamic-style');if(style)style.textContent='';
   const modal=$('export-preview-modal');if(!modal||modal.classList.contains('hidden'))return;
   const wrapper=modal.querySelector('.export-preview-paper-wrapper');if(!wrapper)return;
-  wrapper.setAttribute('aria-busy','false');wrapper.replaceChildren();
-  const host=document.createElement('div');host.id='export-preview-full-page';host.className='export-epub-preview';host.append(frame());wrapper.append(host);
+  wrapper.setAttribute('aria-busy', 'false');
+  if (!reuseFrame(wrapper)) {
+    const host = document.createElement('div');
+    host.id = 'export-preview-full-page';
+    host.className = 'export-epub-preview';
+    host.append(createFrame());
+    wrapper.replaceChildren(host);
+  }
   const count=$('export-preview-pages-meta');if(count)count.textContent='';
   ['export-preview-prev-btn','export-preview-next-btn'].forEach(id=>{const button=$(id);if(button){button.disabled=true;button.classList.remove('is-visible');button.onclick=null;}});
 }
@@ -27789,12 +31873,13 @@ function updateExportLivePreview() {
   const badge = $('export-preview-badge');
   const sel = $('exp-preset');
   const presetName = (sel && sel.selectedIndex >= 0) ? sel.options[sel.selectedIndex].text : (_t('export.presetDefault') || '');
-  const fmtLabel = fmt === 'presentation' ? (_t('export.fmtSlides') || 'Slides') : fmt.toUpperCase();
+  const fmtLabel = imageExport(fmt) ? _t(fmt === 'png' ? 'export.fmtPngLong' : 'export.fmtPngPages') :
+    fmt === 'presentation' ? (_t('export.fmtSlides') || 'Slides') : fmt.toUpperCase();
   if (badge) badge.textContent = fmtLabel + ' · ' + presetName;
   renderExportPresetCards();
 
   const docTitle = currentExportName();
-  if (window.READMD_ENGINE === 'rust' && ['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx'].includes(fmt)) {
+  if (window.READMD_ENGINE === 'rust' && SNAPSHOT_EXPORT_FORMATS.has(fmt)) {
     requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
     return;
   }
@@ -27840,6 +31925,7 @@ function renderBrowserExportPreview(fmt, opts, content, presetName) {
   if (miniHost) {
     miniHost.setAttribute('aria-busy','false');
     miniHost.innerHTML = pageHtmlList[0] || restoredFullHtml;
+    if (isHtmlMode) ReadMDExportHtmlLayout.mount(miniHost, opts.htmlLayout, { links: false, contentsLabel: _t('tabs.toc'), tone: opts.htmlTheme });
     renderMath(miniHost);
     const miniPage = $('export-preview-mini-page');
     const viewport = miniPage && miniPage.parentElement;
@@ -27877,6 +31963,7 @@ function renderBrowserExportPreview(fmt, opts, content, presetName) {
         const bodyEl = document.createElement('div');
         bodyEl.className = 'export-page-body';
         bodyEl.innerHTML = pageHtml;
+        if (isHtmlMode) ReadMDExportHtmlLayout.mount(bodyEl, opts.htmlLayout, { contentsLabel: _t('tabs.toc'), tone: opts.htmlTheme });
         sheet.appendChild(bodyEl);
 
         if (!isHtmlMode) {
@@ -27974,7 +32061,8 @@ function expFieldApplicable(f, secFmts, fmt) {
   if(f.k==='footnotes.title'&&effectiveExportOptions(state.export.options||{}).footnotes?.position!=='document')return false;
   if((f.k==='toc.depth'||f.k==='toc.leader')&&fmt!=='epub'&&!state.export.options?.toc?.enabled)return false;
   const fmts = f.fmts || secFmts || ['pdf', 'docx', 'html'];
-  return fmts.indexOf(fmt) >= 0;
+  if (imageExport(fmt)) return !f.k.startsWith('pdf.') && fmts.includes('pdf');
+  return fmts.includes(fmt);
 }
 
 function renderExportSections(preserveSections = false) {
@@ -28079,7 +32167,7 @@ function renderExportSections(preserveSections = false) {
         if (profile) profile.change(el.dataset.k,value);
       }
       state.export.options = collectExportOptions();
-      if(el.dataset.k==='cover.enabled'||el.dataset.k==='page.differentOddEven')applyExportOptionsToDom();
+      if (['cover.enabled', 'page.differentOddEven', 'table.style', 'table.banded'].includes(el.dataset.k)) applyExportOptionsToDom();
       const sel = $('exp-preset');
       if (sel) sel.value = '__custom__';
       state.export.selectedPreset = '__custom__';
@@ -28197,6 +32285,15 @@ function applyExportOptionsToDom() {
     if (el.type === 'checkbox') el.checked = !!v;
     else el.value = v;
   });
+  if (state.export.fmt === 'pptx') {
+    for (const key of ['headerBg', 'headerColor', 'banded', 'bandColor']) {
+      const control = document.querySelector('#export-opts [data-k="table.' + key + '"]');
+      if (!control) continue;
+      const hidden = opts.table?.style === 'three-line' || (key === 'bandColor' && !opts.table?.banded);
+      control.disabled = hidden;
+      control.closest('.exp-field').hidden = hidden;
+    }
+  }
   window.ReadMDPublication?.lineSpacing.refreshExport($('export-opts'),opts.typography);
   window.ReadMDPublication?.tracking.refreshExport($('export-opts'),opts.typography);
   window.ReadMDPublication?.baseline.refreshExport($('export-opts'),opts.typography);
@@ -28289,24 +32386,69 @@ function exportPresetOptions(name) {
   return expDeepMerge(state.export.defaults, preset);
 }
 
+const EXPORT_FORMAT_DEFAULTS = { html: 'web_reading', pptx: 'pptx_defense', png: 'image_clean', 'png-pages': 'image_clean' };
+
+function presetFitsFormat(name, format) {
+  const entry = state.export.catalog?.find(profile => profile.id === name);
+  if (entry) return entry.formats.includes(format);
+  const customFormat = state.export.custom?.[name]?.presetFormat;
+  return !customFormat || customFormat === format;
+}
+
+function rememberExportFormat(next) {
+  if (state.export.fmt === next) return;
+  state.export.formatChoices ||= new Map();
+  const previous = { preset: $('exp-preset').value, options: state.export.options };
+  state.export.formatChoices.set(state.export.fmt, previous);
+  const remembered = state.export.formatChoices.get(next);
+  const fallback = EXPORT_FORMAT_DEFAULTS[next] || '__default__';
+  const fits = previous.preset && previous.preset !== '__default__' && presetFitsFormat(previous.preset, next);
+  state.export.fmt = next;
+  if (remembered || (fits && previous.preset !== '__custom__')) {
+    const choice = remembered || previous;
+    state.export.selectedPreset = choice.preset;
+    state.export.options = choice.options;
+  } else if (previous.preset === '__custom__' || (!fits && fallback === '__default__' && previous.preset !== '__default__')) {
+    // Carry shared typography across formats without bringing along a slide
+    // theme, a website layout, or a preset's format restriction.
+    const shared = { ...previous.options };
+    for (const key of ['htmlLayout', 'htmlTheme', 'pptxLayout', 'transition', 'pptxTitleFade', 'presetFormat']) delete shared[key];
+    state.export.selectedPreset = '__custom__';
+    state.export.options = expDeepMerge(exportPresetOptions(fallback), shared);
+  } else {
+    state.export.selectedPreset = fallback;
+    state.export.options = exportPresetOptions(fallback);
+  }
+  exportProfileSession()?.selectPreset(state.export.options);
+}
+
 function renderExportPresetSelect() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const sel = $('exp-preset');
   sel.textContent = '';
   const presetNames = getExportPresetNames();
   const catalog=state.export.catalog||[],fmt=state.export.fmt||'pdf';
-  const names = Object.keys(state.export.presets || {}).filter(n=>{const p=catalog.find(p=>p.id===n);return !p||p.formats?.includes(fmt);});
+  const entries = new Map(catalog.map(profile => [profile.id, profile]));
+  const names = Object.keys(state.export.presets || {}).filter(name => presetFitsFormat(name, fmt));
   sel.appendChild(new Option(_t('export.presetDefault') || 'Default', '__default__'));
   const categories=[['common','export.presetsCommon'],['book','export.presetsBook'],['academic','export.presetsAcademic']];
-  const added=new Set();
+  const added = new Set();
+  for (const name of names.filter(name => entries.get(name)?.names)) {
+    sel.appendChild(new Option(presetNames[name] || name, name));
+    added.add(name);
+  }
   categories.forEach(([category,key])=>{
-    const members=names.filter(n=>catalog.find(p=>p.id===n)?.category===category);
+    const members=names.filter(n=>!added.has(n) && entries.get(n)?.category===category);
     if(!members.length)return;
     const group=document.createElement('optgroup');group.label=_t(key);
     members.forEach(n=>{group.append(new Option(presetNames[n]||n,n));added.add(n);});sel.append(group);
   });
   names.filter(n=>!added.has(n)).forEach(n=>sel.append(new Option(presetNames[n]||n,n)));
-  const customNames=Object.keys(state.export.custom||{});
+  const customNames = Object.keys(state.export.custom || {}).filter(name => {
+    if (Object.hasOwn(state.export.presets, name)) return false;
+    const format = state.export.custom[name]?.presetFormat;
+    return !format || format === fmt;
+  });
   if(customNames.length){const group=document.createElement('optgroup');group.label=_t('export.presetCustom');customNames.forEach(n=>group.append(new Option(n,n)));sel.append(group);}
   sel.appendChild(new Option(_t('export.presetCustom') || '', '__custom__'));
   const last = state.export.last;
@@ -28334,11 +32476,11 @@ function renderExportPresetCards() {
   const host = $('exp-preset-cards');
   const sel = $('exp-preset');
   if (!host || !sel || !state.export.defaults) return;
-  host.textContent = '';
-  const recommended=state.export.fmt==='epub'?['book_novel','book_nonfiction','book_textbook']:['minimal','classic','business'];
+  const focused = host.contains(document.activeElement) ? document.activeElement.dataset.preset : null;
+  host.replaceChildren();
+  const catalog = new Map((state.export.catalog || []).map(profile => [profile.id, profile]));
   [...sel.options].forEach(o => {
     const v = o.value;
-    if(v!=='__default__'&&v!==sel.value&&!recommended.includes(v))return;
     if (v === '__custom__' && sel.value !== '__custom__') return;
     const opts = exportPresetOptions(v);
     const card = document.createElement('button');
@@ -28350,23 +32492,22 @@ function renderExportPresetCards() {
     const swatch = document.createElement('span');
     swatch.className = 'exp-preset-swatch';
     swatch.setAttribute('aria-hidden', 'true');
-    const h1 = (opts.headings && opts.headings.h1) || {};
-    [h1.color, (opts.table || {}).headerBg, (opts.link || {}).color, (opts.quote || {}).barColor].forEach(c => {
-      const dot = document.createElement('i');
-      if (c) dot.style.background = c;
-      swatch.appendChild(dot);
+    const profile = catalog.get(v);
+    const colors = profile?.previewColors || ['#ffffff', opts.headings?.h1?.color, opts.link?.color];
+    ['paper', 'ink', 'accent'].forEach((part, index) => {
+      const color = colors[index];
+      if (typeof color === 'string' && /^#[\da-f]{6}$/i.test(color)) swatch.style.setProperty('--preset-' + part, color);
     });
+    swatch.dataset.previewFormat = state.export.fmt;
+    for (let i = 0; i < 3; i++) swatch.appendChild(document.createElement('i'));
     const name = document.createElement('span');
     name.className = 'exp-preset-name';
     name.textContent = o.text;
-    const ty = opts.typography || {};
-    const meta = document.createElement('span');
-    meta.className = 'exp-preset-meta';
-    meta.textContent = [ty.size ? ty.size + 'pt' : '', ty.lineHeight || ''].filter(Boolean).join(' · ');
-    card.append(swatch, name, meta);
+    card.append(swatch, name);
     card.addEventListener('click', () => { sel.value = v; sel.onchange(); });
     host.appendChild(card);
   });
+  if (focused) [...host.children].find(card => card.dataset.preset === focused)?.focus({ preventScroll: true });
 }
 
 
@@ -28389,7 +32530,8 @@ async function parkPreparedExport(frozen) {
     exportPreviewSnapshots.delete(oldest.key); await discardPreparedExport(oldest);
   }
 }
-const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx']);
+const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx', 'png', 'png-pages']);
+const imageExport = format => format === 'png' || format === 'png-pages';
 function exportSnapshotFailure(code) { const error = new Error(code); error.code = code; return error; }
 function exportSnapshotId() { return 'export-' + (window.crypto?.randomUUID?.() || crypto.randomUUID()); }
 function usesExportSnapshot(fmt, tab) {
@@ -28397,7 +32539,7 @@ function usesExportSnapshot(fmt, tab) {
 }
 async function oversizedUntrackedExport(fmt, tab, content) {
   if (window.READMD_ENGINE !== 'rust' || !SNAPSHOT_EXPORT_FORMATS.has(fmt) || new TextEncoder().encode(window.ReadMDReview?.lf(content) ?? content).byteLength <= 4 * 1024 * 1024) return null;
-  if (['presentation', 'pptx'].includes(fmt)) throw exportSnapshotFailure('review_budget');
+  if (imageExport(fmt) || ['presentation', 'pptx'].includes(fmt)) throw exportSnapshotFailure('review_budget');
   if (!tab || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
   const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
   // This read does not create a review database. Only an explicit absence can
@@ -28577,6 +32719,7 @@ async function runExportOnce(taskId) {
   if (!validateEpubNumericControls(true)) return false;
   if(window.ReadMDPublication?.lineSpacing.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.tracking.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.baseline.validateExport($('export-opts'),true)===false)return false;
   const fmt = state.export.fmt;
+  const layoutFormat = imageExport(fmt) ? 'pdf' : fmt;
   const rememberedOptions = collectExportOptions();
   let options = effectiveExportOptions(rememberedOptions);
   if (fmt === 'epub' && expEpubNumericIssue(options)) { showToast(i18n.t('error.epub_invalid_options')); return false; }
@@ -28614,11 +32757,11 @@ async function runExportOnce(taskId) {
     return false;
   }
   const engineCapability={typst:'typst',xelatex:'latex',pdflatex:'latex'}[options.pdf?.engine];
-  if(fmt==='pdf'&&engineCapability){
+  if(layoutFormat==='pdf'&&engineCapability){
     const epoch=exportOpenEpoch;
     if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch){await discardPreparedExport(frozen);return false;}
   }
-  if((fmt==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options,fmt)){await discardPreparedExport(frozen);return false;}
+  if((layoutFormat==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options,layoutFormat)){await discardPreparedExport(frozen);return false;}
   busy(true);
   let r = null;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -28635,7 +32778,7 @@ async function runExportOnce(taskId) {
       // Rendered labels can introduce CJK glyphs absent from the diagram
       // source. Install against the frozen SVGs, then bind missing fonts on
       // this same snapshot before committing its output.
-      if ((fmt === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options, fmt)) {
+      if ((layoutFormat === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options, layoutFormat)) {
         await discardPreparedExport(frozen); busy(false); return false;
       }
       await bindSnapshotRuntime(frozen);
@@ -28799,6 +32942,34 @@ window.addEventListener('readmd:language-changed',()=>{
   renderExportWarns(warning.payload?warnMessages(warning.payload):warning.list,warning.payload);
 });
 
+function importExportPresetPack() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 256 * 1024) { showToast(i18n.t('plugin.installFailed')); return; }
+    try {
+      const pack = JSON.parse(await file.text());
+      const response = await apiFetch('/api/export/presets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ install_pack: pack }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok !== true) {
+        showToast(apiMessage(data, 'plugin.installFailed'));
+        return;
+      }
+      state.export.ready = false;
+      showToast(i18n.t('plugin.installed'));
+    } catch {
+      showToast(i18n.t('plugin.installFailed'));
+    }
+  }, { once: true });
+  input.click();
+}
+
 async function expSavePreset() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const box = $('exp-save-name');
@@ -28820,7 +32991,7 @@ async function expSavePreset() {
     if (!validateEpubNumericControls(true)) return;
     const options = collectExportOptions();
     if (expEpubNumericIssue(options)) { showToast(_t('error.epub_invalid_options')); return; }
-    const custom = Object.assign({}, state.export.custom, { [name]: options });
+    const custom = Object.assign({}, state.export.custom, { [name]: { ...options, presetFormat: state.export.fmt } });
     const last = { fmt: state.export.fmt, options, preset: name };
     button.disabled = true;
     try {
@@ -28993,6 +33164,8 @@ function exportPaperSize(page) {
   let imageSelectionEpoch=0;
   let deleteConfirmation=null;
   let taskCancellation=null;
+  let readingMode=false,opening=null,extracting=false;
+  let inkSelectionEpoch=0,pendingInk=null;
   const closeSavePermit=Symbol('pdf-close-save');
   const $pdf=id=>document.getElementById('pdf-'+id);
   function button(id,key,action){const b=document.createElement('button');b.id='pdf-'+id;b.type='button';b.className='tb-btn';b.dataset.i18n=key;b.textContent=t(key);b.onclick=()=>Promise.resolve(action()).catch(()=>{$pdf('status').textContent=t('error.pdf_operation_failed');});return b;}
@@ -29011,33 +33184,47 @@ function exportPaperSize(page) {
     for(const[id,symbol]of[['previous','‹'],['next','›'],['undo','↶'],['redo','↷']]){const b=$pdf(id)||header.querySelector('#pdf-'+id);b.dataset.i18nTitle=b.dataset.i18n;b.dataset.i18nAria=b.dataset.i18n;delete b.dataset.i18n;b.title=b.textContent;b.setAttribute('aria-label',b.textContent);b.textContent=symbol;}
     const more=document.createElement('details');more.className='pdf-more';const summary=document.createElement('summary');summary.textContent='…';summary.dataset.i18nAria='toolbar.more';summary.dataset.i18nTitle='toolbar.more';summary.setAttribute('aria-label',t('toolbar.more'));summary.title=t('toolbar.more');more.append(summary);
     const options=document.createElement('div');options.className='pdf-more-items';options.append(button('rotate','pdf.rotate',()=>session&&edit({kind:'rotate',page:session.page,turns:(session.rotation+1)%4})),button('delete-page','pdf.deletePage',deletePage));
+    const destination=document.createElement('input');
+    destination.id='pdf-destination';destination.type='number';destination.required=true;destination.min='1';destination.step='1';
+    destination.dataset.i18nAria='pdf.page';destination.setAttribute('aria-label',t('pdf.page'));
+    options.append(button('insert-page','pdf.insertPage',insertPage),destination,button('move-page','pdf.movePage',movePage));
     const signed=document.createElement('input');signed.type='checkbox';signed.id='pdf-signatures';options.append(label('pdf.allowSignatures',signed));
-    const password=document.createElement('input');password.id='pdf-password';password.type='password';password.autocomplete='off';password.dataset.i18nAria='pdf.password';password.setAttribute('aria-label',t('pdf.password'));options.append(label('pdf.password',password),button('retry','audit.retryLoad',()=>openedPath&&open(openedPath)));
+    const password=document.createElement('input');password.id='pdf-password';password.type='password';password.autocomplete='off';password.dataset.i18nAria='pdf.password';password.setAttribute('aria-label',t('pdf.password'));options.append(label('pdf.password',password),button('retry','audit.retryLoad',()=>openedPath&&queueOpen(openedPath,readingMode)));
     options.append(button('back','pdf.back',navigateBack),button('drafts','pdf.drafts',loadDrafts),button('history','storage.history',loadHistory));const drafts=document.createElement('div');drafts.id='pdf-drafts';options.append(drafts);more.append(options);header.append(more);
+    const readingActions=document.createElement('div');readingActions.className='pdf-context-actions';readingActions.style.padding='0 12px 8px';readingActions.setAttribute('role','group');readingActions.dataset.i18nAria='pdf.readTitle';readingActions.setAttribute('aria-label',t('pdf.readTitle'));
+    const insertInk=button('insert-ink','pdf.insertInk',chooseInk);insertInk.dataset.i18nTitle='pdf.placeInk';insertInk.title=t('pdf.placeInk');
+    readingActions.append(button('edit-original','pdf.editOriginalAction',startEditing),button('extract-markdown','pdf.extractMarkdown',extractMarkdown),insertInk);
     const save=button('save','editor.save',()=>run('save'));save.classList.add('accent');header.append(save,button('close','toolbar.close',close));
     const status=document.createElement('p');status.id='pdf-status';status.className='pdf-status';status.setAttribute('role','status');
     const viewport=document.createElement('div');viewport.className='pdf-viewport';viewport.id='pdf-viewport';
     const loading=document.createElement('div');loading.id='pdf-loading';loading.hidden=true;viewport.append(loading);
     const stage=document.createElement('div');stage.className='pdf-page';stage.id='pdf-stage';
+    stage.addEventListener('click',event=>{if(pendingInk){event.preventDefault();event.stopImmediatePropagation();placeInk(event).catch(()=>{$pdf('status').textContent=t('error.pdf_operation_failed');});}},true);
     const image=document.createElement('img');image.id='pdf-image';image.alt=t('pdf.page');image.draggable=false;const hits=document.createElement('div');hits.id='pdf-hits';stage.append(image,hits);viewport.append(stage);
     const context=document.createElement('form');context.id='pdf-context';context.className='pdf-context';context.hidden=true;
     const input=document.createElement('textarea');input.id='pdf-text';input.rows=2;input.dataset.i18nAria='pdf.selectedText';input.setAttribute('aria-label',t('pdf.selectedText'));context.append(input);
+    const choice=document.createElement('select');choice.id='pdf-choice';choice.required=true;choice.hidden=true;choice.dataset.i18nAria='pdf.selectedText';choice.setAttribute('aria-label',t('pdf.selectedText'));context.append(choice);
     const actions=document.createElement('div');actions.className='pdf-context-actions';const overflow=document.createElement('input');overflow.type='checkbox';overflow.id='pdf-overflow';actions.append(label('pdf.allowOverflow',overflow));
     const font=document.createElement('select');font.id='pdf-font';font.dataset.i18nAria='pdf.font';font.setAttribute('aria-label',t('pdf.font'));actions.append(font,button('replace-image','pdf.replaceImage',replaceImage));
-    actions.append(button('apply','pdf.apply',apply),button('note','pdf.note',async()=>{if(!selected)return;const p=selected.point||session.coordinates.origin;await edit({kind:'note',page:session.page,x:p[0],y:p[1],text:$pdf('text').value});}),button('remove','ai.delete',()=>selected&&edit({kind:selected.kind==='note'?'remove_annotation':'remove',page:session.page,object:selected.id,annotation:selected.annotation})),button('deselect','common.cancel',()=>select(null)));context.append(actions);context.onsubmit=e=>{e.preventDefault();apply();};
-    box.append(header,status,viewport,context);modal.append(box);document.body.append(modal);
-    modal.addEventListener('keydown',e=>{const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='s'){e.preventDefault();e.stopPropagation();run('save');}else if(mod&&e.key.toLowerCase()==='z'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();e.stopPropagation();run(e.shiftKey?'redo':'undo');}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(selected)select(null);else close();}else if(mod||/^F\d{1,2}$/.test(e.key)){e.stopPropagation();if(['r','w','n','p','o','f','e','g','d','k'].includes(e.key.toLowerCase())||/^F\d{1,2}$/.test(e.key))e.preventDefault();}});
+    actions.append(button('apply','pdf.apply',apply),button('note','pdf.note',async()=>{if(!selected)return;const p=selected.point||session.coordinates.origin;await edit({kind:'note',page:session.page,x:p[0],y:p[1],text:$pdf('text').value});}),button('remove','ai.delete',()=>selected&&edit({kind:['note','ink'].includes(selected.kind)?'remove_annotation':'remove',page:session.page,object:selected.id,annotation:selected.annotation})),button('deselect','common.cancel',()=>select(null)));context.append(actions);context.onsubmit=e=>{e.preventDefault();apply();};
+    box.append(header,status,readingActions,viewport,context);modal.append(box);document.body.append(modal);
+    modal.addEventListener('keydown',e=>{const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='s'){e.preventDefault();e.stopPropagation();run('save');}else if(mod&&e.key.toLowerCase()==='z'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();e.stopPropagation();run(e.shiftKey?'redo':'undo');}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(pendingInk){cancelInk();updateReadingMode();}else if(selected)select(null);else close();}else if(mod||/^F\d{1,2}$/.test(e.key)){e.stopPropagation();if(['r','w','n','p','o','f','e','g','d','k'].includes(e.key.toLowerCase())||/^F\d{1,2}$/.test(e.key))e.preventDefault();}});
     modal.addEventListener('keydown',e=>{if(e.altKey&&e.key==='ArrowLeft'){e.preventDefault();e.stopPropagation();navigateBack();}});
     window.ReadMDModal?.setGuard?.('pdf-modal',()=>{if(selected)select(null);else close();return false;});
   }
   function select(item){
     imageSelectionEpoch++;
+    if(readingMode)item=null;
     selected=item;$pdf('context').hidden=!item;
     if(!item)return;
-    $pdf('text').value=item.text||'';$pdf('text').readOnly=!!item.readonly||item.kind==='image'||item.kind==='checkbox';
+    $pdf('text').value=item.text||'';$pdf('text').hidden=item.kind==='choice';$pdf('text').readOnly=!!item.readonly||['image','checkbox','ink'].includes(item.kind);
+    const choice=$pdf('choice');choice.hidden=item.kind!=='choice';choice.disabled=item.kind!=='choice'||!!item.readonly;
+    if(item.kind==='choice'){choice.replaceChildren();for(const value of item.options||[]){const option=document.createElement('option');option.value=String(value.index);option.textContent=value.label;choice.append(option);}choice.value=String(item.options?.find(option=>option.selected)?.index??'');choice.setAttribute('aria-label',item.name||t('pdf.selectedText'));}
     const allowed=session.permissions||{content:session.can_edit,annotations:session.can_edit,forms:session.can_edit,pages:session.can_edit};
-    $pdf('apply').disabled=!['text','field','checkbox','note'].includes(item.kind)||item.readonly||!(item.kind==='note'?allowed.annotations:item.annotation!==undefined?allowed.forms:allowed.content);
-    $pdf('remove').disabled=!!item.readonly||(item.annotation!==undefined&&item.kind!=='note')||!(item.kind==='note'?allowed.annotations:allowed.content);$pdf('note').disabled=!allowed.annotations;$pdf('replace-image').disabled=!allowed.content;
+    if(allowed.forms===false)choice.disabled=true;
+    $pdf('note').hidden=item.kind==='choice';
+    $pdf('apply').disabled=!['text','field','checkbox','choice','note'].includes(item.kind)||item.readonly||!(item.kind==='note'?allowed.annotations:item.annotation!==undefined?allowed.forms:allowed.content);
+    $pdf('remove').disabled=!!item.readonly||(item.annotation!==undefined&&!['note','ink'].includes(item.kind))||!(['note','ink'].includes(item.kind)?allowed.annotations:allowed.content);$pdf('note').disabled=!allowed.annotations;$pdf('replace-image').disabled=!allowed.content;
     $pdf('replace-image').hidden=item.kind!=='image';$pdf('font').hidden=item.kind!=='text'||!!item.readonly;
     $pdf('overflow').closest('label').hidden=item.kind!=='text'||!!item.readonly;
     $pdf('apply').hidden=!!item.readonly;$pdf('remove').hidden=!!item.readonly;
@@ -29046,22 +33233,27 @@ function exportPaperSize(page) {
   function setLoading(value){
     modal.setAttribute('aria-busy',String(value));$pdf('viewport').setAttribute('aria-busy',String(value));
     $pdf('loading').hidden=!value;
-    if(value){window.ReadMDTask.loading($pdf('loading'));$pdf('stage').hidden=true;select(null);}
+    if(value){cancelInk();window.ReadMDTask.loading($pdf('loading'));$pdf('stage').hidden=true;select(null);}
     for(const control of modal.querySelectorAll('.pdf-toolbar button,.pdf-toolbar input'))if(control.id!=='pdf-close')control.inert=value;
   }
   async function paint(data){
+    if(session && (session.pages!==data.pages || session.revision!==data.revision)) navigation=[];
     if(session?.session!==data.session){$pdf('drafts').replaceChildren();listKind=null;navigation=[];}
     session=data;openedPath=data.path||openedPath;updateUnloadGuard();select(null);$pdf('image').src='data:image/bmp;base64,'+data.image;$pdf('stage').style.aspectRatio=data.width+'/'+data.height;
     $pdf('page').value=String(data.page+1);$pdf('page').max=String(data.pages);$pdf('pages').textContent='/ '+data.pages;
     $pdf('previous').disabled=data.page===0;$pdf('next').disabled=data.page+1>=data.pages;$pdf('undo').disabled=!data.can_undo;$pdf('redo').disabled=!data.can_redo;$pdf('save').disabled=!data.dirty;
+    $pdf('destination').value=String(data.page+1);$pdf('destination').max=String(data.pages);
+    $pdf('insert-page').disabled=data.permissions?.pages===false;
+    $pdf('destination').disabled=$pdf('move-page').disabled=data.pages<2||data.permissions?.pages===false;
     $pdf('rotate').disabled=data.permissions?.pages===false;$pdf('delete-page').disabled=data.pages===1||data.permissions?.pages===false;
-    $pdf('status').textContent=t(data.can_edit?'pdf.hint':'error.pdf_read_only')+(data.dirty?' · '+t('pdf.unsaved'):'');
+    updateReadingMode();
     $pdf('font').replaceChildren();for(const name of ['',...(data.fonts||[])]){const option=document.createElement('option');option.value=name;option.textContent=name||t('pdf.originalFont');$pdf('font').append(option);}
     const hits=$pdf('hits');hits.replaceChildren();
     for(const item of [...data.objects,...data.annotations.map(a=>({...a,annotation:a.id}))]){
-      if(!['text','image','field','checkbox','note'].includes(item.kind))continue;
+      if(readingMode)continue;
+      if(!['text','image','field','checkbox','choice','note','ink'].includes(item.kind))continue;
       const r=item.bounds;if(!r.width||!r.height)continue;
-      const hit=document.createElement('button');hit.type='button';hit.className='pdf-hit';hit.setAttribute('aria-label',item.text||item.name||t(item.kind==='image'?'pdf.image':'pdf.selectedText'));
+      const hit=document.createElement('button');hit.type='button';hit.className='pdf-hit';hit.setAttribute('aria-label',item.text||item.name||t(item.kind==='image'?'pdf.image':item.kind==='ink'?'pdf.inkStroke':'pdf.selectedText'));
       hit.style.left=(100*r.x/data.width)+'%';hit.style.top=(100*r.y/data.height)+'%';hit.style.width=(100*r.width/data.width)+'%';hit.style.height=(100*r.height/data.height)+'%';
       hit.onclick=()=>{
         const c=data.coordinates,x=r.x,y=r.y;item.point=[c.origin[0]+x*c.x[0]+y*c.y[0],c.origin[1]+x*c.x[1]+y*c.y[1]];select(item);
@@ -29072,7 +33264,7 @@ function exportPaperSize(page) {
       const target=link.target,hit=document.createElement('button');hit.type='button';hit.className='pdf-hit pdf-link';hit.dataset.link=String(link.id);
       hit.pdfTarget=target;labelLink(hit,target);
       hit.style.left=(100*r.x/data.width)+'%';hit.style.top=(100*r.y/data.height)+'%';hit.style.width=(100*r.width/data.width)+'%';hit.style.height=(100*r.height/data.height)+'%';
-      hit.onclick=e=>{if(e.altKey){const x=r.x+r.width/2,y=r.y+r.height/2,item=data.objects.find(o=>o.kind==='text'&&o.bounds.x<=x&&o.bounds.y<=y&&o.bounds.x+o.bounds.width>=x&&o.bounds.y+o.bounds.height>=y);if(item)select(item);return;}navigateLink(target).catch(()=>{$pdf('status').textContent=t('error.pdf_operation_failed');});};
+      hit.onclick=e=>{if(e.altKey&&!readingMode){const x=r.x+r.width/2,y=r.y+r.height/2,item=data.objects.find(o=>o.kind==='text'&&o.bounds.x<=x&&o.bounds.y<=y&&o.bounds.x+o.bounds.width>=x&&o.bounds.y+o.bounds.height>=y);if(item)select(item);return;}navigateLink(target).catch(()=>{$pdf('status').textContent=t('error.pdf_operation_failed');});};
       hits.append(hit);
     }
     $pdf('back').disabled=!navigation.length;
@@ -29115,8 +33307,9 @@ function exportPaperSize(page) {
   }
   async function run(action,extra={},permit=null){
     if(working||!session||(closing&&permit!==closeSavePermit))return false;
+    if(readingMode&&['edit','undo','redo','save'].includes(action))return false;
     cancelDeleteConfirmation();
-    const old=session,selection=selected,draft=selection?{text:$pdf('text').value,font:$pdf('font').value,overflow:$pdf('overflow').checked}:null;
+    const old=session,selection=selected,draft=selection?{text:$pdf('text').value,choice:$pdf('choice').value,font:$pdf('font').value,overflow:$pdf('overflow').checked}:null;
     working=true;if(action!=='save')setLoading(true);
     try{
       const data=await request({action,session:old.session,revision:old.revision,page:old.page,width:1600,...extra});
@@ -29127,7 +33320,7 @@ function exportPaperSize(page) {
       // uncommitted input so overflow/font errors can be corrected in place.
       if(action!=='save'&&session===old){
         $pdf('stage').hidden=false;select(selection);
-        if(draft){$pdf('text').value=draft.text;$pdf('font').value=draft.font;$pdf('overflow').checked=draft.overflow;}
+        if(draft){$pdf('text').value=draft.text;$pdf('choice').value=draft.choice;$pdf('font').value=draft.font;$pdf('overflow').checked=draft.overflow;}
       }
       $pdf('status').textContent=t('error.'+error.message);return false;
     }
@@ -29135,7 +33328,51 @@ function exportPaperSize(page) {
   }
   const refresh=number=>run('render',{page:number});const page=delta=>session&&refresh(Math.max(0,Math.min(session.pages-1,session.page+delta)));
   const edit=operation=>run('edit',{operation});
+  function cancelInk(){inkSelectionEpoch++;pendingInk=null;if($pdf('stage'))$pdf('stage').style.cursor='';}
+  function inkTargetCurrent(target){return !readingMode&&!working&&!closing&&!extracting&&session===target.session&&session?.revision===target.revision&&session.page===target.page&&inkSelectionEpoch===target.epoch;}
+  function chooseInk(){
+    if(readingMode||working||closing||extracting||!session||session.permissions?.annotations===false)return;
+    cancelInk();const target={session,revision:session.revision,page:session.page,epoch:inkSelectionEpoch};
+    const input=document.createElement('input');input.type='file';input.accept='.svg,image/svg+xml';
+    input.onchange=async()=>{
+      const file=input.files?.[0];if(!file||!inkTargetCurrent(target))return;
+      try{
+        if(!file.size||file.size>768*1024)throw Error('pdf_limit');
+        const svg=await file.text();if(!inkTargetCurrent(target))return;
+        // Preparation is read-only and uses the exact shared Drawing::open
+        // validator. The edit request validates it again before journaling.
+        const response=await apiFetch('/api/pdf/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'prepare_ink',session:session.session,revision:session.revision,svg})});
+        const data=await response.json();if(!inkTargetCurrent(target))return;
+        if(!response.ok||!data.ok)throw Error(data.error_code||'pdf_operation_failed');
+        if(!Number.isInteger(data.width)||!Number.isInteger(data.height)||data.width<1||data.height<1||data.width>8192||data.height>8192)throw Error('pdf_invalid_operation');
+        pendingInk={...target,svg,width:data.width,height:data.height};$pdf('stage').style.cursor='crosshair';$pdf('status').textContent=t('pdf.placeInk');
+      }catch(error){if(inkTargetCurrent(target))$pdf('status').textContent=t('error.'+error.message);}
+    };input.click();
+  }
+  async function placeInk(event){
+    const target=pendingInk;if(!target||!inkTargetCurrent(target)){cancelInk();return false;}
+    const rect=$pdf('stage').getBoundingClientRect();if(!rect.width||!rect.height)return false;
+    const scale=Math.min(session.width*0.4/target.width,session.height*0.4/target.height);
+    const x=Math.max(0,Math.min(session.width-target.width*scale,(event.clientX-rect.left)*session.width/rect.width-target.width*scale/2));
+    const y=Math.max(0,Math.min(session.height-target.height*scale,(event.clientY-rect.top)*session.height/rect.height-target.height*scale/2));
+    const c=session.coordinates,sx=Math.hypot(...c.x),sy=Math.hypot(...c.y),unit=Math.min(sx,sy);
+    if(!sx||!sy||!Number.isFinite(unit)){cancelInk();return false;}
+    // PDFium rounds the raster width/height to integers. Normalize that pixel
+    // rounding before placing a physically uniform native PDF pen width.
+    const transform=[c.origin[0]+x*c.x[0]+y*c.y[0],c.origin[1]+x*c.x[1]+y*c.y[1],c.x[0]*scale*unit/sx,c.x[1]*scale*unit/sx,c.y[0]*scale*unit/sy,c.y[1]*scale*unit/sy];
+    cancelInk();return edit({kind:'ink',page:target.page,svg:target.svg,transform});
+  }
   function cancelDeleteConfirmation(){if(deleteConfirmation){deleteConfirmation.abort();deleteConfirmation=null;}}
+  function insertPage(){
+    if(!session||working||closing)return;
+    return run('edit',{page:session.page+1,operation:{kind:'insert_page',page:session.page}});
+  }
+  function movePage(){
+    if(!session||working||closing)return;
+    const field=$pdf('destination'),to=field.valueAsNumber-1;
+    if(!Number.isInteger(to)||to<0||to>=session.pages){field.reportValidity();field.focus();return;}
+    if(to!==session.page)return run('edit',{page:to,operation:{kind:'move_page',page:session.page,to}});
+  }
   async function deletePage(){
     if(!session||working||closing)return;
     const current=session,revision=current.revision,page=current.page;
@@ -29151,6 +33388,7 @@ function exportPaperSize(page) {
     const current=session,target=selected;
     const op={kind:target.kind==='note'?'annotation':target.annotation!==undefined?'field':'text',page:current.page,object:target.id,annotation:target.annotation,text:$pdf('text').value,font:$pdf('font').value,allow_overflow:$pdf('overflow').checked};
     if(target.kind==='checkbox')op.checked=!target.checked;
+    if(target.kind==='choice'){if(!$pdf('choice').reportValidity())return;op.option=Number($pdf('choice').value);delete op.text;delete op.font;delete op.allow_overflow;}
     if(op.kind==='text'&&op.font&&!await window.ReadMDCapabilities.ensure('fonts'))return;
     // Installation can take time. Never apply the old selection to a newer
     // page or revision after the user has continued working.
@@ -29184,18 +33422,55 @@ function exportPaperSize(page) {
       cancelDeleteConfirmation();
       if(working){$pdf('status').textContent=t('task.cancelling');await cancelWorkingTask();return false;}
       if(session?.dirty){const answer=await promptDirtyClose((openedPath||t('pdf.title')).split(/[\\/]/).pop());if(answer==='cancel')return false;if(answer==='save'&&!await run('save',{},closeSavePermit))return false;}
-      if(session){try{await request({action:'close',session:session.session,discard:true});}catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}session=null;updateUnloadGuard();}
+      if(session){try{await request({action:'close',session:session.session,revision:session.revision,discard:true});}catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}session=null;updateUnloadGuard();}
       if(modal){modal.classList.add('hidden');$pdf('password').value='';}opener?.focus?.();return true;
     }finally{closing=false;}
   }
   async function open(path){
-    if(!await window.ReadMDCapabilities.ensure('pdfium'))return false;
-    build();const password=$pdf('password').value;if(session){if(!await close())return false;}
-    opener=document.activeElement;window.ReadMDModal.open(modal);$pdf('status').textContent=t('app.loading');working=true;setLoading(true);
-    openedPath=path;
-    try{await paint(await request({action:'open',path,password,width:1600}));return true;}
-    catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}
-    finally{working=false;task=null;setLoading(false);}
+    return queueOpen(path,false);
+  }
+  function updateReadingMode(){
+    const key=readingMode?'pdf.readTitle':'pdf.title',title=$pdf('title'),name=(openedPath||'').split(/[\\/]/).pop();title.dataset.i18n=key;title.textContent=t(key)+(name?' · '+name:'');
+    title.title=name;title.style.flex='1 1 0';title.style.minWidth='0';title.style.overflow='hidden';title.style.textOverflow='ellipsis';
+    for(const id of ['undo','redo','save','rotate','delete-page','insert-page','destination','move-page']){const node=$pdf(id);node.hidden=readingMode;node.classList.toggle('hidden',readingMode);}
+    const signatures=$pdf('signatures').closest('label');signatures.hidden=readingMode;signatures.classList.toggle('hidden',readingMode);
+    $pdf('edit-original').hidden=!readingMode;$pdf('edit-original').classList.toggle('hidden',!readingMode);$pdf('edit-original').disabled=!session?.can_edit&&!Object.values(session?.permissions||{}).some(Boolean);
+    $pdf('insert-ink').hidden=readingMode;$pdf('insert-ink').classList.toggle('hidden',readingMode);$pdf('insert-ink').disabled=!session||session.permissions?.annotations===false;
+    $pdf('extract-markdown').disabled=!session;
+    $pdf('status').textContent=t(readingMode?'pdf.readHint':session?.can_edit?'pdf.hint':'error.pdf_read_only')+(session?.dirty?' · '+t('pdf.unsaved'):'');
+  }
+  async function startEditing(){
+    if(working||closing||extracting||!session||(!session.can_edit&&!Object.values(session.permissions||{}).some(Boolean)))return false;
+    readingMode=false;working=true;setLoading(true);
+    try{await paint(session);return true;}finally{working=false;setLoading(false);}
+  }
+  async function extractMarkdown(){
+    if(working||closing||extracting||opening||!session)return false;
+    if(typeof convertFile!=='function'){$pdf('status').textContent=t('convert.moduleUnavailable');return false;}
+    extracting=true;const path=openedPath;
+    try{
+      // Save/discard/cancel belongs to this PDF, before extraction reads its
+      // last saved bytes. A cancelled/failed close must never start conversion.
+      if(!await close())return false;
+      return await convertFile(path)===true;
+    }finally{extracting=false;}
+  }
+  async function queueOpen(path,readOnly){
+    if(!path||closing||extracting){showToast(t('error.pdf_busy'));return false;}
+    const previous=opening;
+    const pending=(async()=>{
+      if(previous)await previous.catch(()=>{});
+      if(!window.ReadMDCapabilities?.ensure){showToast(t('pdf.readUnavailable'));return false;}
+      if(!await window.ReadMDCapabilities.ensure('pdfium'))return false;
+      build();const password=openedPath===path?$pdf('password').value:'';
+      if(session&&!await close())return false;
+      readingMode=readOnly;opener=document.activeElement;openedPath=path;$pdf('password').value=password;updateReadingMode();window.ReadMDModal.open(modal);$pdf('status').textContent=t('app.loading');working=true;setLoading(true);
+      try{await paint(await request({action:'open',path,password,width:1600}));return true;}
+      catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}
+      finally{working=false;task=null;setLoading(false);}
+    })();
+    opening=pending;
+    try{return await pending;}finally{if(opening===pending)opening=null;}
   }
   async function choose(){
     if(hasPy){const path=await py.choose_any_file();if(path)await open(path);return;}
@@ -29204,7 +33479,7 @@ function exportPaperSize(page) {
   async function loadDrafts(){
     if(working||closing)return;listKind='drafts';const result=await request({action:'drafts'}),list=$pdf('drafts');list.replaceChildren();
     if(!result.drafts.length){list.textContent=t('pdf.noDrafts');return;}
-    for(const draft of result.drafts){const b=button('resume-'+draft.id,'pdf.drafts',async()=>{const password=$pdf('password').value;if(!await close())return;window.ReadMDModal.open(modal);working=true;setLoading(true);try{await paint(await request({action:'resume',draft:draft.id,password,width:1600}));}catch(error){$pdf('status').textContent=t('error.'+error.message);}finally{working=false;setLoading(false);}});delete b.dataset.i18n;b.textContent=draft.name+' · '+new Date(draft.created).toLocaleDateString(window.i18n.currentLang);list.append(b);}
+    for(const draft of result.drafts){const b=button('resume-'+draft.id,'pdf.drafts',async()=>{const password=$pdf('password').value;if(!await close())return;readingMode=false;window.ReadMDModal.open(modal);working=true;setLoading(true);try{await paint(await request({action:'resume',draft:draft.id,password,width:1600}));}catch(error){$pdf('status').textContent=t('error.'+error.message);}finally{working=false;setLoading(false);}});delete b.dataset.i18n;b.textContent=draft.name+' · '+new Date(draft.created).toLocaleDateString(window.i18n.currentLang);list.append(b);}
   }
   async function loadHistory(){
     if(working||closing||!session)return;listKind='history';const result=await request({action:'history',path:session.path}),list=$pdf('drafts');list.replaceChildren();if(!result.history.length){list.textContent=t('storage.empty');return;}
@@ -29216,7 +33491,7 @@ function exportPaperSize(page) {
       $pdf('password').value=password;await open(path);if(failure)$pdf('status').textContent=t('error.'+failure.message);
     });delete b.dataset.i18n;b.textContent=date;list.append(b);}
   }
-  window.ReadMDPdf={open,choose,close,prepareClose:close,get dirty(){return !!session?.dirty;}};
+  window.ReadMDPdf={open,read:path=>queueOpen(path,true),choose,close,prepareClose:async()=>{if(opening||extracting){showToast(t('error.pdf_busy'));return false;}return close();},get dirty(){return !!session?.dirty;}};
   async function packRequest(payload){
     const d=await window.ReadMDCapabilities.request(payload);
     if(payload.action!=='status'&&(d.id==='pdfium'||d.id==='ocr')){
@@ -29226,18 +33501,50 @@ function exportPaperSize(page) {
     }
     return d;
   }
-  window.refreshOfflineCapabilityPack=async()=>{
-    const row=document.getElementById('plugin-capability-pack');if(!row)return;
+  let capabilityPanelRefresh=null,capabilityPanelOperation=null,capabilityPanelGeneration=0;
+  function syncCapabilityPanelBusy(){
+    const row=document.getElementById('plugin-capability-pack'),busy=!!(capabilityPanelRefresh||capabilityPanelOperation);
+    if(row){row.setAttribute('aria-busy',String(busy));for(const button of row.querySelectorAll('button[data-capability-action]'))button.disabled=busy||button.dataset.capabilityBusy==='true';}
+    const offline=document.getElementById('plugin-offline-pack');if(offline)offline.disabled=busy;
+  }
+  function capabilityActionAllowed(button,data){return button.isConnected&&!button.disabled&&!data.busy&&!capabilityPanelRefresh&&!capabilityPanelOperation;}
+  async function runCapabilityPanelOperation(action){
+    if(capabilityPanelOperation)return false;
+    const previous=capabilityPanelRefresh?.promise;
+    let release;const operation={done:new Promise(resolve=>{release=resolve;}),refresh:null};
+    capabilityPanelOperation=operation;capabilityPanelGeneration++;syncCapabilityPanelBusy();
+    try{if(previous)await previous;return await action();}
+    finally{
+      capabilityPanelOperation=null;release();
+      // A queued refresh joins this one after the real operation has settled.
+      // Never probe while uninstall owns the capability's exclusive lease.
+      await(operation.refresh||window.refreshOfflineCapabilityPack());
+    }
+  }
+  window.refreshOfflineCapabilityPack=()=>{
+    if(capabilityPanelOperation){
+      const operation=capabilityPanelOperation;
+      if(!operation.refresh)operation.refresh=operation.done.then(()=>window.refreshOfflineCapabilityPack());
+      return operation.refresh;
+    }
+    if(capabilityPanelRefresh)return capabilityPanelRefresh.promise;
+    const pending={promise:null},generation=capabilityPanelGeneration;capabilityPanelRefresh=pending;syncCapabilityPanelBusy();
+    pending.promise=(async()=>{
+    const row=document.getElementById('plugin-capability-pack');if(!row)return false;
+    try{
     const catalog=await window.ReadMDCapabilities.request({action:'catalog'}),entries=catalog.packs.filter(p=>p.available);
-    const results=await Promise.allSettled(entries.map(p=>packRequest({action:'status',id:p.id})));row.replaceChildren();row.classList.remove('hidden');
+    const results=await Promise.allSettled(entries.map(p=>packRequest({action:'status',id:p.id})));
+    if(generation!==capabilityPanelGeneration||capabilityPanelOperation||row!==document.getElementById('plugin-capability-pack'))return false;
+    row.replaceChildren();row.classList.remove('hidden');
     for(let i=0;i<results.length;i++){
       const result=results[i],item=document.createElement('div');item.className='plugin-capability-item';row.append(item);
       if(result.status!=='fulfilled'){item.textContent=t('error.'+result.reason.message);continue;}
-      const data=result.value,entry=entries[i],engine=t(entry.labelKey),name=document.createElement('details');name.className='plugin-capability-details';const summary=document.createElement('summary'),title=document.createElement('strong');title.textContent=engine+' · '+t(data.installed?'plugin.installed':'plugin.notInstalled');summary.append(title);const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);const sizes=document.createElement('p');sizes.textContent=t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed:window.ReadMDCapabilities.size(entry.installedBytes)});name.append(summary,purpose,sizes);item.append(name);
-      if(!data.installed){const install=document.createElement('button');install.type='button';install.className='tb-btn';install.textContent=t('plugin.install');install.id='plugin-capability-install-'+data.id;install.onclick=async()=>{if(await window.ReadMDCapabilities.ensure(data.id))await window.refreshOfflineCapabilityPack();};item.append(install);}
+      const data=result.value,entry=entries[i],engine=window.ReadMDCapabilities.label(entry),name=document.createElement('details');name.className='plugin-capability-details';const summary=document.createElement('summary'),title=document.createElement('strong');title.textContent=engine+' · '+t(data.busy?'error.'+(data.busy_code||'capability_install_busy'):data.installed?'plugin.installed':'plugin.notInstalled');summary.append(title);const purpose=document.createElement('p');purpose.textContent=window.ReadMDCapabilities.description(entry);purpose.hidden=!purpose.textContent;const sizes=document.createElement('p'),installed=window.ReadMDCapabilities.size(entry.installedBytes);sizes.textContent=entry.delivery==='bundled'?t('capability.core.name')+' · '+installed:t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed});name.append(summary,purpose,sizes);item.append(name);
+      if(!data.installed){const install=document.createElement('button');install.type='button';install.className='tb-btn';install.dataset.capabilityAction='install';install.dataset.capabilityBusy=String(!!data.busy);install.textContent=t('plugin.install');install.id='plugin-capability-install-'+data.id;install.onclick=async()=>{if(!capabilityActionAllowed(install,data))return;await runCapabilityPanelOperation(()=>window.ReadMDCapabilities.ensure(data.id));};item.append(install);}
       if(data.present){const remove=document.createElement('button');remove.type='button';remove.className='tb-btn';remove.id=data.id==='pdfium'?'plugin-capability-uninstall':'plugin-capability-uninstall-'+data.id;remove.textContent=t('plugin.uninstall');remove.onclick=async()=>{
+        if(!capabilityActionAllowed(remove,data))return;
+        try{const result=await runCapabilityPanelOperation(async()=>{
         if(!await confirmAction({title:t('plugin.uninstall'),message:t('capability.uninstallConfirm',{name:engine}),confirmText:t('plugin.uninstall'),cancelText:t('common.cancel'),danger:true}))return;
-        remove.disabled=true;
         const operation=document.createElement('div');operation.className='plugin-capability-operation';
         const progress=document.createElement('progress');progress.max=100;progress.setAttribute('aria-label',t('plugin.uninstall'));
         const status=document.createElement('span');status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.textContent=t('plugin.uninstall')+'…';
@@ -29247,19 +33554,25 @@ function exportPaperSize(page) {
         const paint=d=>{cancel.disabled=!['removing'].includes(d.phase);if(d.files_total){progress.value=100*d.files_done/d.files_total;}else{progress.removeAttribute('value');}status.textContent=d.phase==='cancelling'?t('task.cancelling'):t('plugin.uninstall')+'…'+(d.files_total?' '+new Intl.NumberFormat(window.i18n.currentLang).format(d.files_done)+' / '+new Intl.NumberFormat(window.i18n.currentLang).format(d.files_total):'');};
         const requestCancel=async()=>{cancelRequested=true;cancel.disabled=true;status.textContent=t('task.cancelling');if(!cancelTask)return;try{paint(await cancelTask());}catch(error){status.textContent=t('error.'+error.message);}};
         cancel.onclick=requestCancel;
-        try{const result=await window.ReadMDCapabilities.uninstall(data.id,{onJob:(_job,action)=>{cancelTask=action;if(cancelRequested)requestCancel();},onProgress:paint});await window.refreshOfflineCapabilityPack();showToast(t(result.cleanup_pending?'capability.cleanupPending':'plugin.uninstallSuccess',{name:engine}));}
-        catch(error){if(error.message!=='cancelled')showToast(t('error.'+error.message));await window.refreshOfflineCapabilityPack();}
-        finally{operation.remove();remove.disabled=false;}
-      };item.append(remove);}
+        try{return await window.ReadMDCapabilities.uninstall(data.id,{onJob:(_job,action)=>{cancelTask=action;if(cancelRequested)requestCancel();},onProgress:paint});}
+        finally{operation.remove();}
+        });if(result)showToast(t(result.cleanup_pending?'capability.cleanupPending':'plugin.uninstallSuccess',{name:engine}));}
+        catch(error){if(error.message!=='cancelled')showToast(t('error.'+error.message));}
+      };remove.dataset.capabilityAction='uninstall';remove.dataset.capabilityBusy=String(!!data.busy);item.append(remove);}
     }
+    return true;
+    }catch(error){if(generation===capabilityPanelGeneration&&!capabilityPanelOperation){row.textContent=t('error.'+error.message);row.classList.remove('hidden');}return false;}
+    })().finally(()=>{if(capabilityPanelRefresh===pending)capabilityPanelRefresh=null;syncCapabilityPanelBusy();});
+    return pending.promise;
   };
   window.installOfflineCapabilityPack=async()=>{
-    const install=async picked=>{if(!picked)return;const b=document.getElementById('plugin-offline-pack');b.disabled=true;try{const installed=await packRequest({action:'install',path:picked});showToast(t('capability.packInstalled',{name:t('capability.'+installed.id+'.name')}));}catch(error){showToast(t('error.'+error.message));}finally{b.disabled=false;await window.refreshOfflineCapabilityPack();}};
-    if(hasPy){await install(await py.choose_any_file());return;}
-    const input=document.createElement('input');input.type='file';input.accept='.readmd-pack';input.onchange=async()=>{const file=input.files?.[0];if(!file)return;const button=document.getElementById('plugin-offline-pack');button.disabled=true;try{const installed=await window.ReadMDCapabilities.upload(file);showToast(t('capability.packInstalled',{name:t('capability.'+installed.id+'.name')}));}catch(error){showToast(t('error.'+error.message));}finally{button.disabled=false;await window.refreshOfflineCapabilityPack();}};input.click();
+    if(capabilityPanelOperation||capabilityPanelRefresh)return;
+    const install=async picked=>{if(!picked)return;try{const installed=await packRequest({action:'install',path:picked});showToast(t('capability.packInstalled',{name:window.ReadMDCapabilities.label(installed.id)}));}catch(error){showToast(t('error.'+error.message));}};
+    if(hasPy){await runCapabilityPanelOperation(async()=>install(await py.choose_any_file()));return;}
+    const input=document.createElement('input');input.type='file';input.accept='.readmd-pack';input.onchange=async()=>{const file=input.files?.[0];if(!file||capabilityPanelOperation)return;await runCapabilityPanelOperation(async()=>{try{const installed=await window.ReadMDCapabilities.upload(file);showToast(t('capability.packInstalled',{name:window.ReadMDCapabilities.label(installed.id)}));}catch(error){showToast(t('error.'+error.message));}});};input.click();
   };
   document.getElementById('plugin-offline-pack')?.addEventListener('click',()=>window.installOfflineCapabilityPack().catch(()=>showToast(t('error.capability_pack_invalid'))));
-  window.addEventListener('readmd:language-changed',()=>{if(!document.getElementById('plugin-modal')?.classList.contains('hidden'))window.refreshOfflineCapabilityPack();if(session){$pdf('status').textContent=t(session.can_edit?'pdf.hint':'error.pdf_read_only')+(session.dirty?' · '+t('pdf.unsaved'):'');const original=$pdf('font').querySelector('option[value=""]');if(original)original.textContent=t('pdf.originalFont');}});
+  window.addEventListener('readmd:language-changed',()=>{if(!document.getElementById('plugin-modal')?.classList.contains('hidden'))window.refreshOfflineCapabilityPack();if(session){updateReadingMode();const original=$pdf('font').querySelector('option[value=""]');if(original)original.textContent=t('pdf.originalFont');}});
   window.openPdfEditor=choose;
   document.getElementById('btn-pdf-edit')?.addEventListener('click',choose);
 })();
@@ -29429,10 +33742,7 @@ async function checkUpdateOnce(silent = true) {
       return res;
     }
     scheduleUpdateCheck(true);
-    if (res && res.current_version) {
-      if ($('status-version')) $('status-version').textContent = 'v' + res.current_version;
-      if ($('menu-version-label')) $('menu-version-label').textContent = _t('update.currentVer', { ver: res.current_version }) || ('当前版本 v' + res.current_version);
-    }
+    syncVersionLabels(res.current_version);
     if (res.has_update) {
       updateInfo = res;
       upgradeUrl = res.html_url;
@@ -29525,7 +33835,6 @@ async function startUpdateDownload() {
   updateStatusFailures = 0;
   updatePollPending = false;
   const asset = updateInfo.asset;
-  const useMirror = $('update-use-mirror') && $('update-use-mirror').checked;
   if (!asset.expected_sha) {
     showToast(_t('update.unverifiedPackage') || '无法验证更新包');
     return;
@@ -29543,17 +33852,16 @@ async function startUpdateDownload() {
     let started = false;
     let startResult = null;
     if (hasPy && py.start_download_update) {
-      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, useMirror);
+      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, false);
       started = startResult && startResult.ok;
     } else {
-      const resp = await fetch('/api/update/download', {
+      const resp = await apiFetch('/api/update/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           download_url: asset.download_url,
           target_filename: asset.name,
           expected_sha: asset.expected_sha,
-          use_mirror: useMirror,
         }),
       });
       startResult = await resp.json();
@@ -30463,8 +34771,8 @@ async function applyReadyUpdate() {
 (function () {
   const VERSION = (document.documentElement && document.documentElement.dataset.version) || '';
   const q = VERSION ? '?v=' + encodeURIComponent(VERSION) : '';
-  const JS = '/assets/js/shell/shell-deferred.js' + q;
-  const CSS = '/assets/css/shell-deferred.css' + q;
+  const JS = '/assets/js/shell/shell-deferred.js' + q + (q ? '&' : '?') + 'rev=af991352560b';
+  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=6f8b634c4fee';
   let cssPending = null;
   let pending = null;
 
@@ -30517,7 +34825,7 @@ async function applyReadyUpdate() {
   window.ReadMDShortcuts = stub('Shortcuts', ['open', 'close', 'toggle', 'isOpen']);
   window.openMdCommandPalette = () => window.ReadMDPalette.open();
 
-  const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+  const IS_MAC = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
   const KEY_LABEL = {
     Mod: IS_MAC ? '⌘' : 'Ctrl', Ctrl: IS_MAC ? '⌃' : 'Ctrl', Shift: IS_MAC ? '⇧' : 'Shift',
     Alt: IS_MAC ? '⌥' : 'Alt', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
@@ -30647,14 +34955,37 @@ async function applyReadyUpdate() {
 
 function syncWindowPreferences() {
   if (!hasPy || (!py.custom_titlebar && py.native_titlebar !== 'macos') || !py.window_control) return;
-  const t = key => window.i18n?.t(key) || key;
-  const label = key => t(key).replace(/\s*[（(][^()（）]*[)）]\s*$/u, '');
-  const preferences = { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) };
-  if (py.native_titlebar === 'macos') preferences.menuLabels = Object.fromEntries(Object.entries({new:'menu.new',folder:'menu.openFolder',plugins:'cmd.plugins',pet:'cmd.pet',settings:'menu.settings',hide:'mac.hide',
-    'close-document':'toolbar.close',view:'shell.group.view',zen:'menu.zenMode',fullscreen:'toolbar.fullScreen',minimize:'window.minimize','select-all':'mac.selectAll'}).map(([action,key])=>[action,label(key)]));
+  const translated = key => {
+    const value = window.i18n?.t(key);
+    return typeof value === 'string' && value !== key ? value.trim() : '';
+  };
+  const preferences = { closeToTray: state.closeToTray !== false };
+  if (py.native_titlebar === 'macos') {
+    const keys = {
+      show: 'window.show', open: 'menu.open', exit: 'window.exit',
+      file: 'menu.file', new: 'menu.new', folder: 'menu.openFolder', save: 'menu.save',
+      'save-as': 'menu.saveAs', 'close-document': 'toolbar.close',
+      edit: 'toolbar.edit', undo: 'editor.undo', redo: 'editor.redo',
+      cut: 'editor.cut', copy: 'editor.copy', paste: 'editor.paste', 'select-all': 'mac.selectAll',
+      view: 'shell.group.view', zen: 'menu.zenMode', fullscreen: 'toolbar.fullScreen',
+      minimize: 'window.minimize', plugins: 'cmd.plugins', pet: 'cmd.pet', settings: 'menu.settings', hide: 'mac.hide',
+    };
+    const labels = {};
+    for (const [action, key] of Object.entries(keys)) {
+      let text = translated(key);
+      if (['edit', 'undo', 'redo', 'fullscreen'].includes(action)) text = text.replace(/\s*[（(](?:[^()（）]*\+[^()（）]+|F11)[)）]$/iu, '');
+      if (text) labels[action] = text;
+    }
+    preferences.menuLabels = labels;
+  } else {
+    const labels = ['window.show', 'toolbar.open', 'window.exit'].map(translated);
+    if (labels.every(Boolean)) preferences.labels = labels;
+  }
   py.window_control('preferences', preferences);
-  $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
-  if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
+  $('btn-close-to-tray')?.setAttribute('aria-checked', String(preferences.closeToTray));
+  const status = $('close-to-tray-status');
+  const statusLabel = translated(preferences.closeToTray ? 'app.enabled' : 'app.disabled');
+  if (status && statusLabel) status.textContent = statusLabel;
 }
 
 // Native menus enter the existing UI workflows. Modal guards, revision checks,
@@ -30681,7 +35012,7 @@ async function runNativeMenu(action) {
     case 'plugins': await openPluginModal(); break;
     case 'pet': await openPetSettings(); break;
     case 'settings': await window.ReadMDPalette?.open('settings'); break;
-    case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId, false, 'command'); break;
+    case 'close-document': if (state.activeTabId) await requestTabClose(state.activeTabId, 'command'); break;
     case 'zen': toggleZenMode(); break;
     case 'fullscreen': await window.ReadMDViewMode?.toggleFullscreen(); break;
     default: return false;
@@ -30692,15 +35023,11 @@ function initWindowChrome() {
   const actions = $('titlebar-actions');
   if (!actions || actions.dataset.initialized) return;
   actions.dataset.initialized = 'true';
-  for (const id of ['btn-open', 'btn-folder', 'btn-recent', 'btn-palette', 'btn-theme', 'btn-zen']) {
-    if ($(id)) actions.appendChild($(id));
-  }
-  const ai = $('btn-ai');
-  if (ai && $('btn-more')) ai.before($('btn-more'));
+  initSingleChromeNavigation();
   const title = $('window-title');
-  const native = !!(hasPy && py.custom_titlebar && py.window_control);
   const macNative = !!(hasPy && py.native_titlebar === 'macos' && py.window_control);
-  const command = (action, options) => { if (native || macNative) py.window_control(action, options); };
+  const custom = !macNative && !!(hasPy && py.custom_titlebar && py.window_control);
+  const command = (action, options) => { if (custom || macNative) py.window_control(action, options); };
   const updateTitle = () => {
     title.textContent = document.title.replace(/\s*[-–·]\s*ReadMD$/, '') || 'ReadMD';
     title.title = title.textContent;
@@ -30717,20 +35044,24 @@ function initWindowChrome() {
     if (!actions.contains(document.activeElement)) $('toolbar')?.classList.remove('zen-toolbar-revealed');
   }, 0));
   if (macNative) initMacWindowChrome(command);
-  if (!native) return;
+  if (custom || macNative) {
+    syncWindowPreferences();
+    window.addEventListener('readmd:language-changed', syncWindowPreferences);
+  }
+  if (!custom) return;
   document.body.classList.add('custom-titlebar');
   $('window-controls').classList.remove('hidden');
-  $('btn-close-to-tray').classList.remove('hidden');
+  const trayToggle = $('btn-close-to-tray');
   $('window-minimize').onclick = () => command('minimize');
   $('window-maximize').onclick = () => command('maximize');
   $('window-close').onclick = () => command('close');
-  $('btn-close-to-tray').onclick = async () => {
+  trayToggle.onclick = async () => {
     const previous = state.closeToTray; state.closeToTray = previous === false;
     syncWindowPreferences();
     if (!await saveSettings()) { state.closeToTray = previous; syncWindowPreferences(); }
   };
   const drag = $('app-titlebar');
-  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions,#window-controls');
+  const interactive = target => target.closest('button,a,input,select,textarea,.tab-item,#doc-tabs-dropdown,#window-controls');
   let press = null;
   drag.addEventListener('pointerdown', e => { if (e.button === 0 && !interactive(e.target)) press = { x: e.screenX, y: e.screenY }; });
   drag.addEventListener('pointermove', e => {
@@ -30753,17 +35084,107 @@ function initWindowChrome() {
     button.setAttribute('aria-pressed', String(!!status.maximized));
     button.innerHTML = status.maximized ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h7v7M6 3v3h4v4h3"/><rect x="3" y="6" width="7" height="7"/></svg>' : '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg>';
     $('window-close').title = window.i18n?.t(status.trayAvailable && state.closeToTray !== false ? 'window.hide' : 'window.close') || '';
-    $('btn-close-to-tray').disabled = !status.trayAvailable;
+    trayToggle.classList.toggle('hidden', !status.trayAvailable);
+    trayToggle.disabled = !status.trayAvailable;
   };
-  syncWindowPreferences();
-  window.addEventListener('readmd:language-changed', syncWindowPreferences);
+}
+
+// The rail stays in place. Its views use the original document services and
+// controls, so changing panel does not rebind a command or change the document.
+function syncSidebar() {
+  const side = $('side');
+  const open = !side.classList.contains('hidden');
+  const view = side.dataset.view;
+  $('btn-toc').setAttribute('aria-expanded', String(open));
+  for (const button of $('side-tabs').querySelectorAll('[data-side-view]')) {
+    const current = button.dataset.sideView === view;
+    button.setAttribute('aria-selected', String(open && current));
+    button.tabIndex = current && !button.disabled ? 0 : -1;
+  }
+  if (!$('side-tabs').querySelector('[tabindex="0"]')) $('tab-files').tabIndex = 0;
+}
+
+function showSide(view = $('side').dataset.view, { loadFiles = true } = {}) {
+  const side = $('side');
+  const next = $('side-' + view);
+  if (!next?.classList.contains('side-view') || view === 'search' && $('btn-search').disabled) view = 'files';
+  if (side.dataset.view === 'search' && view !== 'search') closeSearch({ closeSidebar: false });
+  side.dataset.view = view;
+  for (const panel of side.querySelectorAll('.side-view')) panel.hidden = panel.id !== 'side-' + view;
+  side.classList.remove('hidden');
+  syncSidebar();
+  if (view === 'files') {
+    renderFolderList();
+    if (loadFiles && state.folder && !state.folderFiles.length) void listFolder(state.folder, { reveal: false });
+  } else if (view === 'toc') {
+    buildToc();
+  } else if (view === 'recent') {
+    refreshRecent();
+  } else if (view === 'search') {
+    openSidebarSearch();
+  }
+}
+
+function closeSide({ restoreFocus = false } = {}) {
+  const side = $('side');
+  if (side.classList.contains('hidden')) return;
+  const focused = side.contains(document.activeElement);
+  if (!$('search-bar').classList.contains('hidden')) closeSearch({ closeSidebar: false });
+  side.classList.add('hidden');
+  syncSidebar();
+  if (restoreFocus || focused) $('btn-toc').focus({ preventScroll: true });
+}
+
+function toggleSide(view) {
+  const side = $('side');
+  if (!side.classList.contains('hidden') && (!view || view === side.dataset.view)) closeSide();
+  else showSide(view);
+}
+
+function initSingleChromeNavigation() {
+  const side = $('side'), rail = $('side-tabs');
+  if (!side || !rail || rail.dataset.bound) return;
+  rail.dataset.bound = 'true';
+  $('btn-toc').addEventListener('click', () => toggleSide());
+  $('doc-tabs-new').addEventListener('click', () => newDocument());
+  const buttons = [...rail.querySelectorAll('[data-side-view]')];
+  for (const button of buttons) button.addEventListener('click', () => {
+    const view = button.dataset.sideView;
+    if (view === 'search' && (side.classList.contains('hidden') || side.dataset.view !== view)) toggleSearch();
+    else toggleSide(view);
+  });
+  rail.addEventListener('keydown', event => {
+    if (event.isComposing || !['ArrowUp','ArrowDown','Home','End'].includes(event.key)) return;
+    const items = buttons.filter(button => !button.disabled);
+    const from = items.indexOf(document.activeElement);
+    if (from < 0) return;
+    const next = event.key === 'Home' ? items[0] : event.key === 'End' ? items.at(-1) :
+      items[(from + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
+    event.preventDefault();
+    showSide(next.dataset.sideView);
+    next.focus();
+  });
+  // Some document lifecycle paths hide the panel directly. Keep the rail
+  // state correct and clear search marks when those paths close it.
+  new MutationObserver(() => {
+    if (side.classList.contains('hidden') && !$('search-bar').classList.contains('hidden')) closeSearch({ closeSidebar: false });
+    syncSidebar();
+  }).observe(side, { attributes: true, attributeFilter: ['class'] });
+  const bar = $('doc-tabs-bar');
+  new ResizeObserver(() => syncTopTabOverflow({ reveal: true })).observe($('doc-tabs-container'));
+  bar.addEventListener('wheel', event => {
+    if (event.deltaX || !event.deltaY || event.ctrlKey || bar.scrollWidth <= bar.clientWidth) return;
+    event.preventDefault();
+    bar.scrollLeft += event.deltaY;
+  }, { passive: false });
+  syncSidebar();
 }
 
 function initMacWindowChrome(command) {
   document.body.classList.add('native-macos');
   // Reuse the packaged Mac brand, including its optical inset and rounded tile.
   // The original mark remains the default for browsers and other platforms.
-  for (const mark of document.querySelectorAll('.titlebar-mark,.welcome-mark')) {
+  for (const mark of document.querySelectorAll('.welcome-mark')) {
     mark.src = '/assets/ReadMD-macos.svg';
   }
   // Cocoa draws, localizes and operates the traffic lights. The web page has
@@ -30786,9 +35207,7 @@ function initMacWindowChrome(command) {
   };
   const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(update); } };
   new MutationObserver(schedule).observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
-  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
-    const bar = $(id); if (bar) new MutationObserver(schedule).observe(bar, { childList: true, subtree: true });
-  }
+  new MutationObserver(schedule).observe($('doc-tabs-bar'), { childList: true, subtree: true });
   for (const target of [$('app-titlebar'), $('toolbar'), document.querySelector('.zen-hover-trigger')]) {
     if (!target) continue;
     for (const event of ['pointerenter', 'pointerleave', 'focusin', 'focusout']) target.addEventListener(event, schedule);
@@ -30803,7 +35222,7 @@ function initMacWindowChrome(command) {
     if (Number.isFinite(inset) && inset >= 76 && inset <= 128) document.body.style.setProperty('--native-controls-leading', inset + 'px');
   };
   const drag = $('app-titlebar');
-  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions');
+  const interactive = target => target.closest('button,a,input,select,textarea,.tab-item,#doc-tabs-dropdown,#window-controls');
   let press = null;
   drag.addEventListener('pointerdown', event => { if (event.button === 0 && !interactive(event.target)) press = { x: event.screenX, y: event.screenY }; });
   drag.addEventListener('pointermove', event => {
@@ -30816,6 +35235,100 @@ function initMacWindowChrome(command) {
 
 ;
 'use strict';
+// Completion snapshots have their own protocol; no document mutation happens
+// here. A terminal result requires a complete SSE frame and request identity.
+window.ReadMDCompletionStream = (() => {
+  const reasons = new Set(['provider_finished', 'ready_unit', 'cached']);
+  function failure(code = 'invalid_completion_stream') {
+    if (code === 'cancelled') return new DOMException('cancelled', 'AbortError');
+    const error = new Error(code); error.code = code; return error;
+  }
+  async function revision(prefix, suffix) {
+    const encoder = new TextEncoder(), length = encoder.encode(prefix).byteLength;
+    const bytes = await window.crypto.subtle.digest('SHA-256', encoder.encode(length + ':' + prefix + suffix));
+    return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  function text(value) {
+    if (typeof value !== 'string' || value.includes('\0') || Array.from(value).length > 1000) throw failure();
+  }
+  function identity(value, { taskId, contextRevision }, required) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure();
+    for (const [key, expected] of [['task_id', taskId], ['context_revision', contextRevision]]) {
+      if ((required || value[key] !== undefined) && value[key] !== expected) throw failure();
+    }
+    if (value.model !== undefined && (typeof value.model !== 'string' || value.model.length > 256)) throw failure();
+  }
+  function result(value, options, required = false) {
+    identity(value, options, required);
+    if (value.ok !== true || (required || value.finish_reason !== undefined) && !reasons.has(value.finish_reason)) throw failure();
+    text(value.completion);
+    return value;
+  }
+  async function consume(response, { signal, taskId, contextRevision, onSuggestion } = {}) {
+    if (signal?.aborted) throw failure('cancelled');
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(taskId || '') || !/^[a-f0-9]{64}$/.test(contextRevision || '')) throw failure();
+    if (!(response.headers.get('content-type') || '').toLowerCase().includes('text/event-stream') || !response.body) throw failure();
+    const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
+    let buffer = '', data = [], terminal = null, bytes = 0, frameUnits = 0;
+    const abort = () => { void reader.cancel().catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
+    function frame() {
+      if (signal?.aborted) throw failure('cancelled');
+      if (!data.length) return;
+      let value;
+      try { value = JSON.parse(data.join('\n')); } catch (_) { throw failure(); }
+      data = []; frameUnits = 0;
+      identity(value, { taskId, contextRevision }, true);
+      if (value.type === 'error' || value.ok === false) {
+        throw failure(/^[a-z][a-z0-9_]{0,95}$/.test(value.error_code || '') ? value.error_code : 'invalid_completion_stream');
+      }
+      if (value.type === 'suggestion') {
+        text(value.completion); onSuggestion?.(value);
+      } else if (value.type === 'done') terminal = result(value, { taskId, contextRevision }, true);
+      else throw failure();
+    }
+    function lines(eof = false) {
+      for (;;) {
+        const at = buffer.search(/[\r\n]/);
+        if (at < 0 || !eof && buffer[at] === '\r' && at + 1 === buffer.length) return;
+        const line = buffer.slice(0, at), skip = buffer[at] === '\r' && buffer[at + 1] === '\n' ? 2 : 1;
+        buffer = buffer.slice(at + skip);
+        if (!line) { frame(); if (terminal) return; }
+        else if (line.startsWith('data:')) {
+          frameUnits += line.length;
+          if (frameUnits > 32768) throw failure();
+          data.push(line.slice(5).replace(/^ /, ''));
+        } else if (!line.startsWith(':') && !/^(event|id|retry):/.test(line)) throw failure();
+      }
+    }
+    try {
+      while (!terminal) {
+        if (signal?.aborted) throw failure('cancelled');
+        const next = await reader.read();
+        if (signal?.aborted) throw failure('cancelled');
+        if (next.done) { buffer += decoder.decode(); lines(true); if (!terminal) throw failure('incomplete_completion_stream'); break; }
+        bytes += next.value.byteLength;
+        if (bytes > 2 * 1024 * 1024) throw failure();
+        buffer += decoder.decode(next.value, { stream: true }); lines();
+        if (buffer.length > 32768) throw failure();
+      }
+      if (signal?.aborted) throw failure('cancelled');
+      return terminal;
+    } catch (error) {
+      if (signal?.aborted) throw failure('cancelled');
+      if (error?.name === 'TypeError') throw failure();
+      throw error;
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+  return Object.freeze({ revision, result, consume });
+})();
+
+;
+'use strict';
 
 // Ghost text is never part of the document until Tab accepts it. Cache remains
 // in memory; only bounded cursor context enters Rust, never paths or history.
@@ -30824,6 +35337,11 @@ const ReadMDInlineCompletion = (() => {
   let sequence = 0;
   const t = key => window.i18n ? window.i18n.t(key) : key;
   const enabled = () => !!editorPrefs.aiCompletion;
+  const activeTab = () => typeof getActiveTab === 'function' ? getActiveTab() : state.tabs?.find(tab => tab.id === state.activeTabId);
+  const documentIdentity = tab => {
+    const stamp = window.ReadMDReview?.snapshot?.(tab) || tab?.reviewSession;
+    return JSON.stringify([stamp?.document_id || null, stamp?.generation ?? null, stamp?.review_revision ?? null]);
+  };
   const identity = () => {
     const current = state.ai?.config?.current || {};
     const provider = state.ai?.providers?.find(p => p.id === (current.provider_id || current.provider));
@@ -30859,6 +35377,7 @@ const ReadMDInlineCompletion = (() => {
         this.view=view; this.generation=0; this.timer=0; this.pending=null;
         this.suggestion=null; this.disposed=false; this.pausedUntil=0; this.lastInput=0; this.typingInterval=200; this.latency=0;
         this.revealTimer=0; this.revealed=''; this.revealTarget=''; this.model='';
+        this.context=null;
         instances.set(view,this);
       }
       status(key) {
@@ -30868,9 +35387,9 @@ const ReadMDInlineCompletion = (() => {
       cancel() {
         clearTimeout(this.timer); this.timer=0; this.generation++;
         clearTimeout(this.revealTimer);this.revealTimer=0;this.revealed='';this.revealTarget='';
+        this.context=null;
         if (this.pending) {
-          const {abort,task}=this.pending; this.pending=null; abort.abort();
-          apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:task})}).catch(()=>{});
+          const pending=this.pending; this.pending=null; pending.abort.abort();
         }
       }
       clear() {
@@ -30888,16 +35407,29 @@ const ReadMDInlineCompletion = (() => {
         prefix=prefix.replace(/^[\uDC00-\uDFFF]/,''); suffix=suffix.replace(/[\uD800-\uDBFF]$/,'');
         prefix=Array.from(prefix).slice(-3000).join(''); suffix=Array.from(suffix).slice(0,750).join('');
         if (Array.from(prefix.trim()).length<4) return null;
-        return {doc,pos,prefix,suffix,provider:identity(),tab:state.activeTabId};
+        const tabOwner=activeTab();
+        return {doc,pos,prefix,suffix,provider:identity(),tab:state.activeTabId,tabOwner,revision:documentIdentity(tabOwner),epoch:this.generation};
       }
-      current(s) {
-        return !this.disposed && enabled() && this.view.hasFocus && !this.view.composing && !document.hidden
-          && this.view.state.doc===s.doc && this.view.state.selection.main.empty
-          && this.view.state.selection.main.head===s.pos && state.activeTabId===s.tab && identity()===s.provider;
+      localCurrent(s) {
+        return !this.disposed && enabled() && state.editing && this.view.hasFocus && !this.view.composing && !document.hidden
+          && s.epoch===this.generation && this.view.state.doc===s.doc && this.view.state.selection.ranges.length===1 && this.view.state.selection.main.empty
+          && this.view.state.selection.main.head===s.pos && state.activeTabId===s.tab && activeTab()===s.tabOwner
+          && identity()===s.provider
+          && !(typeof slash!=='undefined' && slash.open) && !CM.completionStatus(this.view.state);
+      }
+      current(s) { return this.localCurrent(s) && documentIdentity(s.tabOwner)===s.revision; }
+      async settled(s,generation) {
+        if (generation!==this.generation || !this.localCurrent(s)) return null;
+        // Local typing already has its own review write queued. Capture the
+        // acknowledged revision, rather than cancelling the next suggestion
+        // merely because that expected write receives its acknowledgement.
+        try { if (window.ReadMDReview?.flush && !await window.ReadMDReview.flush(s.tabOwner)) return null; }
+        catch (_) { return null; }
+        return generation===this.generation && this.localCurrent(s) ? this.snapshot() : null;
       }
       show(s,text,streaming=false) {
         if (!text || !this.current(s)) return;
-        this.suggestion={...s,text}; this.view.dispatch({effects:effect.of({pos:s.pos,text,streaming})}); this.status('editor.aiCompletionAccept');
+        this.context=s; this.suggestion={...s,text}; this.view.dispatch({effects:effect.of({pos:s.pos,text,streaming})}); this.status('editor.aiCompletionAccept');
         const status=document.getElementById('status-ai-completion');
         if(status && this.model)status.title=window.i18n?window.i18n.t('ai.autocompleteActiveModel',{model:this.model}):this.model;
         // A wrapped candidate can extend beyond the last visible line. Reveal
@@ -30929,55 +35461,53 @@ const ReadMDInlineCompletion = (() => {
         this.cancel(); if (Date.now()<this.pausedUntil && !manual) return;
         const s=this.snapshot(); if (!s) return;
         const generation=this.generation;
-        const item=cache.get(JSON.stringify([s.provider,s.prefix,s.suffix]));
-        if(item && Date.now()-item.time<60000){this.model=item.model||'';this.show(s,item.text);return;}
         // A slow provider should not add a second long wait before sending.
         const delay=Math.max(180,Math.min(650,this.typingInterval*1.8-Math.min(this.latency/12,180)));
-        this.timer=setTimeout(()=>this.request(s,generation),manual?0:delay);
+        this.timer=setTimeout(()=>{this.timer=0;void this.settled(s,generation).then(next=>next && this.request(next,generation)).catch(()=>{});},manual?0:delay);
       }
       async request(s,generation) {
         if (generation!==this.generation || !this.current(s)) return;
+        this.context=s;
         const key=JSON.stringify([s.provider,s.prefix,s.suffix]);
         if (cache.has(key)) {
           const item=cache.get(key); cache.delete(key);
           if(Date.now()-item.time<60000){cache.set(key,item);this.model=item.model||'';this.show(s,item.text);return;}
         }
         const abort=new AbortController(), task='inline-'+Date.now()+'-'+(++sequence);
-        this.pending={abort,task}; this.status('editor.aiCompletionLoading');
+        const pending={abort,task,started:false,running:true,cancelPromise:null};
+        this.pending=pending; this.status('editor.aiCompletionLoading');
+        const cancel=()=>{
+          if (!pending.started) return;
+          pending.cancelPromise ||= Promise.resolve(window.ReadMDReview?.cancelAi
+            ? window.ReadMDReview.cancelAi(task,()=>pending.running)
+            : apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:task})})).catch(()=>{});
+        };
+        abort.signal.addEventListener('abort',cancel,{once:true});
+        const ensure=()=>{if(abort.signal.aborted || this.pending!==pending || generation!==this.generation || !this.current(s)){abort.abort();throw new DOMException('cancelled','AbortError');}};
         const began=Date.now(),deadline=setTimeout(()=>abort.abort(),35000);
+        let response=null;
         try {
-          const response=await apiFetch('/api/ai/complete',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
-            body:JSON.stringify({prefix:s.prefix,suffix:s.suffix,task_id:task}),signal:abort.signal});
+          const contextRevision=await window.ReadMDCompletionStream.revision(s.prefix,s.suffix);
+          ensure(); pending.started=true;
+          response=await apiFetch('/api/ai/complete',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
+            body:JSON.stringify({prefix:s.prefix,suffix:s.suffix,task_id:task,context_revision:contextRevision}),signal:abort.signal});
+          ensure();
           let body;
-          const streaming=response.ok && (response.headers.get('content-type')||'').includes('text/event-stream');
+          const streaming=response.ok && (response.headers.get('content-type')||'').toLowerCase().includes('text/event-stream');
           if(streaming){
-            const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finished=false;
-            const frame=line=>{
-              if(!line.startsWith('data:'))return;
-              const event=JSON.parse(line.slice(5).trim());
-              if(event.type==='error' || event.ok===false)throw new Error(event.error_code||'ai_request_failed');
-              if(event.type==='done'){body=event;finished=true;return;}
-              if(event.type==='suggestion' && generation===this.generation && this.current(s)){
-                const text=typeof event.completion==='string'?event.completion:'';
+            body=await window.ReadMDCompletionStream.consume(response,{signal:abort.signal,taskId:task,contextRevision,onSuggestion:event=>{
+                ensure(); const text=event.completion;
                 this.model=event.model||'';
                 if(text)this.reveal(s,text);
                 else{clearTimeout(this.revealTimer);this.revealTimer=0;this.revealed='';this.suggestion=null;this.view.dispatch({effects:effect.of(null)});this.status('editor.aiCompletionLoading');}
-              }
-            };
-            try{
-              while(!finished){
-                const {done,value}=await reader.read();
-                buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});
-                let end;while((end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).trimEnd());buffer=buffer.slice(end+1);}
-                if(buffer.length>32768)throw new Error('invalid_completion_stream');
-                if(done){if(buffer.trim())frame(buffer.trim());break;}
-              }
-              if(!finished)throw new Error('incomplete_completion_stream');
-            }finally{await reader.cancel().catch(()=>{});}
-          }else{body=await response.json();}
-          if (generation!==this.generation || !this.current(s)) return;
-          if (!response.ok || !body.ok) throw new Error(body.error_code||'ai_request_failed');
-          const text=typeof body.completion==='string'?body.completion:'';
+            }});
+          }else{
+            body=await response.json(); ensure();
+            if (!response.ok || !body?.ok) throw new Error(body?.error_code||'ai_request_failed');
+            window.ReadMDCompletionStream.result(body,{taskId:task,contextRevision});
+          }
+          ensure();
+          const text=body.completion;
           this.latency=Date.now()-began;
           cache.set(key,{text,model:body.model||'',time:Date.now()}); while (cache.size>24) cache.delete(cache.keys().next().value);
           this.model=body.model||'';
@@ -30985,12 +35515,18 @@ const ReadMDInlineCompletion = (() => {
           if(streaming && !body.cached && text)this.reveal(s,text,true);
           else this.show(s,text);
         } catch(error) {
+          abort.abort();
           if (generation===this.generation && !this.disposed) {
             clearTimeout(this.revealTimer);this.revealTimer=0;this.revealed='';
             this.suggestion=null;this.view.dispatch({effects:effect.of(null)});
             this.status(error.name==='AbortError'?'':'editor.aiCompletionUnavailable'); this.pausedUntil=Date.now()+10000;
           }
-        } finally { clearTimeout(deadline); if (this.pending?.task===task) this.pending=null; }
+        } finally {
+          clearTimeout(deadline); abort.signal.removeEventListener('abort',cancel);
+          if (response?.body && !response.body.locked) await response.body.cancel().catch(()=>{});
+          if (pending.cancelPromise) await pending.cancelPromise;
+          pending.running=false; if (this.pending===pending) this.pending=null;
+        }
       }
       update(u) {
         if (u.docChanged || u.selectionSet || u.focusChanged) {
@@ -31001,7 +35537,7 @@ const ReadMDInlineCompletion = (() => {
             const change=changes[0];
             if(changes.length===1 && change.from===previous.pos && change.to===previous.pos && previous.text.startsWith(change.text)){
               const next=this.snapshot(),remaining=previous.text.slice(change.text.length);
-              if(next && remaining)queueMicrotask(()=>this.show(next,remaining));
+              if(next && remaining){const generation=this.generation;queueMicrotask(()=>{void this.settled(next,generation).then(current=>current && this.show(current,remaining)).catch(()=>{});});}
               return;
             }
           }
@@ -31009,10 +35545,17 @@ const ReadMDInlineCompletion = (() => {
             const now=Date.now();if(this.lastInput && now-this.lastInput<1500)this.typingInterval=.7*this.typingInterval+.3*(now-this.lastInput);
             this.lastInput=now;this.schedule();
           }
+        } else if (this.context && !this.current(this.context)) {
+          // Review acknowledgements can change revision without changing the
+          // immutable CodeMirror document. Dispatch after this plugin update.
+          this.cancel(); this.suggestion=null; this.status('');
+          const generation=this.generation;
+          queueMicrotask(()=>{if(!this.disposed && this.generation===generation)this.view.dispatch({effects:effect.of(null)});});
         }
       }
       accept() {
-        const s=this.suggestion; if (!s || !this.current(s)) return false;
+        const s=this.suggestion; if (!s) return false;
+        if (!this.current(s)) { this.clear(); return false; }
         this.cancel(); this.suggestion=null; this.status('');
         this.view.dispatch({changes:{from:s.pos,insert:s.text},selection:{anchor:s.pos+s.text.length},effects:effect.of(null),userEvent:'input.complete'});
         return true;
@@ -31067,15 +35610,21 @@ window.ReadMDLifecycle = (() => {
       if (active && !depth || !active && window.ReadMDSession?.restoring?.()) return Promise.resolve(false);
       if (active) return work.apply(this, args);
       const owner = active = { name, target: currentTab(), decisions: new Map() };
+      // A result completed during a close/save decision must not invalidate
+      // the visible body behind that decision. Wait outside the review FIFO
+      // so a nested save/flush never waits on the reserved code write.
+      const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
       let result;
       try { depth++; result = work.apply(this, args); }
       catch (error) { result = Promise.reject(error); }
       finally { depth--; }
       return Promise.resolve(result).finally(() => {
-        if (active !== owner) return;
-        active = null;
-        for (const resolve of waiters) resolve();
-        waiters.clear();
+        if (active === owner) {
+          active = null;
+          for (const resolve of waiters) resolve();
+          waiters.clear();
+        }
+        releaseCode?.();
       });
     };
   }
@@ -31151,7 +35700,20 @@ window.ReadMDLifecycle = (() => {
       return currentTab() === created && state.editing;
     });
     if (window.ReadMDRecovery) {
-      window.ReadMDRecovery.prepareClose = guard('quit', window.ReadMDRecovery.prepareClose);
+      const close = guard('quit', window.ReadMDRecovery.prepareClose);
+      let pendingQuit = null;
+      window.ReadMDRecovery.prepareClose = function (...args) {
+        if (pendingQuit) return pendingQuit;
+        // A native quit can arrive during startup or while a guarded save or
+        // tab operation still owns the document. Preserve that request until
+        // the usual recovery and confirmation path can run.
+        pendingQuit = (async () => {
+          await window.__readmdSessionReady;
+          while (active) await whenIdle(null);
+          return close.apply(this, args);
+        })().finally(() => { pendingQuit = null; });
+        return pendingQuit;
+      };
       window.ReadMDRecovery.prepareInstall = guard('install', window.ReadMDRecovery.prepareInstall);
     }
   }
@@ -31230,97 +35792,46 @@ function syncSelectAccessibleName(el) {
 /* ----------------------------------------------------------------------------------------------
    顶层 UI 事件集中绑定与调度器
    ---------------------------------------------------------------------------------------------- */
-function closeMoreMenu(restoreFocus = false) {
-  const menu = $('more-menu');
-  const wasOpen = menu && menu.classList.contains('open');
-  if (menu) menu.classList.remove('open');
-  const button = $('btn-more');
-  if (button) button.setAttribute('aria-expanded', 'false');
-  if (restoreFocus && wasOpen && button && document.activeElement !== button && !button.contains(document.activeElement)) {
-    button.focus({ preventScroll: true });
-  }
-}
-
 function bindEvents() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 
   /* --- 1. 欢迎页与全局导航 (Welcome & Navigation) [联动: history.js, render.js, folder.js] --- */
   bindWelcomeEvents(); // 绑定欢迎页各个功能入口卡片事件
   if ($('btn-home')) $('btn-home').addEventListener('click', goHome); // 回到主页并深度清理状态 (history.js)
-  $('titlebar-home')?.addEventListener('click', goHome);
   $('btn-open').addEventListener('click', () => { loadFileDialog(); }); // 打开本地文件 (reader/render.js)
   $('btn-folder').addEventListener('click', openFolder); // 打开工作区文件夹 (reader/folder.js)
   syncDesktopControls();
-
-  /* --- 2. 更多功能下拉菜单交互 (More Dropdown Menu) --- */
-  const moreBtn = $('btn-more');
-  const moreMenu = $('more-menu');
-  if (moreBtn && moreMenu) {
-    moreBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      moreMenu.classList.toggle('open');
-      moreBtn.setAttribute('aria-expanded', moreMenu.classList.contains('open') ? 'true' : 'false');
-    });
-    moreMenu.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeMoreMenu(true);
-      } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
-        const items = Array.from(moreMenu.querySelectorAll('.more-group.open .more-item:not([disabled]):not(.hidden), .more-group-header'));
-        if (!items.length) return;
-        e.preventDefault();
-        const currentIndex = items.indexOf(document.activeElement);
-        let nextIndex;
-        if (e.key === 'Home') {
-          nextIndex = 0;
-        } else if (e.key === 'End') {
-          nextIndex = items.length - 1;
-        } else if (e.key === 'ArrowDown') {
-          nextIndex = currentIndex === -1 || currentIndex === items.length - 1 ? 0 : currentIndex + 1;
-        } else {
-          nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
-        }
-        items[nextIndex].focus();
-      }
-    });
-    document.addEventListener('click', e => {
-      if (moreMenu.classList.contains('open') && !moreMenu.contains(e.target) && e.target !== moreBtn) {
-        closeMoreMenu();
-      }
-    });
-  }
-
 
   /* --- 3. 万物转 MD 模态框与文件批量导入 [联动: features/convert.js] --- */
   $('btn-convert').addEventListener('click', openConvertModal);
   $('convert-files').addEventListener('click', pickConvertFiles);
   $('convert-folder').addEventListener('click', pickConvertFolder);
   $('convert-close').addEventListener('click', closeConvertModal);
-  $('convert-open-dir').addEventListener('click', () => {
-    if (convertLastDir && py.open_dir) py.open_dir(convertLastDir);
-  });
+  $('convert-output-choose')?.addEventListener('click', chooseBatchOutputParent);
+  $('convert-output-reset')?.addEventListener('click', resetBatchOutputParent);
+  $('batch-history')?.addEventListener('change', event => restoreBatchWorkbench(event.target.value));
   $('convert-modal').addEventListener('click', e => { if (e.target === $('convert-modal')) closeConvertModal(); });
   if ($('btn-open-plugins')) $('btn-open-plugins').addEventListener('click', openPluginModal);
-  if ($('btn-plugin-menu')) $('btn-plugin-menu').addEventListener('click', () => { closeMoreMenu(); openPluginModal(); });
+  if ($('btn-plugin-menu')) $('btn-plugin-menu').addEventListener('click', () => { openPluginModal(); });
   if ($('plugin-close')) $('plugin-close').addEventListener('click', closePluginModal);
   if ($('plugin-modal')) $('plugin-modal').addEventListener('click', e => { if (e.target === $('plugin-modal')) closePluginModal(); });
 
   /* --- 3b. 批处理复用万物转 MD弹窗 [联动: features/batch.js] --- */
   if ($('batch-cancel')) $('batch-cancel').addEventListener('click', onBatchCancel);
+  $('batch-retry')?.addEventListener('click', retryBatchDocs);
 
   /* --- 4. 离线 OCR / 网页抓取 / 剪贴板新建 / 演示 / 样式定制 / 禅模式 [联动: convert.js, ocr.js, web.js, clipboard.js, render.js] --- */
   $('btn-ocr').addEventListener('click', () => chooseFile('ocr')); // 触发离线 OCR 识别
   $('btn-web').addEventListener('click', openWebDialog);           // 打开网页抓取弹窗
   if ($('btn-clipboard-new')) $('btn-clipboard-new').addEventListener('click', createFromClipboard); // 智能自适应全类型剪贴板新建
-  if ($('btn-presentation-menu')) $('btn-presentation-menu').addEventListener('click', () => { closeMoreMenu(); launchPresentationMode(); });
-  if ($('btn-run-all-chunks')) $('btn-run-all-chunks').addEventListener('click', () => { closeMoreMenu(); if (window.runAllCodeChunks) runAllCodeChunks(); });
-  if ($('btn-style-custom')) $('btn-style-custom').addEventListener('click', () => { closeMoreMenu(); openStyleModal(); });
+  if ($('btn-presentation-menu')) $('btn-presentation-menu').addEventListener('click', () => { launchPresentationMode(); });
+  if ($('btn-run-all-chunks')) $('btn-run-all-chunks').addEventListener('click', () => { if (window.runAllCodeChunks) runAllCodeChunks(); });
+  if ($('btn-style-custom')) $('btn-style-custom').addEventListener('click', () => { openStyleModal(); });
   if ($('btn-zen')) $('btn-zen').addEventListener('click', () => toggleZenMode()); // 顶栏常驻禅模式按钮
   $('btn-zen')?.addEventListener('contextmenu', event => {
     event.preventDefault();
     window.ReadMDViewMode.toggleFullscreen();
   });
-  if ($('btn-zen-menu')) $('btn-zen-menu').addEventListener('click', () => { closeMoreMenu(); toggleZenMode(); });
 
   const _openKnowledgeGraph = () => {
     const hasDoc = (state && (state.mode === 'file' || state.mode === 'virtual') && !!state.original);
@@ -31335,9 +35846,7 @@ function bindEvents() {
     if (window.ReadMDGraph) window.ReadMDGraph.open(curDir);
   };
   if ($('btn-graph')) $('btn-graph').addEventListener('click', _openKnowledgeGraph);
-  if ($('btn-graph-menu')) $('btn-graph-menu').addEventListener('click', () => { closeMoreMenu(); _openKnowledgeGraph(); });
   if ($('btn-backlinks-menu')) $('btn-backlinks-menu').addEventListener('click', () => {
-    closeMoreMenu();
     const hasDoc = (state && (state.mode === 'file' || state.mode === 'virtual') && !!state.original);
     if (!hasDoc) {
       if (typeof showToast === 'function') {
@@ -31349,55 +35858,10 @@ function bindEvents() {
     if (window.ReadMDGraph) window.ReadMDGraph.toggleDrawer();
   });
 
-  // 更多菜单手风琴分组折叠切换
-  document.querySelectorAll('.more-group-header').forEach(hdr => {
-    hdr.addEventListener('click', e => {
-      e.stopPropagation();
-      const grp = hdr.closest('.more-group');
-      if (grp) {
-        grp.classList.toggle('open');
-        hdr.setAttribute('aria-expanded', grp.classList.contains('open') ? 'true' : 'false');
-      }
-    });
-  });
-
-  // 全局快捷键与无障碍键盘导航 (Esc 退出全屏或关闭顶层弹窗 / F5 演说放映 / F11 全屏)
   window.addEventListener('keydown', e => {
     if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       if (window.launchPresentationMode) launchPresentationMode();
-    } else if (e.key === 'Escape') {
-      if ($('more-menu') && $('more-menu').classList.contains('open')) {
-        e.preventDefault();
-        closeMoreMenu(true);
-        return;
-      }
-      const openModals = [
-        ['pet-settings-modal', typeof closePetSettings === 'function' ? closePetSettings : () => $('pet-settings-modal').classList.add('hidden')],
-        ['code-chunk-modal', closeCodeChunkModal],
-        ['diagram-modal', closeDiagramModal],
-        ['doc-import-modal', closeDocImportModal],
-        ['style-custom-modal', closeStyleModal],
-        ['plugin-modal', closePluginModal],
-        ['convert-modal', closeConvertModal],
-        ['export-modal', closeExportModal],
-        ['img-modal', closeImgModal],
-        ['formula-modal', closeFormulaModal],
-        ['url-modal', typeof closeWebDialog === 'function' ? closeWebDialog : () => $('url-modal').classList.add('hidden')],
-        ['share-modal', typeof closeShareDialog === 'function' ? closeShareDialog : () => $('share-modal').classList.add('hidden')],
-        ['history-modal', () => $('history-modal').classList.add('hidden')],
-        ['fix-modal', () => $('fix-modal').classList.add('hidden')],
-        ['tpl-modal', () => $('tpl-modal').classList.add('hidden')],
-        ['presentation-modal', () => window.closePresentationMode?.()],
-      ];
-      for (const [id, closeFn] of openModals) {
-        const el = $(id);
-        if (el && !el.classList.contains('hidden')) {
-          e.preventDefault();
-          if (typeof closeFn === 'function') closeFn();
-          break;
-        }
-      }
     }
   });
 
@@ -31516,9 +35980,6 @@ function bindEvents() {
     else if (b.id === 'btn-insert-table') openTableModal();
     else cmInsertSyntax(b.dataset.md);
   }));
-  document.querySelectorAll('#md-tool [data-menu]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation(); const menu = $(b.dataset.menu); const wasHidden = menu.classList.contains('hidden'); closeMdPopups(); if (wasHidden) menu.classList.remove('hidden');
-  }));
   // LaTeX 公式选择器模态框 [联动: reader/formula.js]
   $('formula-open').addEventListener('click', () => openFormulaModal('inline'));
   $('formula-close').addEventListener('click', closeFormulaModal);
@@ -31526,7 +35987,7 @@ function bindEvents() {
   $('formula-modal').addEventListener('click', e => { if (e.target === $('formula-modal')) closeFormulaModal(); });
 
   // 编辑保存与退出
-  $('edit-save').addEventListener('click', saveEdit);
+  $('edit-save').addEventListener('click', () => saveEdit({ exitAfterSave: true }));
   $('edit-area').addEventListener('input', () => {
     const tab = getActiveTab();
     if (tab) { tab.editGeneration = (tab.editGeneration || 0) + 1; tab.inputGeneration = (tab.inputGeneration || 0) + 1; }
@@ -31549,26 +36010,7 @@ function bindEvents() {
 
 
   /* --- 7. 实时分栏预览与滚动同步控制 (Split Preview) [联动: editor/preview.js] --- */
-  $('pv-trigger').addEventListener('click', e => {
-    e.stopPropagation();
-    const m = $('pv-menu');
-    const show = m.classList.contains('hidden');
-    closeMdPopups();
-    m.classList.toggle('hidden', !show);
-    $('pv-trigger').setAttribute('aria-expanded', show ? 'true' : 'false');
-  });
-  document.querySelectorAll('.pv-btn').forEach(b => b.addEventListener('click', () => { setPvLayout(b.dataset.pv); closeMdPopups(); }));
-  const pvSyncEl = $('pv-sync');
-  if (pvSyncEl) pvSyncEl.addEventListener('change', e => { state.pvSync = e.target.checked; saveSettings(); });
-  const publicationToggle=$('pv-publication');
-  if(publicationToggle)publicationToggle.addEventListener('change',async event=>{
-    const wanted=event.target.checked,view=cmView,tab=state.activeTabId;publicationToggle.disabled=true;
-    try{const ready=!wanted||(await ReadMDCapabilities.ensure('typst')&&await ReadMDCapabilities.ensurePublication(view.state.doc.toString(),{...state.export?.options,pdf:{engine:"typst"}}));if(cmView!==view||state.activeTabId!==tab||!state.editing){publicationToggle.checked=!!state.pvPublication;return;}state.pvPublication=publicationToggle.checked=!!(wanted&&ready);if(pvSyncEl)pvSyncEl.disabled=!!state.pvPublication;pvLast='';schedulePreview();}
-    finally{publicationToggle.disabled=false;}
-  });
-  const pvWrap = $('preview-wrap');
-  if (pvWrap) pvWrap.addEventListener('scroll', pvSyncFromPreview);
-  bindPvSplitter(); // 绑定分栏拖拽调整手柄
+  bindPreviewControls();
 
   /* --- 8. 轻量图片编辑器控制 (Image Studio) [联动: editor/image.js] --- */
   $('img-file').addEventListener('click', () => $('img-file-input').click());
@@ -31645,30 +36087,20 @@ function bindEvents() {
   /* --- 9. 文件另存、重命名与历史记录 [联动: reader/render.js, core/history.js, core/tabs.js] --- */
   $('btn-saveas').addEventListener('click', saveAs);
   $('file-title').addEventListener('click', openFileRename); // 标题栏就地重命名
-  $('btn-recent').addEventListener('click', openHistoryModal);
-  $('btn-reload').addEventListener('click', () => { if (state.file && state.mode === 'file') loadFile(state.file, { force: true }); });
+  $('side-recent-clear').addEventListener('click', clearRecent);
+  $('btn-reload').addEventListener('click', () => { if (state.file && ['file', 'office-preview'].includes(state.mode)) loadFile(state.file, { force: true }); });
   $('recent-clear').addEventListener('click', clearRecent);
   $('history-clear').addEventListener('click', clearRecent);
   $('history-close').addEventListener('click', () => $('history-modal').classList.add('hidden'));
   $('history-modal').addEventListener('click', e => { if (e.target === $('history-modal')) $('history-modal').classList.add('hidden'); });
 
   /* --- 10. 目录大纲与自动修正查看 [联动: reader/toc.js, reader/fixes.js] --- */
-  $('btn-toc').addEventListener('click', () => toggleSide('toc'));
   $('btn-fix').addEventListener('click', showFixModal);
-  if ($('fix-ai-btn')) $('fix-ai-btn').addEventListener('click', () => { if (typeof handleAiDocumentFix === 'function') handleAiDocumentFix(); });
   $('fix-close').addEventListener('click', () => $('fix-modal').classList.add('hidden'));
-  $('fix-save').addEventListener('click', async () => {
-    const content = state.fixed || '';
-    if (!content) return;
-    if (state.mode === 'virtual' || !state.file) { await saveAs(); return; }
-    if (!hasPy) { showToast(_t('toast.browserUseSaveAs')); return; }
-    const out = await py.save_fixed(state.file, content);
-    showToast(out ? (_t('toast.savedPrefix') + out) : _t('toast.saveFailedSimple'));
-  });
+  $('fix-save').addEventListener('click', handleSaveDocumentFix);
   $('fix-modal').addEventListener('click', e => { if (e.target === $('fix-modal')) $('fix-modal').classList.add('hidden'); });
 
   /* --- 11. 全文搜索、主题外观与字号缩放 [联动: reader/search.js, core/settings.js] --- */
-  $('btn-search').addEventListener('click', toggleSearch);
   $('search-close').addEventListener('click', () => closeSearch({ restoreFocus: true }));
   $('search-next').addEventListener('click', () => jumpToMark(1));
   $('search-prev').addEventListener('click', () => jumpToMark(-1));
@@ -31740,7 +36172,7 @@ function bindEvents() {
   const activateExportFormat = btn => {
     exportFormatTabs.forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
     $('export-opts').setAttribute('aria-labelledby', btn.id);
-    state.export.fmt = btn.dataset.fmt;
+    rememberExportFormat(btn.dataset.fmt);
     renderExportPresetSelect();
     renderExportSections();
   };
@@ -31767,6 +36199,7 @@ function bindEvents() {
   $('export-print').addEventListener('click', () => window.print());
   $('export-run').addEventListener('click', runExport);
   $('exp-save-preset').addEventListener('click', expSavePreset);
+  $('plugin-preset-pack').addEventListener('click', importExportPresetPack);
   $('exp-reset').addEventListener('click', () => {
     state.export.options = expDeepMerge(state.export.defaults, {});
     state.export.selectedPreset = '__default__';
@@ -31862,17 +36295,15 @@ function bindEvents() {
   $('share-modal').addEventListener('click', e => { if (e.target === $('share-modal')) $('share-modal').classList.add('hidden'); });
 
   /* --- 16. 侧边栏 Tab 切换与滚动监听 --- */
-  $('tab-toc').addEventListener('click', () => showSide('toc'));
-  $('tab-files').addEventListener('click', () => showSide('files'));
   $('content').addEventListener('scroll', () => {
     $('top-btn').classList.toggle('hidden', $('content').scrollTop < 600);
   });
 
   /* --- 17. 客户端内版本检查、语言切换、开机自启与自动升级 [联动: core/i18n.js, features/updater.js] --- */
-  if ($('btn-lang')) $('btn-lang').addEventListener('click', () => { closeMoreMenu(); if (window.i18n) window.i18n.openModal(); });
-  if ($('btn-pet')) $('btn-pet').addEventListener('click', () => { closeMoreMenu(); if (typeof openPetSettings === 'function') openPetSettings(); });
-  if ($('btn-autostart')) $('btn-autostart').addEventListener('click', () => { closeMoreMenu(); toggleAutostart(); });
-  if ($('btn-check-update')) $('btn-check-update').addEventListener('click', () => { closeMoreMenu(); checkUpdate(false); });
+  if ($('btn-lang')) $('btn-lang').addEventListener('click', () => { if (window.i18n) window.i18n.openModal(); });
+  if ($('btn-pet')) $('btn-pet').addEventListener('click', () => { if (typeof openPetSettings === 'function') openPetSettings(); });
+  if ($('btn-autostart')) $('btn-autostart').addEventListener('click', () => { toggleAutostart(); });
+  if ($('btn-check-update')) $('btn-check-update').addEventListener('click', () => { checkUpdate(false); });
 
   if ($('status-update-badge')) $('status-update-badge').addEventListener('click', openUpdateModal);
   if ($('update-close')) $('update-close').addEventListener('click', closeUpdateModal);
@@ -32024,7 +36455,7 @@ function bindEvents() {
   if ($('style-ai-gen-btn')) $('style-ai-gen-btn').addEventListener('click', generateCustomStyleWithAi);
   if ($('style-ai-prompt')) {
     $('style-ai-prompt').addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && !$('style-ai-gen-btn').disabled) {
         e.preventDefault();
         generateCustomStyleWithAi();
       }
@@ -32060,7 +36491,8 @@ function bindEvents() {
     const el = $(id);
     if (!el) return;
     el.addEventListener('keydown', e => {
-      if (e.key === 'Tab') {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
         const start = el.selectionStart;
         const end = el.selectionEnd;
@@ -32078,7 +36510,8 @@ function bindEvents() {
     if (!document.body.classList.contains('zen-mode')) return;
     const toolbar = $('toolbar');
     if (!toolbar) return;
-    if (e.clientY <= 10) {
+    if (e.clientY > 12) document.body.classList.remove('zen-toolbar-suppressed');
+    if (e.clientY <= 10 && !document.body.classList.contains('zen-toolbar-suppressed')) {
       toolbar.classList.add('zen-toolbar-revealed');
     } else if (e.clientY > 54) {
       toolbar.classList.remove('zen-toolbar-revealed');
@@ -32091,12 +36524,15 @@ function bindEvents() {
   $('lang-search-input')?.addEventListener('input', event => window.i18n?.renderLanguageGrid(event.target.value));
   $('table-modal-close')?.addEventListener('click', () => closeTableModal());
   window.addEventListener('readmd:language-changed', e => {
+    localizeOpenTabs();
     const lang = e.detail.lang;
     const labelEl = $('lang-current-label');
     if (labelEl && window.i18n && window.i18n.meta[lang]) {
       labelEl.textContent = window.i18n.meta[lang].native || lang;
     }
     updateStatus();
+    setFixes(state.fixes, state.stats);
+    localizeFixReport();
     updateDocStatistics();
     updatePvLabel();
     syncBuildVersionLabels();
@@ -32110,54 +36546,13 @@ function bindEvents() {
   bindGlobalDragAndDrop();      // 全局拖拽支持
   bindTabOverflowEvents();      // 标签栏左右滚动溢出支持
   bindTabContextMenuEvents();   // 标签右键菜单
-  window.addEventListener('resize', () => {
-    renderTabsBar();
-  });
 
   /* --- 19. 全局键盘快捷键矩阵 (Global Keyboard Shortcuts) --- */
   document.addEventListener('keydown', e => {
     const mod = e.ctrlKey || e.metaKey;
 
-    // 模态弹窗 ESC 优先拦截与层级关闭
     if (e.key === 'Escape') {
-      const allModalIds = [
-        'close-confirm-modal',
-        'confirm-modal',
-        'plugin-modal',
-        'pet-settings-modal',
-        'code-chunk-modal', 'diagram-modal', 'doc-import-modal', 'frontmatter-modal',
-        'table-modal', 'export-preview-modal', 'export-modal', 'convert-modal',
-        'update-modal', 'style-custom-modal', 'lang-modal', 'ai-history-modal',
-        'ai-settings-modal', 'formula-modal', 'presentation-modal'
-      ];
-      const activeModal = allModalIds.find(id => $(id) && !$(id).classList.contains('hidden'));
-      if (activeModal) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (activeModal === 'close-confirm-modal' || activeModal === 'confirm-modal') return;
-        if (activeModal === 'code-chunk-modal') closeCodeChunkModal();
-        else if (activeModal === 'diagram-modal') closeDiagramModal();
-        else if (activeModal === 'doc-import-modal') closeDocImportModal();
-        else if (activeModal === 'frontmatter-modal') closeFrontmatterModal();
-        else if (activeModal === 'table-modal') closeTableModal();
-        else if (activeModal === 'export-preview-modal') $(activeModal).classList.add('hidden');
-        else if (activeModal === 'export-modal') closeExportModal();
-        else if (activeModal === 'convert-modal') $('convert-modal').classList.add('hidden');
-        else if (activeModal === 'plugin-modal') closePluginModal();
-        else if (activeModal === 'pet-settings-modal') {
-          if (typeof window.closePetSettings === 'function') window.closePetSettings();
-          else $('pet-settings-modal').classList.add('hidden');
-        }
-        else if (activeModal === 'update-modal') {
-          if (!isUpdateDownloading()) $('update-modal').classList.add('hidden');
-        }
-        else if (activeModal === 'style-custom-modal') closeStyleModal();
-        else if (activeModal === 'lang-modal' && window.i18n) window.i18n.closeModal();
-        else if (activeModal.startsWith('ai-')) closeAiModal(activeModal);
-        else if (activeModal === 'presentation-modal') window.closePresentationMode?.();
-        else $(activeModal).classList.add('hidden');
-        return;
-      }
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       if (document.body.classList.contains('zen-mode')) {
         e.preventDefault();
         toggleZenMode(false);
@@ -32167,7 +36562,7 @@ function bindEvents() {
 
     if (e.key === 'F2') { e.preventDefault(); openFileRename(); } // F2: 文件重命名
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); $('btn-open').click(); } // Ctrl+O: 打开文件
-    else if (mod && e.key.toLowerCase() === 'f') { // Ctrl+F: 全文搜索
+    else if (mod && !e.shiftKey && e.key.toLowerCase() === 'f') { // Ctrl+F: 全文搜索
       e.preventDefault();
       toggleSearch();
     }
@@ -32192,6 +36587,7 @@ function bindEvents() {
       }
     }
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'v') { // Ctrl+V: 智能剪贴板新建
+      if (e.defaultPrevented || window.ReadMDModal?.depth()) return;
       const t = e.target;
       const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || (t.closest && t.closest('.CodeMirror, .cm-editor, [contenteditable="true"]')));
       if (inField) return; // 输入框内放行浏览器原生粘贴
@@ -32201,7 +36597,7 @@ function bindEvents() {
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleSide('toc'); } // Ctrl+Shift+F: 目录大纲
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); toggleTheme(); } // Ctrl+D: 主题切换
     else if (mod && e.key.toLowerCase() === 'g') { e.preventDefault(); _openKnowledgeGraph(); } // Ctrl+G: 知识图谱
-    else if (mod && e.key.toLowerCase() === 'r') { e.preventDefault(); if (state.file && state.mode === 'file') loadFile(state.file, { force: true }); } // Ctrl+R: 强制重载文件
+    else if (mod && e.key.toLowerCase() === 'r') { e.preventDefault(); if (state.file && ['file', 'office-preview'].includes(state.mode)) loadFile(state.file, { force: true }); } // Ctrl+R: 强制重载文件
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); openExportModal(); } // Ctrl+P: 导出面板
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); if (typeof handleTopAiButtonClick === 'function') handleTopAiButtonClick(); else toggleAiPanel(); } // Ctrl+Shift+A: AI面板/AI编辑助手
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'p' && state.editing) { e.preventDefault(); openMdCommandPalette(); } // Ctrl+Shift+P: 命令面板
@@ -32210,30 +36606,12 @@ function bindEvents() {
     else if (mod && e.key === 'ArrowLeft') { e.preventDefault(); historyBack(); } // Alt/Ctrl+Left: 历史后退
     else if (mod && e.key === 'ArrowRight') { e.preventDefault(); historyForward(); } // Alt/Ctrl+Right: 历史前进
     else if (e.key === 'Escape') {
-      // Layer 1: 模态框与上下文菜单/搜索栏（一旦命中立即阻断返回）
-      if ($('graph-modal') && !$('graph-modal').classList.contains('hidden')) { if (window.ReadMDGraph) window.ReadMDGraph.close(); return; }
       if ($('backlinks-panel') && !$('backlinks-panel').classList.contains('hidden')) { $('backlinks-panel').classList.add('hidden'); return; }
-      if ($('ai-history-modal') && !$('ai-history-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('ai-history-modal'); else $('ai-history-modal').classList.add('hidden'); return; }
-      if ($('ai-settings-modal') && !$('ai-settings-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('ai-settings-modal'); else $('ai-settings-modal').classList.add('hidden'); return; }
-      if ($('chat-import-modal') && !$('chat-import-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('chat-import-modal'); else $('chat-import-modal').classList.add('hidden'); return; }
-      if ($('style-custom-modal') && !$('style-custom-modal').classList.contains('hidden')) { closeStyleModal(); return; }
-      if ($('formula-modal') && !$('formula-modal').classList.contains('hidden')) { closeFormulaModal(); return; }
-      if ($('img-modal') && !$('img-modal').classList.contains('hidden')) { closeImgModal(); return; }
-      if ($('history-modal') && !$('history-modal').classList.contains('hidden')) { $('history-modal').classList.add('hidden'); return; }
-      if ($('export-preview-modal') && !$('export-preview-modal').classList.contains('hidden')) { $('export-preview-modal').classList.add('hidden'); return; }
       if ($('tab-context-menu') && !$('tab-context-menu').classList.contains('hidden')) { closeTabContextMenu({ restoreFocus: true }); return; }
-      if ($('more-menu') && $('more-menu').classList.contains('open')) { closeMoreMenu(true); return; }
       if ($('search-bar') && !$('search-bar').classList.contains('hidden')) { closeSearch({ restoreFocus: true }); return; }
       if ($('edit-ai-bar') && !$('edit-ai-bar').classList.contains('hidden')) { if (typeof closeEditAiBar === 'function') closeEditAiBar(); return; }
-      if ($('fix-modal') && !$('fix-modal').classList.contains('hidden')) { $('fix-modal').classList.add('hidden'); return; }
-      if ($('share-modal') && !$('share-modal').classList.contains('hidden')) { $('share-modal').classList.add('hidden'); return; }
-      if ($('tpl-modal') && !$('tpl-modal').classList.contains('hidden')) { $('tpl-modal').classList.add('hidden'); return; }
-      if ($('convert-modal') && !$('convert-modal').classList.contains('hidden')) { $('convert-modal').classList.add('hidden'); return; }
-      if ($('table-modal') && !$('table-modal').classList.contains('hidden')) { closeTableModal(); return; }
-      if ($('lang-modal') && !$('lang-modal').classList.contains('hidden') && window.i18n) { window.i18n.closeModal(); return; }
-      if (typeof closeWebDialog === 'function' && $('url-modal') && !$('url-modal').classList.contains('hidden')) { closeWebDialog(); return; }
-      const openPopups = document.querySelectorAll('.md-menu:not(.hidden), .pv-menu:not(.hidden)');
-      if (openPopups.length > 0) { closeMdPopups(); return; }
+      const openPopups = document.querySelectorAll('.md-menu:not(.hidden)');
+      if (openPopups.length > 0) { closeMdPopups({ restoreFocus: true }); return; }
 
       // Layer 2: AI 面板分层退出（全屏退回分屏，分屏收起归还焦点，绝不穿透退出编辑器）
       const aiPanel = $('ai-panel');
@@ -32250,7 +36628,7 @@ function bindEvents() {
       }
 
       // Layer 3: 侧边栏与禅模式
-      if ($('side') && !$('side').classList.contains('hidden')) { $('side').classList.add('hidden'); return; }
+      if (!$('side').classList.contains('hidden')) { closeSide({ restoreFocus: true }); return; }
       if (document.body.classList.contains('zen-mode')) { toggleZenMode(false); return; }
 
       // Layer 4: 兜底清理其他小弹层
@@ -32267,82 +36645,9 @@ function bindEvents() {
   });
 
 
-  document.addEventListener('click', closeMdPopups);
-  setupModalAccessibility();
-}
-
-function getModalRoots() {
-  return [
-    'close-confirm-modal', 'code-chunk-modal', 'diagram-modal', 'doc-import-modal',
-    'frontmatter-modal', 'table-modal', 'export-preview-modal', 'export-modal',
-    'convert-modal', 'plugin-modal', 'pet-settings-modal', 'graph-modal', 'update-modal',
-    'style-custom-modal', 'lang-modal', 'ai-history-modal', 'ai-settings-modal',
-    'formula-modal', 'presentation-modal', 'img-modal', 'history-modal', 'share-modal',
-    'tpl-modal', 'url-modal', 'save-conflict-modal', 'fix-modal', 'continuous-modal', 'confirm-modal'
-  ].map(id => $(id)).filter(Boolean);
-}
-
-function isVisibleModal(modal) {
-  return modal && !modal.classList.contains('hidden');
-}
-
-function getModalFocusable(modal) {
-  return Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
-    .filter(el => !el.closest('.hidden'));
-}
-
-function setupModalAccessibility() {
-  if (window.ReadMDModal) return;
-  const modalOpeners = new Map();
-  const openModalStack = [];
-  document.addEventListener('keydown', event => {
-    if (event.key !== 'Tab') return;
-    const modal = [...openModalStack].reverse().find(isVisibleModal);
-    if (!modal) return;
-    const focusable = getModalFocusable(modal);
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (!modal.contains(event.target)) {
-      event.preventDefault();
-      first.focus();
-      return;
-    }
-    if (event.shiftKey && event.target === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && event.target === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }, true);
-
-  const observer = new MutationObserver(mutations => {
-    for (const mutation of mutations) {
-      const modal = mutation.target;
-      const visible = !modal.classList.contains('hidden');
-      const stackIndex = openModalStack.indexOf(modal);
-      if (visible) {
-        if (stackIndex < 0) openModalStack.push(modal);
-        if (!modalOpeners.has(modal)) {
-          const opener = document.activeElement;
-          modalOpeners.set(modal, modal.contains(opener) ? null : opener);
-        }
-        if (!modal.contains(document.activeElement)) {
-          const focusable = getModalFocusable(modal);
-          if (focusable.length) focusable[0].focus();
-        }
-      } else if (!visible) {
-        if (stackIndex >= 0) openModalStack.splice(stackIndex, 1);
-        if (modal.contains(document.activeElement)) {
-          const opener = modalOpeners.get(modal);
-          if (opener && opener.isConnected) opener.focus({ preventScroll: true });
-        }
-        modalOpeners.delete(modal);
-      }
-    }
+  document.addEventListener('click', event => {
+    if (!event.target.closest('#edit-bar .md-menu')) closeMdPopups();
   });
-  getModalRoots().forEach(modal => observer.observe(modal, { attributes: true, attributeFilter: ['class'] }));
 }
 
 function syncDesktopControls() {
@@ -32365,8 +36670,8 @@ async function openInitialFile(path, options = {}) {
   if (!path) return;
   // Markdown 文档 -> 直接阅读器加载
   if (MD_RE.test(path)) return loadFile(path, options);
-  // 图片或 PDF 扫描件 -> 触发离线 OCR 识别
-  if (IMG_RE.test(path) || /\.pdf$/i.test(path)) return ocrFile(path);
+  if (/\.(pdf|docx|pptx)$/i.test(path)) return openDocumentPath(path, options);
+  if (IMG_RE.test(path)) return ocrFile(path);
   // Office/Epub/HTML/LaTeX 等 -> 触发万物转 MD 引擎
   return convertFile(path);
 }

@@ -29,6 +29,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V') || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/repo-quality.yml
     permissions:
+      actions: read
       contents: read
 
   build:
@@ -41,24 +42,28 @@ jobs:
           - name: Windows x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
+            pdfium_platform: windows-x64
             bin_name: readmd.exe
             asset_name: ReadMD-windows-x64
             archive_ext: zip
           - name: Linux x64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            pdfium_platform: linux-x64
             bin_name: readmd
             asset_name: ReadMD-linux-x86_64
             archive_ext: tar.gz
           - name: macOS ARM64
             os: macos-latest
             target: aarch64-apple-darwin
+            pdfium_platform: macos-arm64
             bin_name: readmd
             asset_name: ReadMD-macos-arm64
             archive_ext: zip
           - name: macOS Intel
             os: macos-latest
             target: x86_64-apple-darwin
+            pdfium_platform: macos-x64
             bin_name: readmd
             asset_name: ReadMD-macos-x64
             archive_ext: zip
@@ -114,7 +119,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libgtk-layer-shell-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libgtk-layer-shell-dev clang pkg-config libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-dev libwayland-dev libvulkan-dev mesa-vulkan-drivers
+
+      - name: Locate the Windows SDK shader compiler
+        if: runner.os == 'Windows'
+        run: |
+          $kits = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\bin'
+          $fxc = Get-ChildItem $kits -Filter fxc.exe -Recurse | Where-Object { $_.Directory.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) { throw 'The Office layout source build needs the existing Windows SDK fxc.exe' }
+          "GPUI_FXC_PATH=$($fxc.FullName)" >> $env:GITHUB_ENV
 
       # Prepare already locked dependencies separately; every compilation is offline.
       - name: Prepare locked dependency caches
@@ -134,11 +147,43 @@ jobs:
         if: always() && runner.os == 'Linux'
         run: node tools/prepare-linux-svg-worker.mjs clean
 
+      - name: Import pinned Office layout source and locked worker dependencies
+        run: node tools/prepare-office-runtime.mjs prepare ${{ matrix.platform.pdfium_platform }}
+
       - name: Verify release version and frontend bundle
         shell: bash
         run: |
           test "$(tr -d '\r\n' < VERSION)" = "$APP_VERSION"
           cargo run --offline --locked --manifest-path rust/Cargo.toml -p xtask -- bundle-boot --check
+
+      - name: Assemble the bundled PDFium capability pack
+        shell: bash
+        env:
+          PDFIUM_PLATFORM: ${{ matrix.platform.pdfium_platform }}
+          RUST_TARGET: ${{ matrix.platform.target }}
+        run: |
+          set -euo pipefail
+          node tools/prepare-pdfium.mjs .cache/release-pdfium "$PDFIUM_PLATFORM"
+          cargo build --offline --locked --manifest-path rust/Cargo.toml --release -p readmd-kernel --no-default-features --features pdfium-worker --bin readmd-pdf-worker --target "$RUST_TARGET"
+          worker="rust/target/$RUST_TARGET/release/readmd-pdf-worker"
+          if [[ "$PDFIUM_PLATFORM" == windows-* ]]; then worker="$worker.exe"; fi
+          if [[ "$PDFIUM_PLATFORM" == macos-* ]]; then
+            node tools/macos-sign.mjs --path "$worker"
+            node tools/macos-sign.mjs --path .cache/release-pdfium/lib/libpdfium.dylib
+          fi
+          mkdir -p dist
+          cp -r assets dist/release-assets
+          registry="$(node --input-type=module -e 'import fs from "node:fs"; import os from "node:os"; import path from "node:path"; const sources=path.join(process.env.CARGO_HOME||path.join(os.homedir(),".cargo"),"registry","src"); const registry=fs.readdirSync(sources).map(name=>path.join(sources,name)).find(dir=>fs.existsSync(path.join(dir,"pdfium-render-0.9.4","LICENSE.md"))); if(!registry)process.exit(1); process.stdout.write(registry);')"
+          READMD_REGISTRY_SRC="$registry" READMD_PDFIUM_CRATE="$registry/pdfium-render-0.9.4" node tools/build-pdf-pack.mjs .cache/release-pdfium "$worker" "dist/ReadMD-PDFium-$PDFIUM_PLATFORM.readmd-pack" "$PDFIUM_PLATFORM" --bundle-assets dist/release-assets
+          rm -r .cache/release-pdfium
+
+      - name: Build the bundled Office layout worker from source offline
+        run: node tools/prepare-office-runtime.mjs build ${{ matrix.platform.pdfium_platform }} --output dist/release-assets/office/runtime
+
+      - name: Verify Office source identity and bundled runtime inventory
+        env:
+          READMD_TEST_OFFICE_RUNTIME: ${{ github.workspace }}/dist/release-assets/office/runtime
+        run: node --test tools/test/office-source-runtime.test.mjs
 
       - name: Build release binary with Cargo
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml --release -p readmd-kernel --target ${{ matrix.platform.target }}
@@ -157,7 +202,15 @@ jobs:
         if: runner.os != 'macOS'
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin_name }}
+          READMD_REQUIRE_TOKEN: '1'
         run: node ui-tests/node_modules/@playwright/test/cli.js test --config ui-tests/p0-lifecycle.config.cjs
+
+      - name: Verify platform image exports and installed PDFium
+        if: runner.os != 'macOS'
+        env:
+          READMD_BIN: ${{ github.workspace }}/rust/target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin_name }}
+          READMD_IMAGE_TEST_ASSETS: ${{ github.workspace }}/dist/release-assets
+        run: node ui-tests/platform-image-export.cjs
 
       - name: Upload lifecycle results and failure traces
         if: always() && runner.os != 'macOS'
@@ -192,14 +245,16 @@ jobs:
           Copy-Item "rust\target\${{ matrix.platform.target }}\release\readmd.exe" -Destination "$pkgDir\ReadMD.exe"
           node tools/stage-windows-runtime.mjs "$pkgDir"
           if ($LASTEXITCODE -ne 0) { throw "Bundled Windows runtime validation failed" }
-          Copy-Item "assets" -Destination "$pkgDir\assets" -Recurse
+          Copy-Item "dist\release-assets" -Destination "$pkgDir\assets" -Recurse
           Copy-Item "LICENSE" -Destination "$pkgDir\LICENSE"
           Copy-Item "README.md" -Destination "$pkgDir\README.md"
           Copy-Item "dist\pet\ReadMD-Pet-Rust.zip" -Destination "$pkgDir\ReadMD-Pet-Rust.zip" -ErrorAction Stop
           node tools/privacy-scan.mjs "$pkgDir"
           if ($LASTEXITCODE -ne 0) { throw "Native package privacy validation failed" }
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "dist\${{ matrix.platform.asset_name }}.zip"
-          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DAPP_VERSION=$env:APP_VERSION" ReadMD.nsi
+          $pdfium = Get-Content -Raw "$pkgDir\assets\capabilities\pdfium-7881-windows-x64.lock.json" | ConvertFrom-Json
+          $pdfiumKiB = [math]::Ceiling(($pdfium.files | Measure-Object -Property size -Sum).Sum / 1KB)
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DAPP_VERSION=$env:APP_VERSION" "/DBUNDLED_PDFIUM_INSTALLED_KIB=$pdfiumKiB" ReadMD.nsi
           if ($LASTEXITCODE -ne 0) { throw "NSIS packaging failed" }
 
       - name: Package Linux Artifacts
@@ -208,8 +263,8 @@ jobs:
           PKG_DIR="dist/ReadMD-linux-x86_64"
           mkdir -p "$PKG_DIR"
           cp "rust/target/${{ matrix.platform.target }}/release/readmd" "$PKG_DIR/ReadMD"
-          cp -r assets "$PKG_DIR/assets"
-          cp LICENSE README.md "$PKG_DIR/"
+          cp -r dist/release-assets "$PKG_DIR/assets"
+          cp LICENSE README.md dist/ReadMD-PDFium-linux-x64.readmd-pack "$PKG_DIR/"
           cp dist/pet/ReadMD-Pet-Rust-linux-x86_64.zip "$PKG_DIR/"
           node tools/privacy-scan.mjs "$PKG_DIR"
           tar -czvf "dist/${{ matrix.platform.asset_name }}.tar.gz" -C dist/ReadMD-linux-x86_64 .
@@ -225,7 +280,8 @@ jobs:
           cp "rust/target/${{ matrix.platform.target }}/release/readmd" "$DEB_DIR/usr/bin/readmd"
           cp dist/pet/ReadMD-Pet-Rust-linux-x86_64.zip "$DEB_DIR/usr/share/readmd/"
           chmod +x "$DEB_DIR/usr/bin/readmd"
-          cp -r assets "$DEB_DIR/usr/share/readmd/"
+          cp -r dist/release-assets "$DEB_DIR/usr/share/readmd/assets"
+          cp dist/ReadMD-PDFium-linux-x64.readmd-pack "$DEB_DIR/usr/share/readmd/"
           if [ -f "assets/icon-256.png" ]; then
             cp "assets/icon-256.png" "$DEB_DIR/usr/share/icons/hicolor/512x512/apps/readmd.png"
           fi
@@ -236,7 +292,7 @@ jobs:
           Section: utils
           Priority: optional
           Architecture: amd64
-          Depends: libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, libgtk-layer-shell0
+          Depends: libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, libgtk-layer-shell0, libfontconfig1, libxkbcommon0, libxkbcommon-x11-0, libxcb1, libwayland-client0, libvulkan1
           Maintainer: Natsummerance <https://github.com/Natsummerance/rust-ReadMD>
           Description: 100% Pure Rust Native Markdown Reader and Editor
            ReadMD is a local-first cross-platform Markdown reader and editor.
@@ -264,7 +320,7 @@ jobs:
             aarch64*) arch=arm64; pet_arch=aarch64 ;;
             *) arch=x64; pet_arch=x86_64 ;;
           esac
-          node tools/package-macos.mjs --binary "rust/target/${{ matrix.platform.target }}/release/readmd" --pet "dist/pet/ReadMD-Pet-Rust-macos-$pet_arch.zip" --output dist/macos-package --arch "$arch"
+          node tools/package-macos.mjs --binary "rust/target/${{ matrix.platform.target }}/release/readmd" --pet "dist/pet/ReadMD-Pet-Rust-macos-$pet_arch.zip" --output dist/macos-package --arch "$arch" --assets dist/release-assets
           mv dist/macos-package/ReadMD-macos-*.zip dist/macos-package/ReadMD-macos-*.dmg dist/
 
       - name: Remove temporary macOS distribution credentials
@@ -298,17 +354,15 @@ jobs:
         with:
           node-version: 22
 
-      - name: Download all build artifacts
+      - name: Download only desktop and integration packages
         uses: actions/download-artifact@v4
         with:
           path: release-assets
+          pattern: ReadMD-{windows-x64,linux-x86_64,macos-arm64,macos-x64,integrations}
           merge-multiple: true
 
-      - name: Generate SHA256 Checksums
-        working-directory: release-assets
-        run: |
-          sha256sum * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+      - name: Require exactly ten packages and generate SHA256 checksums
+        run: node tools/publish-release.mjs --assets-dir release-assets --checksums-only
 
       - name: Verify candidates and replace release downloads
         env:
@@ -316,4 +370,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           EXPECTED_COMMIT: ${{ github.sha }}
           RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          CREATE_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
         run: node tools/publish-release.mjs --assets-dir release-assets

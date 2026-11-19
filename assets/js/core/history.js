@@ -6,7 +6,7 @@
 /* ---------------- 最近文件与历史记录 ---------------- */
 
 async function getRecentEntries() {
-  if (hasPy && py.get_recent) {
+  if (window.READMD_ENGINE !== 'rust' && hasPy && py.get_recent) {
     try { return await py.get_recent() || []; } catch (e) { return []; }
   }
   try {
@@ -21,33 +21,43 @@ async function getRecentEntries() {
 
 async function removeRecent(path) {
   if (!path) return false;
-  let ok = true;
-  if (hasPy && py.remove_recent) {
-    try { ok = (await py.remove_recent(path)) !== false; } catch (e) { ok = false; }
-  } else {
-    try {
+  try {
+    if (window.READMD_ENGINE !== 'rust' && hasPy && py.remove_recent) {
+      if ((await py.remove_recent(path)) === false) return false;
+    } else {
       const response = await apiFetch('/api/recent/remove', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path })
       });
-      ok = !!(response && response.ok);
-    } catch (e) { ok = false; }
-  }
-  if (!ok) return false;
-  await refreshRecent();
-  const historyModal = $('history-modal');
-  if (historyModal && !historyModal.classList.contains('hidden')) {
-    const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-    const rec = await getRecentEntries();
-    const list = $('history-list');
-    if (!rec.length) {
-      if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
-    } else {
-      renderRecentList(list, rec, p => { historyModal.classList.add('hidden'); loadFile(p); });
+      if (!response.ok || !(await response.json()).ok) return false;
     }
-  }
+  } catch (_) { return false; }
+  await animateRecentExit(row => row.dataset.recentPath === path);
+  await refreshRecent({ slide: true });
   return true;
+}
+
+function recentMotionAllowed() {
+  return typeof Element.prototype.animate === 'function' &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+async function animateRecentExit(choose) {
+  if (!recentMotionAllowed()) return;
+  const animations = [];
+  for (const id of ['side-recent-list', 'recent-list', 'history-list']) {
+    const list = $(id);
+    if (!list?.getClientRects().length) continue;
+    const rows = [...list.querySelectorAll('.recent-item')].filter(choose);
+    rows.forEach((row, index) => {
+      animations.push(row.animate(
+        [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-5px) scale(.985)' }],
+        { duration: 135, delay: Math.min(index, 5) * 14, easing: 'ease-in', fill: 'forwards' }
+      ));
+    });
+  }
+  await Promise.allSettled(animations.map(animation => animation.finished));
 }
 
 async function checkRecentStatus(paths) {
@@ -77,17 +87,21 @@ async function checkRecentStatus(paths) {
   }));
 }
 
-function renderRecentList(list, rec, onOpen) {
+function renderRecentList(list, rec, onOpen, slide = false) {
   if (!list) return;
-  list.innerHTML = '';
+  const oldRows = [...list.querySelectorAll('.recent-item')];
+  const motion = slide && recentMotionAllowed() && list.getClientRects().length;
+  const first = new Map(motion ? oldRows.map(row => [row.dataset.recentPath, row.offsetTop]) : []);
+  const focusIndex = oldRows.findIndex(row => row.contains(document.activeElement));
+  const focusRemove = document.activeElement?.classList.contains('recent-remove');
+  const fragment = document.createDocumentFragment();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const slice = rec.slice(0, 24);
-  if (!slice.length) return;
-
   const itemMap = new Map();
   slice.forEach(p => {
     const li = document.createElement('li');
     li.className = 'recent-item';
+    li.dataset.recentPath = p;
 
     const card = document.createElement('div');
     card.className = 'recent-card';
@@ -131,18 +145,36 @@ function renderRecentList(list, rec, onOpen) {
     removeBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      li.classList.add('removing');
-      if (!(await removeRecent(p))) li.classList.remove('removing');
+      if (removeBtn.getAttribute('aria-busy') === 'true') return;
+      removeBtn.setAttribute('aria-busy', 'true');
+      try {
+        if (!await removeRecent(p)) showToast(_t('error.internal_error'));
+      } finally {
+        removeBtn.removeAttribute('aria-busy');
+      }
     });
 
     card.appendChild(btn);
     card.appendChild(removeBtn);
     li.appendChild(card);
-    list.appendChild(li);
+    fragment.appendChild(li);
 
     itemMap.set(p, { li, card, btn, nm, dp });
   });
 
+  list.replaceChildren(fragment);
+  for (const { li } of itemMap.values()) {
+    if (!first.has(li.dataset.recentPath)) continue;
+    const dy = first.get(li.dataset.recentPath) - li.offsetTop;
+    if (dy) li.animate([{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }],
+      { duration: 230, easing: 'cubic-bezier(.2,.72,.24,1)' });
+  }
+  if (slide && focusIndex >= 0 && slice.length) {
+    list.children[Math.min(focusIndex, slice.length - 1)]
+      ?.querySelector(focusRemove ? '.recent-remove' : '.recent-card-btn')?.focus({ preventScroll: true });
+  }
+
+  if (!slice.length) return;
   checkRecentStatus(slice).then(items => {
     (items || []).forEach(item => {
       const entry = itemMap.get(item.path);
@@ -163,51 +195,70 @@ function renderRecentList(list, rec, onOpen) {
   }).catch(() => {});
 }
 
-async function refreshRecent() {
-  const box = $('recent-box');
-  if (!box) return;
+function renderSidebarRecent(rec, slide = false) {
+  const list = $('side-recent-list');
+  $('side-recent-clear').disabled = !rec.length;
+  renderRecentList(list, rec, loadFile, slide);
+  if (!rec.length) showEmptyRecent(list, 'side-empty');
+}
+
+function showEmptyRecent(list, className) {
+  const row = document.createElement('li');
+  row.className = className;
+  row.textContent = window.i18n?.t('history.noRecentFiles') || '暂无记录';
+  list.replaceChildren(row);
+}
+
+function renderHistoryRecent(rec, slide = false) {
+  const modal = $('history-modal');
+  const list = $('history-list');
+  renderRecentList(list, rec, path => { modal.classList.add('hidden'); loadFile(path); }, slide);
+  if (!rec.length) showEmptyRecent(list, 'empty');
+}
+
+let recentRequest = 0;
+async function refreshRecent({ slide = false } = {}) {
+  const request = ++recentRequest;
   const rec = await getRecentEntries();
-  if (!rec.length) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden');
-  renderRecentList($('recent-list'), rec, loadFile);
+  if (request !== recentRequest) return;
+  renderSidebarRecent(rec, slide);
+  const box = $('recent-box');
+  if (box) {
+    box.classList.toggle('hidden', !rec.length);
+    renderRecentList($('recent-list'), rec, loadFile, slide);
+  }
+  if ($('history-modal')?.classList.contains('hidden') === false) renderHistoryRecent(rec, slide);
 }
 
 async function openHistoryModal() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const rec = await getRecentEntries();
-  const modal = $('history-modal');
-  const list = $('history-list');
-  list.innerHTML = '';
-  if (!rec.length) {
-    const li = document.createElement('li');
-    li.className = 'empty'; li.textContent = _t('history.noRecentFiles'); list.appendChild(li);
-  } else {
-    renderRecentList(list, rec, p => { modal.classList.add('hidden'); loadFile(p); });
-  }
-  modal.classList.remove('hidden');
+  renderHistoryRecent(rec);
+  $('history-modal').classList.remove('hidden');
 }
 
 async function clearRecent() {
-  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: 'history-clear' });
+  const cleared = await window.ReadMDTask.run('clear-recent', runClearRecent, {
+    trigger: ['history-clear', 'recent-clear', 'side-recent-clear']
+  });
+  if (cleared) await refreshRecent({ slide: true });
+  return cleared;
 }
 
 async function runClearRecent() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   try {
-  if (hasPy && py.clear_recent) {
-    const result = await py.clear_recent();
-    if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
-  } else {
-    const response = await apiFetch('/api/recent/clear', { method: 'POST' });
-    const result = await response.json();
-    if (!response.ok || result?.ok === false) throw new Error(result?.error || 'HTTP ' + response.status);
-  }
-  await refreshRecent();
-  const list = $('history-list');
-  if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
-  return true;
-  } catch (e) {
-    showToast(_t('audit.clearFailed', { error: e.message }));
+    if (window.READMD_ENGINE !== 'rust' && hasPy && py.clear_recent) {
+      const result = await py.clear_recent();
+      if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
+    } else {
+      const response = await apiFetch('/api/recent/clear', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'HTTP ' + response.status);
+    }
+    await animateRecentExit(() => true);
+    return true;
+  } catch (error) {
+    showToast(_t('audit.clearFailed', { error: error.message }));
     return false;
   }
 }
@@ -273,8 +324,24 @@ function setUnavailableReason(element, reason) {
   }
 }
 
+function updateSidebarSummaryTitle(summary) {
+  summary.title = Array.from(summary.children, item => item.textContent).filter(Boolean).join(' · ');
+}
+
+function updateSidebarStatistics(stats) {
+  const summary = $('status-summary');
+  if (!summary) return;
+  summary.dataset.tab = state.activeTabId || '';
+  const locale = window.i18n?.currentLang;
+  const count = value => Number(value).toLocaleString(locale || undefined);
+  $('status-words').textContent = stats ? window.i18n.t('reader.wordCount', { count: count(stats.words) }) : '';
+  $('status-reading-time').textContent = stats ? window.i18n.t('reader.readingTime', { minutes: count(stats.minutes) }) : '';
+  updateSidebarSummaryTitle(summary);
+}
+
 function updateStatus() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const isOfficePreview = state.mode === 'office-preview';
   const srcLabels = {
     convert: _t('menu.convert'),
     ocr: _t('menu.ocr'),
@@ -283,7 +350,7 @@ function updateStatus() {
   };
   $('status-left').textContent = (state.mode === 'virtual' ? '[' + (srcLabels[state.source] || state.source) + '] ' : '') + (state.sourceName || state.file || '');
   const parts = [];
-  if (state.stats) {
+  if (state.stats && !isOfficePreview) {
     const s = state.stats;
     const p2 = [];
     if (s.table) p2.push(_t('editor.table') + ' ' + s.table);
@@ -298,25 +365,33 @@ function updateStatus() {
   $('status-right').textContent = state.mode === 'unavailable' ? _t('toast.openFailed') : parts.join(' · ');
   const isWelcome = state.mode === 'welcome';
   const hasDoc = (state.mode === 'file' || state.mode === 'virtual') && state.original != null;
+  const summary = $('status-summary');
+  if (summary) {
+    if (summary.dataset.tab !== (state.activeTabId || '') || !hasDoc) updateSidebarStatistics(null);
+    const ext = String(state.ext || state.sourceName?.match(/\.([a-z\d]{1,8})$/i)?.[1] || 'md').replace(/^\./, '').toUpperCase();
+    $('status-format').textContent = /^(?:MARKDOWN|MDOWN|MKD|MKDN)$/.test(ext) ? 'MD' : ext;
+    $('status-encoding').textContent = (state.encoding || '').toUpperCase();
+    updateSidebarSummaryTitle(summary);
+    $('statusbar').classList.toggle('hidden', !hasDoc && !isOfficePreview);
+  }
   const canEdit = hasDoc && !state.editing;
-  const canReload = state.mode === 'file';
+  const canReload = state.mode === 'file' || isOfficePreview;
   const canSaveas = hasDoc;
   // 没有打开文档时禁用编辑；新建文档走 newDocument()。
   $('btn-edit').disabled = !hasDoc && !state.editing;
-  setUnavailableReason($('btn-edit'), _t('toast.openDocumentToUse'));
+  setUnavailableReason($('btn-edit'), _t(isOfficePreview ? 'toast.noEditableContent' : 'toast.openDocumentToUse'));
   $('btn-reload').disabled = !canReload;
   $('btn-saveas').disabled = !canSaveas;
   if ($('btn-document-copy')) $('btn-document-copy').disabled = !hasDoc;
-  setUnavailableReason($('btn-saveas'), _t('toast.openDocumentToUse'));
+  setUnavailableReason($('btn-saveas'), _t(isOfficePreview ? 'toast.noEditableContent' : 'toast.openDocumentToUse'));
   if ($('btn-print')) {
     const canExport = hasPy || window.READMD_ENGINE === 'rust';
-    $('btn-print').disabled = isWelcome || state.mode === 'unavailable' || !canExport;
-    const exportHint = _t('toolbar.export') + ' (Ctrl+P)';
-    $('btn-print').title = exportHint;
-    $('btn-print').setAttribute('aria-label', exportHint);
+    $('btn-print').disabled = isWelcome || state.mode === 'unavailable' || isOfficePreview || !canExport;
+    $('btn-print').title = _t('toolbar.export');
+    $('btn-print').setAttribute('aria-label', _t('toolbar.export'));
     if (!canExport) setUnavailableReason($('btn-print'), _t('toast.exportBrowserNotice'));
   }
-  if ($('btn-search')) $('btn-search').disabled = isWelcome || state.mode === 'unavailable';
+  if ($('btn-search')) $('btn-search').disabled = isWelcome || state.mode === 'unavailable' || isOfficePreview;
   setUnavailableReason($('btn-search'), _t('toast.searchNeedsDocument'));
   if ($('btn-presentation-menu')) $('btn-presentation-menu').disabled = !hasDoc;
   if ($('btn-run-all-chunks')) {
@@ -346,10 +421,7 @@ function updateStatus() {
   }
 
   const btnHome = $('btn-home');
-  if (btnHome) {
-    if (isWelcome) btnHome.classList.add('hidden');
-    else btnHome.classList.remove('hidden');
-  }
+  if (btnHome) btnHome.disabled = isWelcome;
 }
 
 let goingHome = false;
@@ -367,6 +439,7 @@ async function goHome(options = {}) {
 }
 
 function resetHome() {
+  void window.ReadMDOffice?.releaseView();
   window.invalidateDocumentLoads?.();
   state.mode = 'welcome';
   state.file = null;
@@ -496,9 +569,11 @@ function stopAutoReload() {
 }
 
 function syncBuildVersionLabels() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const version = document.documentElement.dataset.version;
+  syncVersionLabels(document.documentElement.dataset.version);
+}
+
+function syncVersionLabels(version) {
   if (!version) return;
-  if ($('status-version')) $('status-version').textContent = 'v' + version;
-  if ($('menu-version-label')) $('menu-version-label').textContent = _t('app.currentVersion') + version;
+  const label = 'v' + version.replace(/^[vV]/, '');
+  for (const id of ['status-version', 'menu-version-label']) if ($(id)) $(id).textContent = label;
 }

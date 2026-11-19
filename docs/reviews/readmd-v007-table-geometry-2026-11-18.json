@@ -1,0 +1,415 @@
+{
+  "candidate": "1b0b6818f8229ff7aae04a2849bddbb38d2ae2dc",
+  "release": "development",
+  "bootSha256": "5a6d9dc9f5dc48a39ccc9a387055d62611b136860d964bb6343c7c061ba02126",
+  "requirement": "R019",
+  "editor": {
+    "source": "trailing cell attributes in GFM",
+    "properties": [
+      "colspan",
+      "rowspan",
+      "align",
+      "valign"
+    ],
+    "merge": "row-major, retains covered Markdown including links and emphasis",
+    "split": "removes the span and retains independent cell formatting"
+  },
+  "mac": {
+    "nativeHost": "AppKit / WKWebView",
+    "binarySha256": "d5ad9d42927d1c9bab2121335152ef5dad13b087dbcace06e1b995b6d3b34b7b",
+    "phases": [
+      {
+        "name": "merge_save",
+        "checks": [
+          "appkit_native_bridge",
+          "native_mac_window_has_webview_geometry",
+          "production_script_csp",
+          "exact_frozen_boot_served",
+          "open_file_performed",
+          "edit_starts_at_saved_revision",
+          "rich_cell_source_visible",
+          "geometry_has_no_false_refusal",
+          "highlighted_2_by_2_selection",
+          "wkwebview_frame_201_confirmed",
+          "merge_changes_anchor_only",
+          "rich_cell_source_visible",
+          "geometry_has_no_false_refusal",
+          "properties_apply_changes_anchor_only",
+          "visible_saved_review_revision",
+          "only_second_table_has_visible_span",
+          "all_four_contents_in_reading_order_with_markup",
+          "reader_uses_both_cell_alignments",
+          "wkwebview_frame_202_confirmed",
+          "no_models_loaded_by_qa",
+          "session_persisted_before_native_quit"
+        ],
+        "diskSha256": "ad1e50a131491ee4c7719a69f1bb52ea860b53db6fdb7586690a83eddb1bc782"
+      },
+      {
+        "name": "reopen_split_undo",
+        "checks": [
+          "appkit_native_bridge",
+          "native_mac_window_has_webview_geometry",
+          "production_script_csp",
+          "exact_frozen_boot_served",
+          "new_native_process_restores_saved_tab",
+          "only_second_table_has_visible_span",
+          "all_four_contents_in_reading_order_with_markup",
+          "reader_uses_both_cell_alignments",
+          "edit_starts_at_saved_revision",
+          "undo_menu_performed",
+          "native_undo_before_split_survives_restart",
+          "redo_menu_performed",
+          "split_changes_anchor_only",
+          "undo_menu_performed",
+          "native_undo_restores_merge_after_split",
+          "redo_menu_performed",
+          "rich_cell_source_visible",
+          "geometry_has_no_false_refusal",
+          "properties_apply_changes_anchor_only",
+          "visible_saved_review_revision",
+          "clear_properties_restores_normal_table_rendering",
+          "wkwebview_frame_203_confirmed",
+          "no_models_loaded_by_qa",
+          "session_persisted_before_native_quit"
+        ],
+        "diskSha256": "dd4424cc8e52e532f07948d62e1e77ab31ca0b22bee7212bce6bfe6b3ed13d68"
+      }
+    ],
+    "freshProcess": true,
+    "browserChecks": [
+      "merge targets only the selected duplicate table, preserves rich content and applies both alignments",
+      "split from a covered slot and clear alignment restore exact source, BOM and CRLF",
+      "docx preserves merged cells and their four editable or readable contents",
+      "pptx preserves merged cells and their four editable or readable contents",
+      "epub preserves merged cells and their four editable or readable contents",
+      "html preserves merged cells and their four editable or readable contents",
+      "a fresh Rust process reopens the saved merged table and restores all six undo/redo revisions"
+    ],
+    "kernelTableFilter": 207,
+    "docxWriterFilter": 21,
+    "tableEditPasteAlignmentTests": 88
+  },
+  "crossPlatform": {
+    "head": "1b0b6818f8229ff7aae04a2849bddbb38d2ae2dc",
+    "run": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/44297063820",
+    "jobs": [
+      {
+        "platform": "win32",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/44297063820/job/134776888578",
+        "artifactId": 14424002709,
+        "artifactDigest": "sha256:22164814253a9d816ed7b83cc3bd66de143290d3b62d734637bcedba5d9d2f66",
+        "checks": [
+          "merge targets only the selected duplicate table, preserves rich content and applies both alignments",
+          "split from a covered slot and clear alignment restore exact source, BOM and CRLF",
+          "docx preserves merged cells and their four editable or readable contents",
+          "pptx preserves merged cells and their four editable or readable contents",
+          "epub preserves merged cells and their four editable or readable contents",
+          "html preserves merged cells and their four editable or readable contents",
+          "a fresh Rust process reopens the saved merged table and restores all six undo/redo revisions"
+        ],
+        "binarySha256": "62e1960090773bbdfd6bd4ff32bf4a3f145dc6601802745ef5be3811a3b4e2c7"
+      },
+      {
+        "platform": "linux",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/44297063820/job/134776887933",
+        "artifactId": 14424811157,
+        "artifactDigest": "sha256:7f7d16bccc78f4126be6dfa1e0c06a5e1e188b6a8d1b396b378fdc037c30906f",
+        "checks": [
+          "merge targets only the selected duplicate table, preserves rich content and applies both alignments",
+          "split from a covered slot and clear alignment restore exact source, BOM and CRLF",
+          "docx preserves merged cells and their four editable or readable contents",
+          "pptx preserves merged cells and their four editable or readable contents",
+          "epub preserves merged cells and their four editable or readable contents",
+          "html preserves merged cells and their four editable or readable contents",
+          "a fresh Rust process reopens the saved merged table and restores all six undo/redo revisions"
+        ],
+        "binarySha256": "c2a8bc20746a28371dcb48e68cf4b7e3d99e1da4322f6033152d165843ddc4ee"
+      }
+    ]
+  },
+  "ibisOffice": {
+    "version": "0.8.6",
+    "tested": [
+      "open",
+      "edit merged cell",
+      "save as",
+      "close",
+      "reopen"
+    ],
+    "formats": {
+      "docx": {
+        "original": {
+          "sha256": "835b78ae5d3f3c109e2851e05ca2cd40e0871c4e55dd3d16615165e378ce8ca7",
+          "paragraphs": [
+            "Alpha",
+            "Bravo",
+            "Charlie",
+            "Delta"
+          ],
+          "paragraphAlignment": [
+            "right",
+            "right",
+            "right",
+            "right"
+          ],
+          "verticalAlignment": "bottom",
+          "alphaBold": true,
+          "geometry": {
+            "gridWidthsTwips": [
+              "3288",
+              "3288",
+              "3288"
+            ],
+            "nativeCellCountPerRow": [
+              3,
+              2,
+              2
+            ],
+            "merge": [
+              {
+                "gridSpan": "2",
+                "vMerge": "restart"
+              },
+              {
+                "gridSpan": "2",
+                "vMerge": "continue"
+              }
+            ]
+          }
+        },
+        "savedCopy": {
+          "sha256": "8668fc95adfa2fba264b11273e202ffe171177f6d4f8226b96c8988a6d17e783",
+          "paragraphs": [
+            "Alpha",
+            "Bravo",
+            "Charlie",
+            "Delta-DOCX"
+          ],
+          "paragraphAlignment": [
+            "right",
+            "right",
+            "right",
+            "right"
+          ],
+          "verticalAlignment": "bottom",
+          "alphaBold": true,
+          "geometry": {
+            "gridWidthsTwips": [
+              "3288",
+              "3288",
+              "3288"
+            ],
+            "nativeCellCountPerRow": [
+              3,
+              2,
+              2
+            ],
+            "merge": [
+              {
+                "gridSpan": "2",
+                "vMerge": "restart"
+              },
+              {
+                "gridSpan": "2",
+                "vMerge": "continue"
+              }
+            ]
+          }
+        },
+        "pageCountBeforeAndAfter": 1,
+        "declaredFont": "Microsoft YaHei",
+        "actualFonts": [
+          "TimesNewRomanPS-BoldMT",
+          "TimesNewRomanPSMT"
+        ],
+        "coordinateTolerancePt": 0.1
+      },
+      "pptx": {
+        "original": {
+          "sha256": "d5e3542928d2cc7efe46bfee355635b8e9f72cd7a14bf078dac29191b20423f3",
+          "paragraphs": [
+            "Alpha",
+            "Bravo",
+            "Charlie",
+            "Delta"
+          ],
+          "paragraphAlignment": [
+            "r",
+            "r",
+            "r",
+            "r"
+          ],
+          "verticalAlignment": "b",
+          "alphaBold": true,
+          "geometry": {
+            "gridWidthsEmu": [
+              "3606800",
+              "3606800",
+              "3606800"
+            ],
+            "rowHeightsEmu": [
+              "520700",
+              "520700",
+              "952500"
+            ],
+            "tableFrameEmu": [
+              {
+                "x": "685800",
+                "y": "1422400"
+              },
+              {
+                "cx": "10820400",
+                "cy": "1993900"
+              }
+            ],
+            "merge": [
+              {
+                "rowSpan": "2",
+                "gridSpan": "2"
+              },
+              {
+                "rowSpan": "2",
+                "hMerge": "1"
+              },
+              {
+                "gridSpan": "2",
+                "vMerge": "1"
+              },
+              {
+                "hMerge": "1",
+                "vMerge": "1"
+              }
+            ]
+          }
+        },
+        "savedCopy": {
+          "sha256": "e6cf56fd40723ca88067df5e8aeef0caf808011f2f88844439de8f73d908cf30",
+          "paragraphs": [
+            "Alpha",
+            "Bravo",
+            "Charlie",
+            "Delta-PPTX"
+          ],
+          "paragraphAlignment": [
+            "r",
+            "r",
+            "r",
+            "r"
+          ],
+          "verticalAlignment": "b",
+          "alphaBold": true,
+          "geometry": {
+            "gridWidthsEmu": [
+              "3606800",
+              "3606800",
+              "3606800"
+            ],
+            "rowHeightsEmu": [
+              "520700",
+              "520700",
+              "952500"
+            ],
+            "tableFrameEmu": [
+              {
+                "x": "685800",
+                "y": "1422400"
+              },
+              {
+                "cx": "10820400",
+                "cy": "1993900"
+              }
+            ],
+            "merge": [
+              {
+                "rowSpan": "2",
+                "gridSpan": "2"
+              },
+              {
+                "rowSpan": "2",
+                "hMerge": "1"
+              },
+              {
+                "gridSpan": "2",
+                "vMerge": "1"
+              },
+              {
+                "hMerge": "1",
+                "vMerge": "1"
+              }
+            ]
+          }
+        },
+        "pageCountBeforeAndAfter": 1,
+        "declaredFont": "Arial",
+        "actualFonts": [
+          "Arial-BoldMT",
+          "ArialMT"
+        ],
+        "coordinateTolerancePt": 0.1
+      }
+    }
+  },
+  "standaloneTypst": {
+    "platform": "macos-arm64",
+    "version": "0.15.1",
+    "upstreamArchiveSha256": "48f62ed034aa3a7978309579ac6ca00045e2ef0da73114e8af27cfd8e74dc05a",
+    "outputs": [
+      {
+        "file": "grid.pdf",
+        "pages": 1,
+        "sha256": "59156ffed36f3241a2e2f8c8a68ff8fc1bac36a321cfa6f29ca99ac428c4fb71"
+      },
+      {
+        "file": "three-line.pdf",
+        "pages": 1,
+        "sha256": "278ebe7cdb5d320817beb8918383b2c359eba18a1d6c98aec52d08510f2cda7d"
+      }
+    ],
+    "textGeometry": "PDFKit confirmed four descending lines with right edges within 1.5 pt, plus separate East and West."
+  },
+  "failureChecks": [
+    "header-crosses-body docx",
+    "header-crosses-body pptx",
+    "header-crosses-body html",
+    "header-crosses-body epub",
+    "header-crosses-body pdf",
+    "header-crosses-body png",
+    "overlap docx",
+    "overlap pptx",
+    "overlap html",
+    "overlap epub",
+    "unsupported-consumer pdf",
+    "unsupported-consumer png",
+    "unsupported-consumer presentation",
+    "unsupported-consumer tex"
+  ],
+  "limits": [
+    "The source grid cannot span across the header and body or overlap another merge.",
+    "Rows and columns cannot be reordered through a live merge. Align-only cells remain sortable after splitting.",
+    "Default Rust PDF and dependent PNG paths, TeX and HTML presentation refuse enhanced table geometry.",
+    "Windows and Linux checks used real OS processes and browser surfaces. Their desktop windows and Office applications were not exercised."
+  ],
+  "firstFailures": [
+    {
+      "area": "Word XML inspection",
+      "observation": "Test looked for body directly under the synthetic XML root.",
+      "correction": "Traverse the document element before checking editable merge and alignment properties."
+    },
+    {
+      "area": "Linux Chrome",
+      "observation": "Chrome exited before document load when the fixture socket path exceeded the Unix path limit.",
+      "correction": "Use an owned short directory under runner.temp."
+    },
+    {
+      "area": "Saved reader",
+      "observation": "The test observed an empty innerText while the reader was applying its stylesheet.",
+      "correction": "Wait for visible merged content. The final macOS browser scenario passed three consecutive runs."
+    },
+    {
+      "area": "Rich cell editor",
+      "observation": "The disabled plain-text field was blank and its warning implied a merge would fail.",
+      "correction": "Show the original rich Markdown and keep the independently available geometry controls clear."
+    }
+  ]
+}

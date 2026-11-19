@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
+pub(crate) mod fidelity;
+pub(crate) mod fidelity_source;
 mod docx_notes;
 pub(crate) mod docx_citations;
 mod docx_note_settings;
@@ -26,7 +28,7 @@ pub(crate) mod docx_numbering_import;
 /// function: a stem like `实习文档(盖章版)` becomes
 /// `%E5%AE%9E%E4%B9%A0%E6%96%87%E6%A1%A3%EF%BC%88%E7%9B%96%E7%AB%A0%E7%89%88%EF%BC%89`,
 /// and a literal `%` in a name would otherwise stay unescaped and be decoded wrongly.
-fn py_url_quote(input: &str, safe: &str) -> String {
+pub(crate) fn py_url_quote(input: &str, safe: &str) -> String {
     let mut out = String::new();
     for ch in input.chars() {
         // CPython: `always_safe = _ALWAYS_SAFE + safe.encode('ascii', 'ignore')`, i.e. a
@@ -364,6 +366,10 @@ pub fn convert_triple(path: &str, form_tables: bool) -> ConvertTriple {
 }
 
 pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Option<&str>) -> ConvertTriple {
+    convert_triple_from_source(path, form_tables, language, None)
+}
+
+pub(crate) fn convert_triple_from_source(path: &str, form_tables: bool, language: Option<&str>, office_bytes: Option<&[u8]>) -> ConvertTriple {
     if crate::speech::cancelled() {
         return ConvertTriple { text: String::new(), engine: String::new(), error: Some("cancelled".into()), assets: Vec::new() };
     }
@@ -372,7 +378,7 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
     if ext == ".msg" { return match crate::mail::msg_to_md(path) { Ok(md)=>ConvertTriple::ok(md,"outlook-msg"),Err(e)=>ConvertTriple::err(e) }; }
 
     if ext == ".docx" {
-        return match docx_to_md(path, form_tables) {
+        return match office_to_md(path, "docx", form_tables, office_bytes) {
             Ok(res) if res.success => ConvertTriple::ok(res.content.unwrap_or_default(), "docx"),
             // A lossy fallback must never turn an invalid note story into a
             // successful body-only conversion or erase its localized error.
@@ -490,7 +496,7 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
         return triple(epub_to_md(path), "epub", Some("EPUB 转换失败："));
     }
     if ext == ".xlsx" {
-        return match xlsx_to_md(path) {
+        return match office_to_md(path, "xlsx", form_tables, office_bytes) {
             Ok(res) if res.success => ConvertTriple::ok(res.content.unwrap_or_default(), "xlsx"),
             r => match markitdown_text(path) {
                 Some(t) => ConvertTriple::ok(t, "markitdown"),
@@ -499,7 +505,7 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
         };
     }
     if ext == ".pptx" {
-        return match pptx_to_md(path) {
+        return match office_to_md(path, "pptx", form_tables, office_bytes) {
             Ok(res) if res.success => ConvertTriple::ok(res.content.unwrap_or_default(), "pptx"),
             r => match markitdown_text(path) {
                 Some(t) => ConvertTriple::ok(t, "markitdown"),
@@ -1018,6 +1024,12 @@ pub(crate) fn write_md_output_plan_with_commit(data_dir: &Path, plan: &MdOutputP
 }
 
 pub(crate) fn write_md_output_plan_guarded(data_dir: &Path, plan: &MdOutputPlan, content: &str, gate: &crate::document_operations::Guard, before_publish: impl FnOnce()->bool) -> Result<(), String> {
+    write_md_output_plan_prepared(data_dir, plan, content, gate, |_| {
+        if before_publish() { Ok(()) } else { Err("cancelled".into()) }
+    })
+}
+
+pub(crate) fn write_md_output_plan_prepared(data_dir: &Path, plan: &MdOutputPlan, content: &str, gate: &crate::document_operations::Guard, prepare: impl FnOnce(&Path) -> Result<(), String>) -> Result<(), String> {
     use std::io::Write;
     verify_md_output_plan(data_dir,plan,gate)?;
     if matches!(&plan.before,MdTargetBefore::Existing(before) if before.revision==sha256_hex(content.as_bytes())) { return Ok(()); }
@@ -1037,7 +1049,7 @@ pub(crate) fn write_md_output_plan_guarded(data_dir: &Path, plan: &MdOutputPlan,
     // CAS between this check and an explicitly authorized overwrite.
     verify_md_output_plan(data_dir,plan,gate)?;
     let private_output=crate::task_workspace::track_atomic(&temporary,&plan.target).map_err(|_|"conversion_write_failed".to_string())?;
-    if !before_publish() { return Err("cancelled".into()); }
+    prepare(temporary.path())?;
     if matches!(&plan.before,MdTargetBefore::Missing) || private_output {
         temporary.persist_noclobber(&plan.target).map_err(|e|if e.error.kind()==std::io::ErrorKind::AlreadyExists {"document_operation_target_exists".to_string()} else {"conversion_write_failed".to_string()})?;
     } else {
@@ -2318,17 +2330,28 @@ fn docx_run_font_lower(run: &XmlNode) -> String {
     }
 }
 
-/// `convert.py:1543-1544` `_para_has_mono`, over `Paragraph.runs` (direct `w:r` only).
+/// Return the displayed runs in a code paragraph in Word's reading order.
+fn docx_code_runs(p: &XmlNode) -> Vec<&XmlNode> {
+    let mut runs = Vec::new();
+    for child in docx_word_children(p) {
+        match child.name.as_str() {
+            "w:r" => runs.push(child),
+            "w:hyperlink" => runs.extend(docx_code_runs(child)),
+            _ => {}
+        }
+    }
+    runs
+}
+
 fn docx_para_has_mono(p: &XmlNode) -> bool {
-    el_children(p, "w:r").iter().any(|run| {
-        !docx_run_text(run).trim().is_empty()
-            && DOCX_MONO_FONTS.contains(&docx_run_font_lower(run).as_str())
+    docx_code_runs(p).into_iter().any(|run| {
+        DOCX_MONO_FONTS.contains(&docx_run_font_lower(run).as_str())
+            && !docx_run_text(run).trim().is_empty()
     })
 }
 
-/// `convert.py:1547-1548` `_para_plain`.
 fn docx_para_plain(p: &XmlNode) -> String {
-    el_children(p, "w:r").iter().map(|run| docx_run_text(run)).collect()
+    docx_code_runs(p).into_iter().map(docx_run_text).collect()
 }
 
 /// `convert.py:1586-1591` — `Run.bold`/`Run.italic` read only the run's own
@@ -3279,29 +3302,37 @@ fn docx_convert(
     crate::publication_profile::embed_imported(&text,&note_options).map_err(|e|e.to_string())
 }
 
-/// `convert.py:531-533` — `.docx` has exactly one engine, `docx2md`.
-fn docx_to_md(path: &str, form_tables: bool) -> Result<ConvertResult, String> {
-    let path_obj = Path::new(path);
-    if !path_obj.exists() {
-        return Ok(ConvertResult {
-            success: false,
-            content: None,
-            engine: None,
-            error: Some("File not found".to_string()),
-        });
-    }
-
-    let data = fs::read(path).map_err(|e| format!("Failed to read DOCX file: {}", e))?;
-    let entries = parse_zip_entries(&data).map_err(|e| format!("Failed to parse DOCX as ZIP: {}", e))?;
-
-    let text = docx_convert(&entries, path_obj, form_tables)?;
-    Ok(ConvertResult {
-        success: true,
-        content: Some(text),
-        engine: Some("docx".to_string()),
-        error: None,
-    })
+/// Reuse the captured package for conversion and any native fallback.
+fn office_entries(path: &str, kind: &str, snapshot: Option<&[u8]>) -> Result<Vec<(String,Vec<u8>)>,String> {
+    let stored;
+    let bytes = match snapshot {
+        Some(bytes) => bytes,
+        None => {
+            stored = fs::read(path).map_err(|e| format!("Failed to read {} file: {e}", kind.to_ascii_uppercase()))?;
+            &stored
+        }
+    };
+    parse_zip_entries(bytes).map_err(|e| format!("Failed to parse {} as ZIP: {e}", kind.to_ascii_uppercase()))
 }
+
+fn office_to_md(path: &str, kind: &str, form_tables: bool, snapshot: Option<&[u8]>) -> Result<ConvertResult,String> {
+    let source = Path::new(path);
+    if snapshot.is_none() && !source.exists() {
+        return Ok(ConvertResult { success:false, content:None, engine:None, error:Some("File not found".into()) });
+    }
+    let entries = office_entries(path,kind,snapshot)?;
+    let content = match kind {
+        "docx" => docx_convert(&entries,source,form_tables)?,
+        "xlsx" => return xlsx_from_entries(path, &entries),
+        "pptx" => match pptx_rich_to_md(source,&entries) {
+            Ok(text) => text,
+            Err(_) => return pptx_stdlib_from_entries(path,&entries),
+        },
+        _ => return Err("unsupported_format".into()),
+    };
+    Ok(ConvertResult {success:true,content:Some(content),engine:Some(kind.into()),error:None})
+}
+
 
 #[cfg(test)]
 #[path="convert/docx_fields_tests.rs"]
@@ -5156,38 +5187,23 @@ fn is_pdf_heading(line: &str) -> bool {
 }
 
 
+#[cfg(test)]
 fn xlsx_to_md(path: &str) -> Result<ConvertResult, String> {
-    // Faithful port of `_xlsx_to_md` (src/readmd_modules/convert.py:354-427).
-    // Sheet order and names come from `xl/workbook.xml` resolved through
-    // `xl/_rels/workbook.xml.rels`; cells are placed by their `r="BC12"`
-    // reference; `t="s"` resolves against sharedStrings, `t="b"` maps to
-    // TRUE/FALSE and `t="inlineStr"` reads the `<is>` run.  Python raises
-    // `ValueError('xlsx-empty')` when nothing produced a table.
-    let path_obj = Path::new(path);
-    if !path_obj.exists() {
-        return Ok(ConvertResult {
-            success: false,
-            content: None,
-            engine: None,
-            error: Some("File not found".to_string()),
-        });
-    }
+    office_to_md(path, "xlsx", true, None)
+}
 
-    let data = fs::read(path).map_err(|e| format!("Failed to read XLSX file: {}", e))?;
-    let entries =
-        parse_zip_entries(&data).map_err(|e| format!("Failed to parse XLSX as ZIP: {}", e))?;
-
+fn xlsx_from_entries(path: &str, entries: &[(String, Vec<u8>)]) -> Result<ConvertResult, String> {
     // convert.py:357-360 — `if 'xl/workbook.xml' not in names: raise ValueError('xlsx-empty')`
-    let workbook_xml = match find_zip_entry(&entries, "xl/workbook.xml") {
+    let workbook_xml = match find_zip_entry(entries, "xl/workbook.xml") {
         Some(xml) => xml,
         None => return Err("xlsx-empty".to_string()),
     };
 
-    let shared = match find_zip_entry(&entries, "xl/sharedStrings.xml") {
+    let shared = match find_zip_entry(entries, "xl/sharedStrings.xml") {
         Some(ss) => extract_shared_strings(ss)?,
         None => Vec::new(),
     };
-    let rels = ooxml_rels(&entries, "xl", "workbook")?;
+    let rels = ooxml_rels(entries, "xl", "workbook")?;
     let workbook_roots = xml_parse(workbook_xml)?;
 
     // convert.py:369 — `out = ['# %s' % os.path.basename(path), '']`
@@ -5207,7 +5223,7 @@ fn xlsx_to_md(path: &str) -> Result<ConvertResult, String> {
                 Some(t) if !t.is_empty() => t.clone(),
                 _ => continue,
             };
-            let ws_xml = match find_zip_entry(&entries, &target) {
+            let ws_xml = match find_zip_entry(entries, &target) {
                 Some(xml) => xml,
                 None => continue,
             };
@@ -5901,6 +5917,26 @@ fn extract_shared_strings(xml: &[u8]) -> Result<Vec<String>, String> {
     Ok(shared)
 }
 
+/// A workbook can contain the formula but no calculated result. Show the
+/// stored expression as literal Markdown; shared followers have no expression.
+fn uncached_sheet_formula(cell: &XmlNode, kind: &str) -> Option<String> {
+    let cache = cell.child("v");
+    if cache.is_some_and(|v| !v.text.trim().is_empty() || kind == "str") {
+        return None;
+    }
+    let formula = &cell.child("f")?.text;
+    if formula.trim().is_empty() {
+        return None;
+    }
+    let expression = format!("={}", formula.strip_prefix('=').unwrap_or(formula));
+    // Newlines normalize inside CommonMark code spans; backslash before a pipe
+    // can split a GFM table. Entity-encode literal text in those cases.
+    if expression.contains(['\r', '\n']) || expression.contains("\\|") {
+        return Some(docx_citations::literal_text(&expression).replace('\r', "&#13;").replace('\n', "&#10;"));
+    }
+    Some(docx_citations::literal_code(&expression, false).replace('|', "\\|"))
+}
+
 /// One sheet of the workbook as the Markdown table block Python emits, or
 /// `None` for the cases Python skips with `continue`.
 fn worksheet_table_md(xml: &[u8], shared: &[String]) -> Result<Option<Vec<String>>, String> {
@@ -5961,7 +5997,16 @@ fn worksheet_table_md(xml: &[u8], shared: &[String]) -> Result<Option<Vec<String
                     raw
                 }
             };
-            cells.insert((row_idx, col), value);
+            let display = if let Some(formula) = uncached_sheet_formula(cell, kind) {
+                Some(formula)
+            } else if value.is_empty() {
+                None
+            } else {
+                Some(md_cell(&value))
+            };
+            let position = (row_idx, col);
+            if let Some(display) = display { cells.insert(position, display); }
+            else { cells.remove(&position); }
             if col as i64 > max_col {
                 max_col = col as i64;
             }
@@ -5976,42 +6021,17 @@ fn worksheet_table_md(xml: &[u8], shared: &[String]) -> Result<Option<Vec<String
     if width.checked_mul(row_nodes.len()).is_none_or(|count| count > 1_000_000) {
         return Err("xlsx_table_too_large: 工作表展开超过100万个单元格，请先拆分工作表".into());
     }
-    let mut rows: Vec<Vec<String>> = (0..row_nodes.len())
-        .map(|r| {
-            (0..width)
-                .map(|c| cells.get(&(r, c)).cloned().unwrap_or_default())
-                .collect()
-        })
-        .collect();
-    // Python drops blank leading/trailing rows and trailing blank columns.
-    while rows.first().map(|r| r.iter().all(|c| c.is_empty())).unwrap_or(false) {
-        rows.remove(0);
-    }
-    while rows.last().map(|r| r.iter().all(|c| c.is_empty())).unwrap_or(false) {
-        rows.pop();
-    }
-    let mut width = width;
-    while width > 0 && rows.iter().all(|row| row[width - 1].is_empty()) {
-        width -= 1;
-    }
-    for row in rows.iter_mut() {
-        row.truncate(width);
-    }
-    if rows.is_empty() {
-        return Ok(None);
-    }
-
-    let mut out = Vec::new();
-    out.push(format!(
-        "| {} |",
-        rows[0].iter().map(|c| md_cell(c)).collect::<Vec<_>>().join(" | ")
-    ));
-    out.push(format!("| {} |", vec!["---"; width].join(" | ")));
-    for row in rows.iter().skip(1) {
-        out.push(format!(
-            "| {} |",
-            row.iter().map(|c| md_cell(c)).collect::<Vec<_>>().join(" | ")
-        ));
+    let Some(first) = cells.keys().map(|(row, _)| *row).min() else { return Ok(None); };
+    let last = cells.keys().map(|(row, _)| *row).max().unwrap_or(first);
+    let columns = cells.keys().map(|(_, col)| col + 1).max().unwrap_or(0);
+    let mut out = Vec::with_capacity(last - first + 2);
+    for row in first..=last {
+        let values = (0..columns).map(|col| cells.get(&(row, col)).map_or("", String::as_str))
+            .collect::<Vec<_>>();
+        out.push(format!("| {} |", values.join(" | ")));
+        if row == first {
+            out.push(format!("| {} |", vec!["---"; columns].join(" | ")));
+        }
     }
     Ok(Some(out))
 }
@@ -6024,20 +6044,12 @@ fn worksheet_table_md(xml: &[u8], shared: &[String]) -> Result<Option<Vec<String
 /// `ppt/_rels/presentation.xml.rels`, `## Slide N` only for a slide that
 /// produced lines without a title placeholder, and `pptx-empty` whenever the
 /// package yields nothing.
+#[cfg(test)]
 fn pptx_stdlib_to_md(path: &str) -> Result<ConvertResult, String> {
-    let path_obj = Path::new(path);
-    if !path_obj.exists() {
-        return Ok(ConvertResult {
-            success: false,
-            content: None,
-            engine: None,
-            error: Some("File not found".to_string()),
-        });
-    }
+    pptx_stdlib_from_entries(path, &office_entries(path, "pptx", None)?)
+}
 
-    let data = fs::read(path).map_err(|e| format!("Failed to read PPTX file: {}", e))?;
-    let entries =
-        parse_zip_entries(&data).map_err(|e| format!("Failed to parse PPTX as ZIP: {}", e))?;
+fn pptx_stdlib_from_entries(path: &str, entries: &[(String, Vec<u8>)]) -> Result<ConvertResult, String> {
     // `names = set(archive.namelist())` (convert.py:438)
     let names: HashSet<String> = entries.iter().map(|(n, _)| n.clone()).collect();
 
@@ -6045,8 +6057,8 @@ fn pptx_stdlib_to_md(path: &str) -> Result<ConvertResult, String> {
     if !names.contains("ppt/presentation.xml") {
         return Err("pptx-empty".to_string());
     }
-    let rels = ooxml_rels(&entries, "ppt", "presentation")?;
-    let pres_xml = match find_zip_entry(&entries, "ppt/presentation.xml") {
+    let rels = ooxml_rels(entries, "ppt", "presentation")?;
+    let pres_xml = match find_zip_entry(entries, "ppt/presentation.xml") {
         Some(xml) => xml,
         None => return Err("pptx-empty".to_string()),
     };
@@ -6092,7 +6104,7 @@ fn pptx_stdlib_to_md(path: &str) -> Result<ConvertResult, String> {
     let mut out: Vec<String> = vec![format!("# {}", basename(path)), String::new()];
     let mut produced = false;
     for (idx, target) in targets.iter().enumerate() {
-        let xml = match find_zip_entry(&entries, target) {
+        let xml = match find_zip_entry(entries, target) {
             Some(xml) => xml,
             None => continue,
         };
@@ -6221,29 +6233,9 @@ fn pptx_stdlib_to_md(path: &str) -> Result<ConvertResult, String> {
 /// `AttributeError` or `OSError`.  Both rungs are ported, so the reference deck answers
 /// with the rich 242 characters and the hand-built goldens (which python-pptx rejects for
 /// want of `[Content_Types].xml`) still answer byte-for-byte with the stdlib ones.
+#[cfg(test)]
 fn pptx_to_md(path: &str) -> Result<ConvertResult, String> {
-    let path_obj = Path::new(path);
-    if !path_obj.exists() {
-        return Ok(ConvertResult {
-            success: false,
-            content: None,
-            engine: None,
-            error: Some("File not found".to_string()),
-        });
-    }
-    if let Ok(data) = fs::read(path) {
-        if let Ok(entries) = parse_zip_entries(&data) {
-            if let Ok(markdown) = pptx_rich_to_md(path_obj, &entries) {
-                return Ok(ConvertResult {
-                    success: true,
-                    content: Some(markdown),
-                    engine: Some("pptx".to_string()),
-                    error: None,
-                });
-            }
-        }
-    }
-    pptx_stdlib_to_md(path)
+    office_to_md(path, "pptx", true, None)
 }
 
 /// One row of an OOXML `_rels/<part>.rels` collection.
@@ -8730,6 +8722,19 @@ mod wb6_xlsx_tests {
         assert_eq!(res.engine.as_deref(), Some("xlsx"));
         let want = golden_text("strings.golden.txt");
         assert_eq!(res.content.as_deref(), Some(want.as_str()));
+    }
+
+    #[test]
+    fn uncached_formula_keeps_literal_expression_while_cached_results_stay_values() {
+        let xml = br#"<worksheet><sheetData><row><c r="A1"><f>SUM(A2:A3)</f><v>9</v></c><c r="B1"><f>IF(A1=9,"a  |b","x")</f><v/></c><c r="C1" t="str"><f>IF(0,"x","")</f><v/></c></row><row><c r="A2"><f t="shared" si="0"/></c><c r="B2"><f>BAD()</f><v>0</v></c><c r="C2" t="b"><v>0</v></c></row></sheetData></worksheet>"#;
+        let rows = worksheet_table_md(xml, &[]).unwrap().unwrap();
+        assert!(rows[0].starts_with("| 9 |"));
+        assert!(rows[0].ends_with("|  |"));
+        assert_eq!(rows[2], "|  | 0 | FALSE |");
+        let table = rows.join("\n");
+        let code: Vec<_> = pulldown_cmark::Parser::new_ext(&table,crate::md_ast::options())
+            .filter_map(|e| if let pulldown_cmark::Event::Code(s)=e {Some(s.into_string())} else {None}).collect();
+        assert_eq!(code, [r#"=IF(A1=9,"a  |b","x")"#]);
     }
 
     /// D3: Python raises `ValueError('xlsx-empty')` for a workbook whose sheets

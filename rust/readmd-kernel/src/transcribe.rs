@@ -7,6 +7,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+pub(crate) mod draft;
+pub(crate) mod selection;
+
 /// Python `SUPPORTED_AUDIO_VIDEO_EXTS`，顺序与内容都不许改动。
 pub const SUPPORTED_AUDIO_VIDEO_EXTS: &[&str] = &[
     ".mp3", ".wav", ".m4a", ".mp4", ".flac", ".ogg", ".webm", ".aac", ".wma", ".mkv", ".mov",

@@ -1,6 +1,7 @@
 'use strict';
 // Bounded controls for production source-context lifecycle; no browser/engine.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
+const {previewOutsideLayout,panelsBeforeDeliveryChanges,previewBaseline}=require('./editor-source-boundaries.cjs');
 const root=path.resolve(__dirname,'../..');
 const read=p=>fs.readFileSync(path.join(root,p),'utf8');
 const formula=read('assets/js/reader/formula.js');
@@ -206,7 +207,7 @@ test('late multiline candidate response cannot overwrite a newer textarea value 
   f.context.ReadMDInlineMath.cancel();assert.equal(f.changes.length,0);assert.equal(f.getText(),f.raw);
 });
 test('textarea CSS is one appended bounded suffix and leaves the original panels bytes intact',()=>{
-  let css=fs.readFileSync(path.join(root,'assets/css/panels.css'));
+  let css=panelsBeforeDeliveryChanges(fs.readFileSync(path.join(root,'assets/css/panels.css')));
   // V006 batch2 adds an independently bounded AI-task panel suffix. Keep the
   // complete original prefix and the exact math-only suffix guard unchanged.
   // The authorized rename preview is independently bounded and cannot alter
@@ -223,13 +224,26 @@ test('textarea CSS is one appended bounded suffix and leaves the original panels
   const begin=Buffer.from('/* READMD_CONTEXT_SOURCE_BEGIN */'),end='/* READMD_CONTEXT_SOURCE_END */\n',at=css.indexOf(begin);assert.ok(at>0);assert.equal(css.indexOf(begin,at+1),-1);assert.equal(sha(css.subarray(0,at)),'bea3c2046704118937afc0eeddb13b68584ace5c79216cb5611b157ef619d146');
   const suffix=css.subarray(at).toString();assert.ok(suffix.endsWith(end));assert.equal(suffix.split(end).length,2);assert.match(suffix,/min-height:44px;resize:vertical/);assert.match(suffix,/textarea\.formula-inline-input:focus-visible\{outline:2px solid var\(--accent\);outline-offset:1px\}/);assert.equal(suffix.split('\n').length,5);
 });
-test('complete-source hooks run before splitting and preserve all protected preview bytes outside their bracket',()=>{
+test('complete-source hooks run before splitting and keep the protected preview pipeline intact',()=>{
   const reader=read('assets/js/reader/render.js'),preview=read('assets/js/editor/preview.js');
   const start=reader.indexOf('async function renderContent(content, name)'),hook=reader.indexOf('ReadMDMathContext.prepareSource',start),split=reader.indexOf('const linesCount',start);assert.ok(start>=0&&hook>start&&hook<split);
-  const begin='  // READMD_MATH_CONTEXT_BEGIN',end='  // READMD_MATH_CONTEXT_END';assert.equal(preview.split(begin).length,2);assert.equal(preview.split(end).length,2);
-  // Review/save and the tested V006 rename/recovery fence are authorized;
-  // the mathematical context bracket remains independently checked.
-  const source=preview.slice(0,preview.indexOf(begin))+preview.slice(preview.indexOf(end)+end.length).replace(/^\r?\n/,'');
-  const original=Buffer.from(source.replace(/\r\n?/g,'\n').replace(/\n/g,'\r\n'));assert.equal(crypto.createHash('sha256').update(original).digest('hex'),'c417cfc69977d7961d5f5745b25991fbf9636d68a9d512fcfdea158ddce34635');
+  assert.equal(sha(previewOutsideLayout(preview)),previewBaseline);
   const render=preview.indexOf('async function renderPreview()');assert.ok(preview.indexOf('ReadMDMathContext.prepareSource',render)<preview.indexOf('readerPrepare(src)',render));
+});
+
+test('independent delivery additions stay pinned and cannot conceal formula or save changes',()=>{
+  const preview=read('assets/js/editor/preview.js'),css=read('assets/css/panels.css');
+  assert.throws(()=>previewOutsideLayout(preview.replace("snapshot.tab?.mode === 'office-preview'", "snapshot.tab?.mode !== 'office-preview'")));
+  const changedPreview=preview.replace('async function renderPreview() {','async function renderPreview() {\n  throw Error("unexpected protected change");');
+  assert.notEqual(sha(previewOutsideLayout(changedPreview)),previewBaseline);
+  for(const [before,after] of [
+    ['#export-preview-action { align-self: flex-start; }','#export-preview-action { align-self: flex-end; }'],
+    ['.conversion-fidelity { flex: 1 0 100%;','.conversion-fidelity { flex: 0 0 100%;'],
+    ['.pdf-context>select{width:100%;','.pdf-context>select{width:50%;'],
+    ['.convert-output-settings { display: flex;','.convert-output-settings { display: none;'],
+    ['.batch-output-name { display: block;','.batch-output-name { display: none;'],
+  ]){
+    assert(css.includes(before),before);
+    assert.throws(()=>panelsBeforeDeliveryChanges(Buffer.from(css.replace(before,after))),undefined,before);
+  }
 });

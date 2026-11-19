@@ -8,9 +8,13 @@
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde_json::{json, Value};
+use std::ops::Range;
+
+use crate::table_geometry::{self, TableGeometry};
 
 /// Column alignment of a GFM table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Align {
     None,
     Left,
@@ -68,7 +72,7 @@ pub enum Block {
     Code { lang: String, text: String },
     Math(String),
     OfficeMath { latex: String, omml: String },
-    Table { aligns: Vec<Align>, header: Vec<Vec<Inline>>, rows: Vec<Vec<Vec<Inline>>> },
+    Table { aligns: Vec<Align>, header: Vec<Vec<Inline>>, rows: Vec<Vec<Vec<Inline>>>, geometry: TableGeometry },
     Hr,
     PageBreak,
     /// A source-owned section boundary, never an inline or copied body string.
@@ -84,6 +88,354 @@ pub struct Document {
     pub front_matter: Option<String>,
     pub blocks: Vec<Block>,
 }
+
+/// Consumer-scoped projection: ordinary HTML tables use the existing native
+/// table/inline model. Unsupported structure is refused, never flattened.
+/// The shared parser and legacy JSON adapter retain their existing contracts.
+pub(crate) fn native_table_document(doc: &Document) -> Result<std::borrow::Cow<'_, Document>, &'static str> {
+    native_html_tables::project(doc)
+}
+pub(crate) fn native_table_source_candidate(source: &str) -> bool { native_html_tables::candidate(source) }
+
+pub(crate) fn validate_table_geometry(doc: &Document, allow_enhanced: bool) -> crate::ApiResult<()> {
+    table_geometry::validate_document(doc, allow_enhanced).map_err(|code| crate::ApiError::new(422, code))
+}
+
+mod native_html_tables {
+    use super::*;
+    use crate::headless_renderer::{Element, Node};
+    const UNSUPPORTED: &str = crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED;
+    type Result<T> = std::result::Result<T, &'static str>;
+    const MAX_HTML: usize = 2 * 1024 * 1024;
+    const MAX_ROWS: usize = 4096;
+    const MAX_CELLS: usize = 32768;
+    const MAX_NODES: usize = 100_000;
+    const MAX_DEPTH: usize = 64;
+    const MAX_TAG: usize = 4096;
+    const MAX_ATTRIBUTES: usize = 16;
+
+    fn checkpoint() -> Result<()> {
+        crate::publication_budget::check().map_err(|code| match code.as_str() {
+            "cancelled" => "cancelled", "typst_timeout" => "typst_timeout",
+            "latex_timeout" => "latex_timeout", _ => UNSUPPORTED,
+        })
+    }
+    struct Scan<'a> { bytes: &'a [u8], at: usize, poll: usize, tag: Option<usize> }
+    impl<'a> Scan<'a> {
+        fn new(html: &'a str) -> Self { Self { bytes: html.as_bytes(), at: 0, poll: 0, tag: None } }
+        fn byte(&self) -> Option<u8> { self.bytes.get(self.at).copied() }
+        fn starts(&self, value: &[u8]) -> bool { self.bytes.get(self.at..self.at.saturating_add(value.len())).is_some_and(|part| part.eq_ignore_ascii_case(value)) }
+        fn step(&mut self) -> Result<()> {
+            self.at += 1;
+            if self.at >= self.poll { checkpoint()?; self.poll = self.at + 1024; }
+            if self.tag.is_some_and(|start| self.at - start > MAX_TAG) { return Err(UNSUPPORTED); }
+            Ok(())
+        }
+        fn skip(&mut self, count: usize) -> Result<()> { for _ in 0..count { self.step()?; } Ok(()) }
+        fn whitespace(&mut self) -> Result<()> { while self.byte().is_some_and(|value| value.is_ascii_whitespace()) { self.step()?; } Ok(()) }
+        fn until(&mut self, value: &[u8]) -> Result<()> { while self.byte().is_some() && !self.starts(value) { self.step()?; } Ok(()) }
+    }
+    fn tag_name(value: u8) -> bool { !matches!(value,b'>'|b'/'|b'<') && !value.is_ascii_whitespace() }
+    fn attr_name(value: u8) -> bool { !matches!(value,b'>'|b'/'|b'='|b'<'|b'"'|b'\'') && !value.is_ascii_whitespace() }
+    fn void(name: &str) -> bool { ["area","base","basefont","br","col","embed","frame","hr","img","input","isindex","link","meta","param","source","track","wbr"].iter().any(|value|name.eq_ignore_ascii_case(value)) }
+
+    // This scanner only bounds work before the existing tolerant DOM builder.
+    // A first, allocation-free pass distinguishes actual tags from examples in
+    // comments, attributes and raw-text hosts, leaving non-table HTML alone.
+    fn scan(html: &str, bounded: bool, mut comments: Option<&mut Vec<std::ops::Range<usize>>>) -> Result<bool> {
+        checkpoint()?;
+        let mut scan=Scan::new(html);let mut stack:Vec<&str>=Vec::new();let mut nodes=0usize;let mut found=false;
+        while scan.byte().is_some() {
+            if scan.byte()!=Some(b'<') {
+                nodes+=1;
+                while scan.byte().is_some_and(|value|value!=b'<') { scan.step()?; }
+            } else if scan.starts(b"<!--") {
+                let begin=scan.at;
+                scan.skip(4)?;scan.until(b"-->")?;if scan.byte().is_some(){scan.skip(3)?;}
+                if let Some(ref mut ranges)=comments {
+                    if ranges.len()>=MAX_NODES{return Err(UNSUPPORTED);}ranges.push(begin..scan.at);
+                }
+            } else if scan.starts(b"<!")||scan.starts(b"<?") {
+                scan.until(b">")?;if scan.byte().is_some(){scan.step()?;}
+            } else {
+                let begin=scan.at;scan.step()?;
+                let closing=scan.byte()==Some(b'/');if closing{scan.step()?;}
+                let name_at=scan.at;
+                while scan.byte().is_some_and(tag_name){scan.step()?;}
+                let name=&html[name_at..scan.at];
+                if name.is_empty()||!name.as_bytes()[0].is_ascii_alphabetic(){continue;}
+                if !closing&&name.eq_ignore_ascii_case("table") {found=true;if !bounded{return Ok(true);}}
+                if bounded {scan.tag=Some(begin);if scan.at-begin>MAX_TAG{return Err(UNSUPPORTED);}}
+                let mut attributes=0;let mut self_closing=false;let mut ended=false;
+                while scan.byte().is_some(){
+                    scan.whitespace()?;
+                    match scan.byte(){
+                        Some(b'>')=>{scan.step()?;ended=true;break;},
+                        Some(b'/') if scan.starts(b"/>")=>{scan.skip(2)?;self_closing=true;ended=true;break;},
+                        Some(b'/')=>{scan.step()?;continue;},None=>break,_=>(),
+                    }
+                    let key_at=scan.at;while scan.byte().is_some_and(attr_name){scan.step()?;}
+                    if scan.at==key_at {scan.step()?;continue;}
+                    attributes+=1;if bounded&&attributes>MAX_ATTRIBUTES{return Err(UNSUPPORTED);}
+                    scan.whitespace()?;
+                    if scan.byte()==Some(b'=') {
+                        scan.step()?;scan.whitespace()?;
+                        match scan.byte(){
+                            Some(quote @ (b'"'|b'\''))=>{scan.step()?;while scan.byte().is_some_and(|value|value!=quote){scan.step()?;}if scan.byte().is_some(){scan.step()?;}},
+                            _=>while scan.byte().is_some_and(|value|!value.is_ascii_whitespace()&&value!=b'>'&&value!=b'/'){scan.step()?;},
+                        }
+                    }
+                }
+                scan.tag=None;
+                if bounded {
+                    if !ended{return Err(UNSUPPORTED);}
+                    if closing {if let Some(index)=stack.iter().rposition(|value|value.eq_ignore_ascii_case(name)){stack.truncate(index);}}
+                    else {
+                        nodes+=1;
+                        if name.eq_ignore_ascii_case("td")||name.eq_ignore_ascii_case("th") {
+                            if stack.last().is_some_and(|value|value.eq_ignore_ascii_case("td")||value.eq_ignore_ascii_case("th")){stack.pop();}
+                        } else if name.eq_ignore_ascii_case("tr")&&stack.last().is_some_and(|value|value.eq_ignore_ascii_case("tr")){stack.pop();}
+                        if !self_closing&&!void(name){stack.push(name);if stack.len()>MAX_DEPTH{return Err(UNSUPPORTED);}}
+                    }
+                }
+                if !closing&&["script","style","textarea","title","xmp","plaintext","noframes"].iter().any(|value|name.eq_ignore_ascii_case(value)) {
+                    let close=format!("</{name}");scan.until(close.as_bytes())?;
+                }
+            }
+            if bounded&&nodes>MAX_NODES{return Err(UNSUPPORTED);}
+        }
+        Ok(found)
+    }
+    fn prepared_html(html: &str) -> Result<Option<String>> {
+        if !candidate(html)||!scan(html,false,None)? {return Ok(None);}
+        checkpoint()?;if html.len()>MAX_HTML{return Err(UNSUPPORTED);}
+        let mut comments=Vec::new();scan(html,true,Some(&mut comments))?;
+        // pulldown-cmark is already a direct, locked dependency with the full
+        // HTML5 named-entity table. Parse only bounded single references, never
+        // the cell's Markdown. Numeric references keep quotes and '<' inert
+        // during DOM construction, and every entity is decoded exactly once.
+        let mut out=String::with_capacity(html.len());let mut at=0;let mut poll=0;let mut count=0;let mut comment=0;
+        let mut entities=std::collections::HashMap::<String,String>::new();
+        while at<html.len(){
+            if at>=poll{checkpoint()?;poll=at+1024;}
+            // Ranges came from the quote-aware linear scanner. A comment-like
+            // string inside an attribute remains attribute content. Searching
+            // only up to the next known range visits every source byte once.
+            if let Some(range)=comments.get(comment).filter(|range|range.start==at) {
+                out.push_str(&html[range.clone()]);at=range.end;comment+=1;
+                checkpoint()?;if out.len()>MAX_HTML{return Err(UNSUPPORTED);}continue;
+            }
+            if html.as_bytes()[at]!=b'&'{let until=comments.get(comment).map_or(html.len(),|range|range.start);let end=html[at..until].find('&').map_or(until,|offset|at+offset);out.push_str(&html[at..end]);at=end;continue;}
+            let rest=&html[at+1..];
+            if !rest.as_bytes().first().is_some_and(|value|value.is_ascii_alphanumeric()||*value==b'#'){out.push('&');at+=1;continue;}
+            let Some(end)=rest.as_bytes().iter().take(64).position(|value|*value==b';')else{return Err(UNSUPPORTED);};
+            let body=&rest[..end];
+            if !body.bytes().all(|value|value.is_ascii_alphanumeric()||value==b'#'){return Err(UNSUPPORTED);}
+            let reference=&html[at..at+end+2];count+=1;if count>MAX_NODES{return Err(UNSUPPORTED);}
+            let encoded=if let Some(value)=entities.get(reference){value.clone()}else{
+                let mut text=String::new();
+                for event in Parser::new(reference){if let Event::Text(value)=event{text.push_str(&value);}}
+                if text==reference||text.is_empty(){return Err(UNSUPPORTED);}
+                let mut encoded=String::new();
+                use std::fmt::Write as _;
+                for character in text.chars(){write!(&mut encoded,"&#{};",character as u32).map_err(|_|UNSUPPORTED)?;}
+                if entities.len()>=4096{return Err(UNSUPPORTED);}
+                entities.insert(reference.into(),encoded.clone());encoded
+            };
+            out.push_str(&encoded);at+=end+2;if out.len()>MAX_HTML{return Err(UNSUPPORTED);}
+        }
+        checkpoint()?;if out.len()>MAX_HTML{return Err(UNSUPPORTED);}Ok(Some(out))
+    }
+
+    // The reused tolerant DOM has recursive ownership. Retire it iteratively
+    // even when a deeply nested, unsupported input is rejected.
+    struct Tree(Element);
+    impl Drop for Tree {
+        fn drop(&mut self) {
+            let mut pending = std::mem::take(&mut self.0.children);
+            while let Some(node) = pending.pop() {
+                if let Node::El(mut element) = node { pending.append(&mut element.children); }
+            }
+        }
+    }
+    pub(super) fn candidate(html: &str) -> bool {
+        html.as_bytes().windows(6).any(|part| part.eq_ignore_ascii_case(b"<table"))
+    }
+    fn has_table(root: &Element) -> Result<bool> {
+        let mut pending = vec![root]; let mut count = 0;
+        while let Some(element) = pending.pop() {
+            if element.name == "table" { return Ok(true); }
+            count += 1; if count > 100_000 { return Err(UNSUPPORTED); }
+            for child in &element.children { if let Node::El(child) = child { pending.push(child); } }
+        }
+        Ok(false)
+    }
+    fn children(element: &Element) -> Result<Vec<&Element>> {
+        element.children.iter().filter_map(|child| match child {
+            Node::El(element) => Some(Ok(element)),
+            Node::Text(text) if text.chars().all(|character| character.is_ascii_whitespace()) => None,
+            _ => Some(Err(UNSUPPORTED)),
+        }).collect()
+    }
+    fn attrs(element: &Element, allowed: &[&str]) -> Result<()> {
+        if element.attrs.iter().any(|(name, _)| !allowed.contains(&name.as_str())) { Err(UNSUPPORTED) } else { Ok(()) }
+    }
+    fn alignment(cell: &Element) -> Result<Align> {
+        match cell.attr("align").map(|value| value.trim().to_ascii_lowercase()).as_deref() {
+            None => Ok(Align::None), Some("left") => Ok(Align::Left),
+            Some("center") => Ok(Align::Center), Some("right") => Ok(Align::Right), _ => Err(UNSUPPORTED),
+        }
+    }
+    fn normalize(text: &str, previous_space: &mut bool) -> Result<String> {
+        let mut out = String::new();
+        for character in crate::headless_renderer::decode_entities(text).chars() {
+            if character.is_ascii_whitespace() {
+                if !*previous_space { out.push(' '); } *previous_space = true;
+            } else { if character.is_control() { return Err(UNSUPPORTED); } out.push(character); *previous_space = false; }
+        }
+        Ok(out)
+    }
+    fn inlines(nodes: &[Node], depth: usize, previous_space: &mut bool) -> Result<Vec<Inline>> {
+        if depth > 32 { return Err(UNSUPPORTED); }
+        let mut out = Vec::new();
+        for node in nodes {
+            match node {
+                Node::Text(text) => { let value = normalize(text, previous_space)?; if !value.is_empty() { out.push(Inline::Text(value)); } }
+                Node::El(element) => {
+                    if element.name == "a" { attrs(element, &["href", "title"])?; } else { attrs(element, &[])?; }
+                    if element.name == "br" {
+                        if !element.children.is_empty() { return Err(UNSUPPORTED); }
+                        out.push(Inline::HardBreak); *previous_space = true; continue;
+                    }
+                    if element.name == "code" {
+                        let mut value = String::new();
+                        for child in &element.children { if let Node::Text(text) = child { value.push_str(&normalize(text, previous_space)?); } else { return Err(UNSUPPORTED); } }
+                        out.push(Inline::Code(value)); continue;
+                    }
+                    if !matches!(element.name.as_str(), "strong"|"b"|"em"|"i"|"del"|"s"|"strike"|"span"|"a") { return Err(UNSUPPORTED); }
+                    let values = inlines(&element.children, depth + 1, previous_space)?;
+                    match element.name.as_str() {
+                        "strong"|"b" => out.push(Inline::Strong(values)), "em"|"i" => out.push(Inline::Emph(values)),
+                        "del"|"s"|"strike" => out.push(Inline::Strike(values)), "span" => out.extend(values),
+                        "a" => {
+                            let href = element.attr("href").ok_or(UNSUPPORTED)?.trim();
+                            let lower = href.to_ascii_lowercase();
+                            if href.is_empty() || href.chars().any(char::is_control) ||
+                                (href.contains(':') && !["http:", "https:", "mailto:"].iter().any(|scheme| lower.starts_with(scheme))) { return Err(UNSUPPORTED); }
+                            out.push(Inline::Link { href: href.into(), title: element.attr("title").unwrap_or("").into(), children: values });
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+    fn trim_end(values: &mut [Inline]) {
+        if let Some(value) = values.last_mut() { match value {
+            Inline::Text(text)|Inline::Code(text) => { text.truncate(text.trim_end_matches(' ').len()); }
+            Inline::Strong(children)|Inline::Emph(children)|Inline::Strike(children)|Inline::Link { children, .. } => trim_end(children),
+            _ => (),
+        } }
+    }
+    fn table(element: &Element) -> Result<Block> {
+        attrs(element, &[])?;
+        let mut rows = Vec::new();
+        for child in children(element)? { match child.name.as_str() {
+            "tr" => rows.push(child),
+            "thead"|"tbody" => {
+                attrs(child, &[])?; let group = children(child)?;
+                if child.name == "thead" && (!rows.is_empty() || group.len() != 1) { return Err(UNSUPPORTED); }
+                if group.iter().any(|row| row.name != "tr") { return Err(UNSUPPORTED); } rows.extend(group);
+            }
+            _ => return Err(UNSUPPORTED),
+        } }
+        if rows.is_empty() || rows.len() > MAX_ROWS { return Err(UNSUPPORTED); }
+        let mut header = Vec::new(); let mut body = Vec::new(); let mut aligns = Vec::new();
+        for (index, row) in rows.iter().enumerate() {
+            checkpoint()?;
+            attrs(row, &[])?; let cells = children(row)?;
+            if cells.is_empty() || cells.len() > 128 || cells.len().saturating_mul(rows.len()) > MAX_CELLS ||
+                (index > 0 && cells.len() != header.len()) { return Err(UNSUPPORTED); }
+            let mut values = Vec::new();
+            for (column, cell) in cells.iter().enumerate() {
+                if cell.name != if index == 0 { "th" } else { "td" } { return Err(UNSUPPORTED); }
+                attrs(cell, &["align", "scope", "rowspan", "colspan"])?;
+                if cell.attr("scope").is_some_and(|scope| index != 0 || !scope.eq_ignore_ascii_case("col")) { return Err(UNSUPPORTED); }
+                for name in ["rowspan", "colspan"] { if cell.attr(name).is_some_and(|value| value.trim().parse::<usize>().ok() != Some(1)) { return Err(UNSUPPORTED); } }
+                let align = alignment(cell)?;
+                if index == 0 { aligns.push(align); } else if aligns[column] != align { return Err(UNSUPPORTED); }
+                let mut cell_values = inlines(&cell.children, 0, &mut true)?; trim_end(&mut cell_values); values.push(cell_values);
+            }
+            if index == 0 { header = values; } else { body.push(values); }
+        }
+        Ok(Block::Table { aligns, header, rows: body, geometry: TableGeometry::default() })
+    }
+    fn fragment(html: &str) -> Result<Option<Vec<Block>>> {
+        let Some(html)=prepared_html(html)?else{return Ok(None);};
+        let tree = Tree(crate::headless_renderer::parse_html(&html));
+        if !has_table(&tree.0)? { return Ok(None); }
+        let mut out = Vec::new();
+        for element in children(&tree.0)? { if element.name != "table" { return Err(UNSUPPORTED); } out.push(table(element)?); }
+        Ok(Some(out))
+    }
+    fn inline_guard(values: &[Inline]) -> Result<()> {
+        for inline in values { match inline {
+            Inline::Html(html) if candidate(html) => {if prepared_html(html)?.is_some(){return Err(UNSUPPORTED);}}
+            Inline::Strong(children)|Inline::Emph(children)|Inline::Strike(children)|Inline::Styled { children, .. }|
+            Inline::AuthorStyled { children, .. }|Inline::Display { children, .. }|Inline::Citation { children, .. }|Inline::Link { children, .. } => inline_guard(children)?,
+            _ => (),
+        } }
+        Ok(())
+    }
+    fn inline_candidate(values: &[Inline]) -> bool {
+        values.iter().any(|inline| match inline {
+            Inline::Html(html) => candidate(html),
+            Inline::Strong(children)|Inline::Emph(children)|Inline::Strike(children)|Inline::Styled { children, .. }|
+            Inline::AuthorStyled { children, .. }|Inline::Display { children, .. }|Inline::Citation { children, .. }|Inline::Link { children, .. } => inline_candidate(children),
+            _ => false,
+        })
+    }
+    fn block_candidate(values: &[Block]) -> bool {
+        values.iter().any(|block| match block {
+            Block::Html(html) => candidate(html),
+            Block::Styled { block, .. } => block_candidate(std::slice::from_ref(block.as_ref())),
+            Block::Quote(inner)|Block::FootnoteDef { blocks: inner, .. } => block_candidate(inner),
+            Block::List { items, .. } => items.iter().any(|item| block_candidate(&item.blocks)),
+            Block::Paragraph(values)|Block::Heading { inlines: values, .. }|Block::Caption { inlines: values, .. } => inline_candidate(values),
+            Block::Table { header, rows, .. } => header.iter().chain(rows.iter().flatten()).any(|cell| inline_candidate(cell)),
+            _ => false,
+        })
+    }
+    fn blocks(values: Vec<Block>, changed: &mut bool) -> Result<Vec<Block>> {
+        let mut out = Vec::new();
+        for mut block in values { match &mut block {
+            Block::Html(html) => if let Some(tables) = fragment(html)? { out.extend(tables); *changed = true; continue; },
+            Block::Styled { attributes, block } => {
+                let replacements = blocks(vec![block.as_ref().clone()], changed)?;
+                out.extend(replacements.into_iter().map(|block| Block::Styled { attributes: attributes.clone(), block: Box::new(block) })); continue;
+            }
+            Block::Quote(inner)|Block::FootnoteDef { blocks: inner, .. } => *inner = blocks(std::mem::take(inner), changed)?,
+            Block::List { items, .. } => for item in items { item.blocks = blocks(std::mem::take(&mut item.blocks), changed)?; },
+            Block::Paragraph(inlines)|Block::Heading { inlines, .. }|Block::Caption { inlines, .. } => inline_guard(inlines)?,
+            Block::Table { header, rows, .. } => for cell in header.iter().chain(rows.iter().flatten()) { inline_guard(cell)?; },
+            _ => (),
+        } out.push(block); }
+        Ok(out)
+    }
+    pub(super) fn project(doc: &Document) -> Result<std::borrow::Cow<'_, Document>> {
+        if !block_candidate(&doc.blocks) { return Ok(std::borrow::Cow::Borrowed(doc)); }
+        checkpoint()?;
+        let mut changed = false;
+        let projected = blocks(doc.blocks.clone(), &mut changed)?;
+        if changed { Ok(std::borrow::Cow::Owned(Document { front_matter: doc.front_matter.clone(), blocks: projected })) }
+        else { Ok(std::borrow::Cow::Borrowed(doc)) }
+    }
+}
+
+#[cfg(test)]
+#[path = "md_ast_html_table_tests.rs"]
+mod html_table_tests;
 
 impl Document {
     /// Publication language is independent of the application's UI language.
@@ -245,11 +597,17 @@ fn parse_internal(src: &str, projection: Option<&crate::publication_rich::Projec
     };
     let src = expanded.as_str();
     let owned_syntax=crate::publication_inline_text::has_owned_syntax(src);
-    let events: Vec<Event> = if !owned_syntax{Parser::new_ext(src,options()).collect()}else{match crate::publication_inline_text::markdown_events(src){
-        Ok(events)=>events.into_iter().map(|(event,_)|event).collect(),
-        Err(code)if projection.is_some()=>return Err(crate::ApiError::new(422,code)),
-        Err(_)=>Parser::new_ext(src,options()).collect(),
-    }};
+    let events = if owned_syntax {
+        match crate::publication_inline_text::markdown_events(src) {
+            Ok(events) => table_events(src, events),
+            Err(code) if projection.is_some() => return Err(crate::ApiError::new(422, code)),
+            Err(_) => markdown_events(src),
+        }
+    } else if crate::quoted_strong::candidate(src) {
+        table_events(src, crate::quoted_strong::events(src, options()))
+    } else {
+        markdown_events(src)
+    };
     let mut b = Builder { ev: events, pos: 0, front_matter: None, slugs: HeadingIds::default(), projection, consumed_slots: std::collections::HashSet::new(), slot_error: None, projected_notes: Vec::new() };
     let mut blocks = b.blocks_until(None);
     if let Some(code) = b.slot_error { return Err(crate::ApiError::new(422, code)); }
@@ -312,8 +670,84 @@ impl Block {
     pub fn unstyled(&self)->&Block{match self{Block::Styled{block,..}=>block.unstyled(),other=>other}}
 }
 
+struct MarkdownEvent<'a> {
+    event: Event<'a>,
+    table: Option<Box<TableEvent>>,
+}
+
+impl<'a> MarkdownEvent<'a> {
+    fn plain(event: Event<'a>) -> Self {
+        Self { event, table: None }
+    }
+}
+
+enum TableEvent {
+    Cell { attributes: Option<table_geometry::CellAttributes>, tail: String },
+    Excess,
+}
+
+fn markdown_events(source: &str) -> Vec<MarkdownEvent<'_>> {
+    let parser = Parser::new_ext(source, options());
+    if table_geometry::source_candidate(source) {
+        table_events(source, parser.into_offset_iter().collect())
+    } else {
+        parser.map(MarkdownEvent::plain).collect()
+    }
+}
+
+fn brace_is_inline_text(events: &[(Event<'_>, Range<usize>)], brace: usize) -> bool {
+    let mut depth = 0usize;
+    for (event, range) in events {
+        match event {
+            Event::End(TagEnd::TableCell) => break,
+            Event::Start(_) => depth += 1,
+            Event::End(_) => depth = depth.saturating_sub(1),
+            Event::Text(_) if depth == 0 && range.contains(&brace) => return true,
+            _ => (),
+        }
+    }
+    false
+}
+
+fn table_events<'a>(source: &str, events: Vec<(Event<'a>, Range<usize>)>) -> Vec<MarkdownEvent<'a>> {
+    if !table_geometry::source_candidate(source) {
+        return events.into_iter().map(|(event, _)| MarkdownEvent::plain(event)).collect();
+    }
+    let mut annotations = Vec::new();
+    let mut cell_end = None;
+    for (index, (event, range)) in events.iter().enumerate() {
+        let table = match event {
+            Event::Start(Tag::TableRow) => { cell_end = None; continue; }
+            Event::Start(Tag::TableCell) => {
+                cell_end = Some(range.end);
+                let Some(suffix) = source.get(range.clone()).and_then(table_geometry::cell_suffix) else { continue; };
+                if !brace_is_inline_text(&events[index + 1..], range.start + suffix.brace) {
+                    continue;
+                }
+                TableEvent::Cell { attributes: suffix.attributes, tail: suffix.tail.into() }
+            }
+            Event::End(TagEnd::TableRow) => {
+                // GFM pads short rows and discards surplus cells. Surplus
+                // cells would silently lose authored content in an enhanced table.
+                let Some(tail) = cell_end.and_then(|end| source.get(end..range.end)) else { continue; };
+                if matches!(tail.trim_matches([' ', '\t', '\r', '\n']), "" | "|") {
+                    continue;
+                }
+                TableEvent::Excess
+            }
+            _ => continue,
+        };
+        annotations.push((index, Box::new(table)));
+    }
+    let mut annotations = annotations.into_iter().peekable();
+    events.into_iter().enumerate().map(|(index, (event, _))| MarkdownEvent {
+        event,
+        table: annotations.next_if(|(at, _)| *at == index).map(|(_, annotation)| annotation),
+    }).collect()
+}
+
 struct Builder<'a> {
-    ev: Vec<Event<'a>>,
+    ev: Vec<MarkdownEvent<'a>>,
     pos: usize,
     front_matter: Option<String>,
     slugs: HeadingIds,
@@ -400,11 +834,11 @@ impl<'a> Builder<'a> {
         } else { Inline::Citation { source: citation.source.clone(), children: rich_inlines(&citation.rich) } }
     }
     fn peek(&self) -> Option<&Event<'a>> {
-        self.ev.get(self.pos)
+        self.ev.get(self.pos).map(|e| &e.event)
     }
 
     fn next(&mut self) -> Option<Event<'a>> {
-        let e = self.ev.get(self.pos).cloned();
+        let e = self.peek().cloned();
         if e.is_some() {
             self.pos += 1;
         }
@@ -486,7 +920,7 @@ impl<'a> Builder<'a> {
                 let mut office = None;
                 let mut stale = None;
                 let mut only_math = true;
-                while let Some(e) = self.ev.get(j) {
+                while let Some(e) = self.ev.get(j).map(|e| &e.event) {
                     match e {
                         Event::End(TagEnd::Paragraph) => break,
                         Event::DisplayMath(m) => maths.push(m.to_string()),
@@ -516,7 +950,7 @@ impl<'a> Builder<'a> {
                 }
                 if only_math && maths.len() == 1 {
                     self.pos = j + 1;
-                    if let Some(comment) = stale { self.ev.insert(self.pos, Event::Html(comment)); }
+                    if let Some(comment) = stale { self.ev.insert(self.pos, MarkdownEvent::plain(Event::Html(comment))); }
                     let latex = maths.remove(0).trim().to_string();
                     return Some(if let Some(metadata) = office {
                         Block::OfficeMath { latex, omml: metadata.omml }
@@ -570,7 +1004,7 @@ impl<'a> Builder<'a> {
                 // carrier with ordinary Markdown. Feed only that carrier back
                 // through the existing builder so its body is not discarded.
                 if let Some(events) = crate::publication_navigation::body_carrier_events(&html) {
-                    let events: Vec<Event<'a>> = events;
+                    let events = table_events(&html, events);
                     self.ev.splice(self.pos..self.pos, events);
                     return None;
                 }
@@ -634,6 +1068,8 @@ impl<'a> Builder<'a> {
                 let mut header = Vec::new();
                 let mut rows = Vec::new();
                 let mut cur_row: Vec<Vec<Inline>> = Vec::new();
+                let mut geometry = TableGeometry::default();
+                let mut excess = false;
                 let mut in_head = false;
                 loop {
                     match self.next() {
@@ -647,18 +1083,28 @@ impl<'a> Builder<'a> {
                         }
                         Some(Event::Start(Tag::TableRow)) => cur_row.clear(),
                         Some(Event::End(TagEnd::TableRow)) => {
+                            excess |= matches!(self.ev[self.pos - 1].table.as_deref(), Some(TableEvent::Excess));
                             if !in_head {
                                 rows.push(std::mem::take(&mut cur_row));
                             }
                         }
                         Some(Event::Start(Tag::TableCell)) => {
-                            cur_row.push(self.inlines_until(TagEnd::TableCell));
+                            let annotation = self.ev[self.pos - 1].table.take();
+                            let mut inlines = self.inlines_until(TagEnd::TableCell);
+                            if let Some(TableEvent::Cell { attributes, tail }) = annotation.as_deref() {
+                                let attributes = attributes.filter(|_| strip_cell_suffix(&mut inlines, tail));
+                                geometry.add(if in_head { 0 } else { rows.len() + 1 }, cur_row.len(), attributes);
+                            }
+                            cur_row.push(inlines);
                         }
                         Some(Event::End(TagEnd::Table)) | None => break,
                         _ => {}
                     }
                 }
-                Some(Block::Table { aligns, header, rows })
+                if excess && geometry.is_enhanced() {
+                    geometry.invalidate();
+                }
+                Some(Block::Table { aligns, header, rows, geometry })
             }
             Tag::FootnoteDefinition(label) => {
                 let blocks = self.blocks_until(Some(TagEnd::FootnoteDefinition));
@@ -838,6 +1284,16 @@ fn merge_text(v: Vec<Inline>) -> Vec<Inline> {
         out.push(i);
     }
     out
+}
+
+fn strip_cell_suffix(inlines: &mut Vec<Inline>, tail: &str) -> bool {
+    let Some(Inline::Text(text)) = inlines.last_mut() else { return false; };
+    let Some(length) = text.strip_suffix(tail).map(str::len) else { return false; };
+    text.truncate(length);
+    if length == 0 {
+        inlines.pop();
+    }
+    true
 }
 
 /// Plain text of an inline list (alt text, slugs, bookmarks).
@@ -1099,7 +1555,7 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
             Block::Code { lang, text } => out.push(json!({"type": "code", "lang": lang, "content": text})),
             Block::Math(m) => out.push(json!({"type": "math", "display": true, "latex": m, "fallback": true})),
             Block::OfficeMath {latex,omml} => out.push(json!({"type":"math","display":true,"latex":latex,"omml":omml,"fallback":true})),
-            Block::Table { aligns, header, rows } => {
+            Block::Table { aligns, header, rows, geometry } => {
                 let al: Vec<Value> = aligns
                     .iter()
                     .map(|a| if *a == Align::None { Value::Null } else { Value::String(a.as_str().into()) })
@@ -1112,6 +1568,10 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                 });
                 if has_align {
                     t["aligns"] = Value::Array(al);
+                }
+                if geometry.is_enhanced() {
+                    // Math and note visitors still see the original inline slots.
+                    t["tableGeometry"] = json!(geometry);
                 }
                 out.push(t);
             }
@@ -1267,7 +1727,7 @@ mod tests {
     fn table_alignment_and_code_lang() {
         let b = p("| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |\n\n```rust\nfn x() {}\n```\n");
         match &b[0] {
-            Block::Table { aligns, header, rows } => {
+            Block::Table { aligns, header, rows, .. } => {
                 assert_eq!(aligns, &vec![Align::Left, Align::Center, Align::Right]);
                 assert_eq!(header.len(), 3);
                 assert_eq!(rows.len(), 1);

@@ -16,7 +16,7 @@ window.ReadMDReview = (() => {
     const key='error.'+code, localized=t(key);
     if (code && localized !== key) return localized;
     if (code === 'cancelled') return t('ai.stopped');
-    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
+    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery|overlapping_edits/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
   }
   function notifyError(error) { if (typeof showToast === 'function') showToast(message(error), 6000); }
   function source(tab) {
@@ -35,7 +35,7 @@ window.ReadMDReview = (() => {
     return text;
   }
   function record(tab, initial) {
-    if (!tab || tab._restoreUnavailable) return null;
+    if (!tab || tab._restoreUnavailable || tab.mode === 'office-preview') return null;
     let rec = records.get(tab);
     if (!rec) {
       const text = lf(initial ?? source(tab));
@@ -133,10 +133,14 @@ window.ReadMDReview = (() => {
   }
   function remoteEdits(before, snapshot, op) {
     if (before === snapshot.content) return [];
+    if (Array.isArray(snapshot.transaction_edits)) {
+      if (apply(before, snapshot.transaction_edits) !== snapshot.content) throw failure('review_conflict');
+      return snapshot.transaction_edits;
+    }
     if (op?.edits && apply(before, op.edits) === snapshot.content) return op.edits;
     if (op?.kind === 'resolve' && op.previous) {
       const edits = op.previous.changes.filter(change => op.ids.includes(change.id)).flatMap(change => {
-        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.original }];
+        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.restore_original ?? change.original }];
         if (op.decision === 'accept' && change.application === 'proposed') return [{ from: change.from, to: change.to, insert: change.replacement }];
         return [];
       }).sort((a, b) => a.from - b.from);
@@ -320,7 +324,7 @@ window.ReadMDReview = (() => {
         } catch (error) {
           // Retain the same id and exact payload: an explicit retry can recover
           // a committed operation whose network acknowledgement was lost.
-          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
+          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|overlapping_edits|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
           if (!rejected) { rec.queue.unshift(op); rec.error = error; }
           op.reject?.(error); delete op.resolve; delete op.reject;
           notifyError(error); refresh(rec);
@@ -349,7 +353,7 @@ window.ReadMDReview = (() => {
       pump(rec);
     }
   }
-  async function flush(tab = activeTab()) {
+  async function flushReview(tab) {
     // Closing/switching an unseen reader is not an editing operation. Explicit
     // capture/mutation/save create their own record before flushing instead.
     const rec = tab && records.get(tab); if (!rec || rec.unsupported) return true;
@@ -370,14 +374,31 @@ window.ReadMDReview = (() => {
     }
     return rec.snapshot.content === rec.local;
   }
-  async function flushAll() {
+  function canParkForClose(tab) {
+    const rec = tab && records.get(tab), snapshot = rec?.snapshot, recovery = snapshot?.recovery;
+    // A persisted external-change marker may remain for the next open. It must
+    // not block closing when the editor source, stored review and disk agree.
+    // The reader may project formatting fixes without modifying that source.
+    return Boolean(tab?.path && !tab.isDirty && !tab.unsavedCreation && !tab._reviewRestorePending &&
+      !tab._renamePending && rec?.error?.code === 'review_recovery_required' &&
+      recovery?.reason === 'external_change' && recovery.external_path === snapshot.path &&
+      !snapshot.save_intent && !snapshot.changes.length && !rec.queue.length && !rec.processing &&
+      !rec.saving && !rec.adopting && !rec.adoption && !rec.renaming &&
+      snapshot.content === recovery.external_content && snapshot.content === rec.local &&
+      snapshot.content === source(tab));
+  }
+  async function flush(tab = activeTab(), { park = false } = {}) {
+    if (park && canParkForClose(tab)) return true;
+    return flushReview(tab);
+  }
+  async function flushAll(options) {
     const tabs = typeof state !== 'undefined' && Array.isArray(state.tabs) ? [...state.tabs] : [activeTab()].filter(Boolean);
-    for (const tab of tabs) if (!await flush(tab)) return false;
+    for (const tab of tabs) if (!await flush(tab, options)) return false;
     return true;
   }
   async function ensure(tab = activeTab(), initial) { const rec = record(tab, initial); return rec ? open(rec) : null; }
   async function restore(tab = activeTab()) {
-    if (!tab || tab._restoreUnavailable) return null;
+    if (!tab || tab._restoreUnavailable || tab.mode === 'office-preview') return null;
     const existing = records.get(tab);
     if (existing) { refresh(existing); return existing.snapshot || existing.opening; }
     if (!restores.has(tab)) {
@@ -408,14 +429,7 @@ window.ReadMDReview = (() => {
   }
   function mount(view, tab, initial) {
     const rec = record(tab, initial); if (!rec) return;
-    // Identical Markdown in another document cannot certify cached widgets
-    // and listeners from the previous owner. Keep the protected preview code.
-    const pane = typeof document === 'undefined' ? null : document.getElementById?.('preview-pane');
-    if (pane && pane._readmdPreviewOwner !== tab) {
-      if (typeof pvRenderEpoch !== 'undefined') pvRenderEpoch++;
-      if (typeof pvLast !== 'undefined') pvLast = '';
-      pane._readmdPreviewOwner = tab; pane.replaceChildren();
-    }
+    window.ReadMDCodeRuns?.mountEditor?.(tab);
     rec.view = view; if (view) views.set(view, rec);
     if (rec.snapshot && rec.local === lf(initial) && rec.snapshot.content === rec.local) refresh(rec);
     void open(rec).then(() => pump(rec));
@@ -455,6 +469,125 @@ window.ReadMDReview = (() => {
   async function propose(edits, stamp, tab = activeTab()) {
     const normalized = edits.map(edit => ({ from: edit.from, to: edit.to, insert: lf(edit.insert) }));
     return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
+  }
+  function manualCurrent(rec, stamp) {
+    return Boolean(rec && stamp && stamp.owner === rec.tab && activeTab() === rec.tab && state.editing &&
+      activeView() === stamp.view && rec.view === stamp.view && stamp.view.state.doc === stamp.editorDoc &&
+      !stamp.view.state.readOnly && window.ReadMDCollaborationShare?.canEdit() !== false &&
+      !renameReserved(rec) && !rec.tab._renameInFlight && !rec.error && !rec.saving && !rec.adopting && !rec.processing && !rec.queue.length &&
+      !window.ReadMDLifecycle?.busy?.() && !window.ReadMDSession?.restoring?.() &&
+      rec.tab.path === stamp.path && (rec.tab.revision || '') === stamp.fileRevision &&
+      rec.snapshot?.revision === stamp.revision && rec.snapshot?.disk_revision === stamp.disk_revision &&
+      stamp.view.state.doc.toString() === stamp.content && isCurrent(rec, stamp));
+  }
+  async function freshManualHead(rec, stamp) {
+    // resume is the existing authorized physical-open path: it checks the
+    // disk fingerprint and reports recovery instead of silently rebasing.
+    const latest = await request('/api/review', { action: 'resume', path: stamp.path || rec.snapshot.path });
+    if (!manualCurrent(rec, stamp) || latest.recovery || latest.status === 'needs_recovery' ||
+        ['document_id', 'generation', 'review_revision', 'revision', 'disk_revision', 'content'].some(key => latest[key] !== stamp[key]) ||
+        latest.path !== rec.snapshot.path) throw failure('review_stale_generation');
+  }
+  const splitsSurrogate = (text, at) => at > 0 && at < text.length &&
+    /[\uD800-\uDBFF]/.test(text[at - 1]) && /[\uDC00-\uDFFF]/.test(text[at]);
+
+  async function captureManualRange(from, to, tab = activeTab(), { allowDraft = false } = {}) {
+    const view = activeView(), editorDoc = view?.state.doc;
+    if (!tab || !view || activeTab() !== tab || !state.editing) throw failure('review_stale_generation');
+    const path = tab.path, fileRevision = tab.revision || '', editGeneration = tab.editGeneration || 0;
+    const draft = !path || path.startsWith('draft:');
+    if (draft && !allowDraft) throw failure('review_stale_generation');
+    const base = await capture(tab), rec = records.get(tab);
+    if (!base || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > base.content.length ||
+        splitsSurrogate(base.content, from) || splitsSurrogate(base.content, to)) throw failure('review_conflict');
+    if (draft && !rec.snapshot.path?.startsWith('draft:')) throw failure('review_stale_generation');
+    const stamp = { ...base, owner: tab, view, editorDoc, path, fileRevision, editGeneration,
+      revision: rec.snapshot.revision, disk_revision: rec.snapshot.disk_revision, from, to, original: base.content.slice(from, to) };
+    if (!manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    return Object.freeze(stamp);
+  }
+  async function applyManualRange(insert, stamp, tab = activeTab(), ownedCurrent,
+    { edits, preserveSelection = false, selectionAnchor, userEvent = 'input.table.cell' } = {}) {
+    const rec = tab && records.get(tab);
+    const owned = () => ownedCurrent === undefined || typeof ownedCurrent === 'function' && ownedCurrent() === true;
+    if (typeof insert !== 'string' || !owned() || !manualCurrent(rec, stamp) || stamp.content.slice(stamp.from, stamp.to) !== stamp.original) throw failure('review_stale_generation');
+    if (!await flush(tab) || !owned() || !manualCurrent(rec, stamp)) throw rec?.error || failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    // The dialog may have closed, or another FIFO operation started, during
+    // the last await. No cancellation claim is made after this dispatch.
+    if (!owned() || !manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    let changes = [{ from: stamp.from, to: stamp.to, insert }];
+    if (edits !== undefined) {
+      if (!Array.isArray(edits) || !edits.length || edits.some(edit => !edit || edit.from < stamp.from ||
+        edit.to > stamp.to || splitsSurrogate(stamp.content, edit.from) || splitsSurrogate(stamp.content, edit.to))) {
+        throw failure('review_conflict');
+      }
+      changes = edits.map(({from, to, insert}) => ({ from, to, insert }));
+      const relative = changes.map(edit => ({ ...edit, from: edit.from - stamp.from, to: edit.to - stamp.from }));
+      if (apply(stamp.original, relative) !== insert) throw failure('review_conflict');
+    }
+    const after = apply(stamp.content, changes);
+    if (after === stamp.content) return rec.snapshot;
+    // The ordinary CM listener owns enqueueEdit and its genuine manual FIFO.
+    // Never send an AI proposal or manufacture a visible acknowledgement.
+    const anchor = selectionAnchor ?? (stamp.from + insert.length);
+    if (!Number.isSafeInteger(anchor) || anchor < stamp.from || anchor > stamp.from + insert.length || splitsSurrogate(after, anchor)) throw failure('review_conflict');
+    const selection = preserveSelection ? undefined : { anchor };
+    stamp.view.dispatch({ changes, selection, scrollIntoView: !preserveSelection, userEvent });
+    if (stamp.view.state.doc.toString() !== after || rec.local !== after) throw failure('review_conflict');
+    if (!await flush(tab)) throw rec.error || failure('review_persistence_failed');
+    return rec.snapshot;
+  }
+  async function codeTarget(sourceLine, code, tab = activeTab(), signal) {
+    const stamp = await capture(tab), rec = records.get(tab);
+    if (signal?.aborted) throw failure('cancelled');
+    if (!stamp || !rec || !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const snapshot = await request('/api/review', { action: 'code_target', document_id: stamp.document_id,
+      generation: stamp.generation, review_revision: stamp.review_revision, source_line: sourceLine, code });
+    const target = snapshot.code_target;
+    if (signal?.aborted) throw failure('cancelled');
+    if (!isCurrent(rec, stamp) || snapshot.content !== stamp.content || !target ||
+        target.document_id !== stamp.document_id || target.generation !== stamp.generation || target.review_revision !== stamp.review_revision ||
+        target.code !== code || !/^[a-f0-9]{64}$/.test(target.node_id || '') ||
+        !Number.isSafeInteger(target.from) || !Number.isSafeInteger(target.to) || target.from < 0 || target.to < target.from || target.to > stamp.content.length) throw failure('review_stale_generation');
+    return Object.freeze({ tab, stamp: Object.freeze(stamp), target: Object.freeze(target) });
+  }
+  async function codeOutput(output, context, signal, taskId) {
+    if (!context?.tab || !Array.isArray(state.tabs) || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    return mutate('code_output', { body: { target: context.target, output: String(output ?? ''), task_id: taskId }, signal }, context.tab, context.stamp);
+  }
+  async function codeBatchTarget(tab = activeTab(), signal) {
+    const stamp = await capture(tab), rec = records.get(tab);
+    if (signal?.aborted) throw failure('cancelled');
+    if (!stamp || !rec || !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const snapshot = await request('/api/review', { action: 'code_batch_target', document_id: stamp.document_id,
+      generation: stamp.generation, review_revision: stamp.review_revision });
+    const items = snapshot.code_batch?.items;
+    if (signal?.aborted) throw failure('cancelled');
+    if (!isCurrent(rec, stamp) || snapshot.content !== stamp.content || !Array.isArray(items) || items.length > 32 ||
+        items.some(item => typeof item.lang !== 'string' || typeof item.output !== 'boolean' ||
+          item.target?.document_id !== stamp.document_id || item.target.generation !== stamp.generation || item.target.review_revision !== stamp.review_revision ||
+          typeof item.target.code !== 'string' || !/^[a-f0-9]{64}$/.test(item.target.node_id || '') ||
+          !Number.isSafeInteger(item.target.from) || !Number.isSafeInteger(item.target.to) || item.target.from < 0 || item.target.to < item.target.from || item.target.to > stamp.content.length)) throw failure('review_stale_generation');
+    return Object.freeze({ tab, stamp: Object.freeze(stamp), batch: Object.freeze({ items: Object.freeze(items.map(item => Object.freeze({ ...item, target: Object.freeze(item.target) }))) }) });
+  }
+  async function codeBatchRun(context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    // Execution returns console results, never an editor snapshot. Keep the
+    // durable adapter's stronger snapshot validation on every mutation/read.
+    const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'code_batch_run', confirm: true, document_id: context.stamp.document_id,
+        generation: context.stamp.generation, review_revision: context.stamp.review_revision, batch: context.batch, task_id: taskId }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) throw failure(data.error_code || 'execution_failed');
+    if (typeof data.ok !== 'boolean' || data.source_written !== false || !Array.isArray(data.results) || data.results.length > 32 ||
+        data.results.some(result => result.ok !== true || typeof result.stdout !== 'string')) throw failure('review_invalid_request');
+    return data;
+  }
+  async function codeBatchOutput(outputs, context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    return mutate('code_batch_output', { body: { batch: context.batch, outputs, task_id: taskId }, signal }, context.tab, context.stamp);
   }
   function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
   async function discard(tab = activeTab(), expected) {
@@ -559,7 +692,7 @@ window.ReadMDReview = (() => {
     return 'unknown';
   }
   async function prepareSave(tab = activeTab(), expected) {
-    if (tab?._restoreUnavailable) return false;
+    if (tab?._restoreUnavailable || tab?.mode === 'office-preview') return false;
     if (tab?._renamePending || tab?._renameInFlight) return false;
     const rec = record(tab);
     if (!await flush(tab)) return false;
@@ -625,13 +758,14 @@ window.ReadMDReview = (() => {
   function finishSave(tab) { const rec = records.get(tab); if (rec) { rec.saving = false; pump(rec); refresh(rec); } }
   // A rename moves the durable identity, not the text. Lock the local queue
   // while its CAS is in flight and only adopt a matching server receipt.
-  async function beginRename(tab) {
+  async function beginRename(tab, options) {
     if (!tab) return null;
     const restoring = restores.get(tab);
     if (restoring) await restoring;
-    if (!await flush(tab)) return null;
+    if (!await flush(tab, options)) return null;
     const rec = records.get(tab);
-    if (rec?.unsupported || rec?.renaming || rec?.error || rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
+    if (rec?.unsupported || rec?.renaming || (rec?.error && !(options?.park && canParkForClose(tab))) ||
+        rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
     if (rec) { rec.renaming = true; rec.renameEpoch++; }
     return { review_session: rec?.snapshot ? cas(rec) : undefined };
   }
@@ -824,7 +958,7 @@ window.ReadMDReview = (() => {
         if (typeof state !== 'undefined' && !state.editing && typeof toggleEdit === 'function') await toggleEdit();
         if (activeTab() === tab) navigate(1, tab);
       });
-      footer.insertBefore(marker, document.getElementById('status-mods'));
+      footer.insertBefore(marker, document.getElementById('editor-status-group'));
     }
     if (marker) {
       marker.hidden = !(pending || conflict);
@@ -865,7 +999,7 @@ window.ReadMDReview = (() => {
   }
   document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
   window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
-  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, resolve, discard, history, runAi, cancelAi,
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, captureManualRange, applyManualRange, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
     prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
     busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
 })();

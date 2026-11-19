@@ -1,0 +1,18 @@
+parameters: [{$ref: '../defs/parameters.yaml#/Id'}]
+get:
+  summary: '重复标题'
+  operationId: getItem
+  responses: {'200': {$ref: '../defs/responses.yaml#/Envelope'}}
+post:
+  summary: '重复标题'
+  operationId: createItem
+  security: [{oauth: ['write:items']}]
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: '../schemas/complex.json#/$defs/Envelope'
+          allOf: [{minProperties: 1}]
+          unevaluatedProperties: false
+  responses: {'201': {$ref: '../defs/responses.yaml#/Envelope'}}

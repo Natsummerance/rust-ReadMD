@@ -20,13 +20,13 @@ function driver(phase,doc,ack,scenario){return String.raw`(async()=>{
   await __readmdSessionReady;check(hasPy&&document.body.classList.contains('native-macos'),'actual_cocoa_reader');
   if(phase==='install'){
    await loadFile(${JSON.stringify(doc)});await openPetSettings();
-   $('pet-enabled').checked=true;$('pet-runtime').value='desktop';$('pet-renderer').value=renderer;currentActivePetSlug=character;$('pet-sound').checked=false;
-   const enabled=await savePetSettings();if(!enabled?.ok){const code=enabled?.code||enabled?.error_code;throw Error('release_install_'+(/^[a-z_]{1,70}$/.test(code)?code:'failed'));}
+   $('pet-enabled').checked=true;$('pet-runtime-desktop').checked=true;$('pet-sound').checked=false;
+   const enabled=await savePetSettings({renderer,slug:character});if(!enabled?.ok){const code=enabled?.code||enabled?.error_code;throw Error('release_install_'+(/^[a-z_]{1,70}$/.test(code)?code:'failed'));}
    check(true,'normal_settings_install_and_enable_release_companion');closePetSettings();
   }else check(getActiveTab()?.path===${JSON.stringify(doc)},'native_session_restores_same_document');
   await until(async()=>{const s=await fetchPetRuntimeStatus();return s.enabled&&!s.in_app&&s.adapter?.rust?.running&&s.adapter.rust.health?.state==='ready';});
   check(true,'real_release_companion_rendered_and_supervised');
-  const actual=await fetchPetRuntimeStatus();check(actual.active_slug===character&&actual.adapter.rust.health.renderer===renderer,'selected_character_and_real_renderer_match');
+  const actual=await fetchPetRuntimeStatus();check(petSelection(actual).slug===character&&actual.adapter.rust.health.renderer===renderer,'selected_character_and_real_renderer_match');
   const m=await (await apiFetch('/api/modules')).json();check(m.modules.ocr==='idle'&&m.modules.transcribe==='idle','recognition_models_remain_unloaded');
   window.ipc.postMessage(JSON.stringify({readmd_native_qa_progress:{ok:true,phase:'release_pet_ready',checks}}));
   await until(async()=>{const r=await apiFetch('/api/file?p='+encodeURIComponent(ack));return r.ok&&(await r.json()).content==='checked';});

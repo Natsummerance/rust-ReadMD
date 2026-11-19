@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "scope": "development ABI only; external selected library, no managed-pack certification",
+  "platform": "darwin-arm64",
+  "syntheticOnly": true,
+  "workerSha256": "8383271027f83c03ba08f5be3a4054262785f4b48ba64081c015634f2194f465",
+  "librarySha256": "d34011e480990c09653c35ef50273ecf71850b68822845b8eb95db5534360d83",
+  "sourceSha256": "1f704c8854c3748ac3a56f773a7a6c939353d7c6533b94ca7be7dcb42e6ee221",
+  "checks": [
+    {
+      "name": "native InkList visible within bounds, original objects retained",
+      "rotation": 0,
+      "changedPixels": 1812
+    },
+    {
+      "name": "native InkList visible within bounds, original objects retained",
+      "rotation": 90,
+      "changedPixels": 1846
+    },
+    {
+      "name": "native InkList visible within bounds, original objects retained",
+      "rotation": 180,
+      "changedPixels": 1812
+    },
+    {
+      "name": "native InkList visible within bounds, original objects retained",
+      "rotation": 270,
+      "changedPixels": 1846
+    },
+    {
+      "name": "unmodified second page pixel-identical"
+    },
+    {
+      "name": "native save/reopen retains Ink annotation and editable SVG metadata; explicit removal restores original pixels"
+    },
+    {
+      "name": "synthetic signature dictionary gates ink until explicit permission; no cryptographic signature certification"
+    },
+    {
+      "name": "input PDF and borrowed library byte-identical; no engine installation or trust change"
+    }
+  ],
+  "passed": true,
+  "managedPackVerified": false,
+  "fullSharedBrushImplemented": false,
+  "nativeUiAccepted": false,
+  "rustWorkspaceTestsPassed": 5,
+  "rustPlacementTestsPassed": 2,
+  "frontendAndPackagingTestsPassed": 89,
+  "i18nLocales": 46,
+  "supportedSubset": "One opaque, unmasked, constant-pressure stroke; 2-4096 distinct-extent centerline points; no canvas clipping; uniform placement including quarter-turn page rotations.",
+  "sourceModel": "ink::Drawing::open and Stroke::radius via ink::pdf_stroke",
+  "nativeAppearance": "PDF InkList plus native path with round cap/join; editable source retained in ReadMDInk annotation metadata.",
+  "evidence": ".cache/v007-pdf-ink-abi-20261119-c/report.json",
+  "firstFailure": ".cache/v007-pdf-ink-abi-20261119-a/report.json",
+  "rejectedAppearance": ".cache/v007-pdf-ink-abi-20261119-b/ink.png",
+  "savedAnnotationInspection": {
+    "nativeInkList": true,
+    "pointCount": 3,
+    "appearanceObjectCount": 1,
+    "appearance": "native vector Path; round cap and join",
+    "embeddedSvgByteEquivalent": true,
+    "svgSha256": "3e799754d763956991ecf888d07bc266d18287be3b7a270c548757de7d70e540"
+  }
+}

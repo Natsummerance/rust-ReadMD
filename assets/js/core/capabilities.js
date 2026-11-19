@@ -5,7 +5,33 @@
   const t=(key,params)=>window.i18n.t(key,params);
   let active=null;
   function failure(error){const code=error?.message,key='error.'+code,result=Error(typeof code==='string'&&/^[a-z_0-9]+$/.test(code)&&t(key)!==key?code:'capability_install_failed');result.retryable=Boolean(error?.retryable||error instanceof TypeError||error instanceof SyntaxError);return result;}
-  async function request(body){try{const r=await apiFetch('/api/capabilities/packs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error_code||'capability_install_failed');return d;}catch(error){throw failure(error);}}
+  const catalogEntries = new Map();
+  function translated(key) {
+    if (!key) return '';
+    const value = t(key);
+    return value && value !== key ? value : '';
+  }
+  function label(value) {
+    const entry = typeof value === 'string' ? catalogEntries.get(value) || {id:value} : value;
+    return translated(entry.labelKey) || entry.name || translated('capability.' + entry.id + '.name') || entry.id;
+  }
+  function description(entry) {
+    return translated(entry.descriptionKey) || entry.description || '';
+  }
+  async function request(body) {
+    try {
+      const r = await apiFetch('/api/capabilities/packs', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw Error(data.error_code || 'capability_install_failed');
+      if (body.action === 'catalog' && Array.isArray(data.packs)) {
+        catalogEntries.clear();
+        for (const entry of data.packs) catalogEntries.set(entry.id, entry);
+      }
+      return data;
+    } catch (error) { throw failure(error); }
+  }
   const size=n=>new Intl.NumberFormat(window.i18n.currentLang,{maximumFractionDigits:1}).format(n/1048576)+' MiB';
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   async function retryNetwork(action,cancelled=()=>false){
@@ -29,7 +55,7 @@
   async function upload(file,id='',hooks={}){
     if(!Number.isSafeInteger(file.size)||file.size<=0||file.size>2*1024*1024*1024)throw Error('capability_pack_invalid');
     const prefix=new Uint8Array(await file.slice(0,12).arrayBuffer()),stream=prefix.length===12&&new TextDecoder().decode(prefix.slice(0,8))==='RMDPKG2\n';
-    if(stream){const length=new DataView(prefix.buffer).getUint32(8,true);if(!length||length>8*1024*1024||length+12>file.size)throw Error('capability_pack_invalid');let manifest;try{manifest=JSON.parse(await file.slice(12,12+length).text());}catch(_){throw Error('capability_pack_invalid');}if(manifest.schema!==2||!['pdfium','typst','ocr','fonts','latex'].includes(manifest.id)||(id&&manifest.id!==id))throw Error('capability_pack_invalid');id=manifest.id;}
+    if(stream){const length=new DataView(prefix.buffer).getUint32(8,true);if(!length||length>8*1024*1024||length+12>file.size)throw Error('capability_pack_invalid');let manifest;try{manifest=JSON.parse(await file.slice(12,12+length).text());}catch(_){throw Error('capability_pack_invalid');}if(manifest.schema!==2||!['pdfium','typst','ocr','fonts','latex','node','whisper','media-ffmpeg'].includes(manifest.id)||(id&&manifest.id!==id))throw Error('capability_pack_invalid');id=manifest.id;}
     // Old generic JSON imports retain their existing contract; feature-entry
     // imports know their engine ID and use bounded chunks for either format.
     if(!id){if(file.size>128*1024*1024)throw Error('capability_pack_invalid');
@@ -66,15 +92,18 @@
     let resolve;const promise=new Promise(r=>{resolve=r;});active={id,promise};
     const modal=document.createElement('div');modal.id='capability-install-modal';modal.className='modal hidden';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','capability-install-title');
     const box=document.createElement('section');box.className='capability-install-box';
-    const title=document.createElement('h2');title.id='capability-install-title';title.textContent=t('capability.installTitle',{name:t(entry.labelKey)});
-    const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);
-    const summary=document.createElement('p');summary.className='capability-install-summary';summary.textContent=t('capability.sizes',{download:size(entry.downloadBytes),installed:size(entry.installedBytes)});
-    const details=document.createElement('details'),about=document.createElement('summary'),license=document.createElement('p');about.textContent=t('capability.details');license.textContent=entry.version+' · '+entry.platform+' · '+entry.license;details.append(about,license);
-    const hint=document.createElement('p');hint.className='capability-install-hint';hint.textContent=t('capability.installHint');
+    const title=document.createElement('h2');title.id='capability-install-title';title.textContent=t('capability.installTitle',{name:label(entry)});
+    const purpose=document.createElement('p');purpose.textContent=description(entry);purpose.hidden=!purpose.textContent;
+    const bundled=entry.delivery==='bundled';
+    const summary=document.createElement('p');summary.className='capability-install-summary';summary.textContent=bundled?t('capability.core.name')+' · '+size(entry.installedBytes):t('capability.sizes',{download:size(entry.downloadBytes),installed:size(entry.installedBytes)});
+    const details=document.createElement('details'),about=document.createElement('summary'),license=document.createElement('p');about.textContent=t('capability.details');license.textContent=entry.version+' · '+entry.platform+' · '+entry.license+(entry.minimumPlatform?' · '+entry.minimumPlatform:'');details.append(about,license);
+    const hint=document.createElement('p');hint.className='capability-install-hint';hint.textContent=t(entry.delivery==='offline-only'?'capability.offlineImport':'capability.installHint');
     const status=document.createElement('p');status.id='capability-install-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     const progress=document.createElement('progress');progress.hidden=true;progress.max=100;progress.setAttribute('aria-label',t('plugin.installing'));
     const actions=document.createElement('div');actions.className='capability-install-actions';
     const cancel=document.createElement('button'),offline=document.createElement('button'),install=document.createElement('button');for(const b of [cancel,offline,install]){b.type='button';b.className='tb-btn';}cancel.textContent=t('common.cancel');offline.textContent=t('capability.offlineImport');install.textContent=t('capability.installContinue');install.classList.add('accent');actions.append(cancel,offline,install);
+    install.hidden=entry.delivery==='offline-only';install.classList.toggle('hidden',install.hidden);
+    offline.hidden=bundled;offline.classList.toggle('hidden',bundled);
     box.append(title,purpose,summary,details,hint,progress,status,actions);modal.append(box);document.body.append(modal);
     let busy=false,job=null,finished=false,cancelRequested=false,abortUpload=null;
     function finish(value){if(finished)return;finished=true;window.ReadMDModal.close(modal);window.ReadMDModal.setGuard(modal.id,null);modal.remove();active=null;if(value)ready(id);resolve(value);}
@@ -126,5 +155,5 @@
       :needsFonts(content+JSON.stringify(options||{}));
     return !required||await ensure('fonts');
   }
-  window.ReadMDCapabilities={ensure,request,size,upload,uninstall,ensurePublication};
+  window.ReadMDCapabilities={ensure,request,size,upload,uninstall,ensurePublication,label,description};
 })();

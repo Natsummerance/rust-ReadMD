@@ -366,7 +366,19 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
     let locale_xml = locale_xml.or_else(||embedded.as_ref().and_then(|r|r.locale_xml.as_deref()));
     let manual_bibliography = embedded.as_ref().is_some_and(|r|r.manual_bibliography);
     let format=if json_format { "csl-json" } else { "bibtex" };
-    let known=academic::reference_keys(format,&data)?;
+    let references=academic::reference_summaries(format,&data)?;
+    let known=references.iter().map(|entry|entry.key.clone()).collect();
+    let nocite=citations::nocite(source)?;
+    let selected=nocite.as_ref().map(|selection|selection.keys.clone())
+        .unwrap_or_else(||embedded.as_ref().map(|resources|resources.nocite.clone()).unwrap_or_default());
+    let mut nocite_keys=Vec::new();let mut seen=std::collections::HashSet::new();
+    for key in selected {
+        if key=="*" {
+            // Preserve bibliography source order for unsorted/numeric CSL
+            // styles; HashSet iteration must never assign citation numbers.
+            for entry in &references {if seen.insert(entry.key.clone()){nocite_keys.push(entry.key.clone());}}
+        } else if seen.insert(key.clone()) {nocite_keys.push(key);}
+    }
     let note_style=academic::is_note_style(&style,csl.as_deref())?;
     let scan=citations::scan(source,language.unwrap_or("en-US"))?;
     let spans=citations::reading_order(source,scan.citations,note_style,&known)?;
@@ -381,7 +393,7 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
         preceding_notes: Vec::new(),
         contexts: spans.iter().map(|span|span.context.clone()).collect(),
     };
-    let mut rendered = academic::citations(&request)?;
+    let mut rendered = academic::citations_with_nocite(&request,&nocite_keys)?;
     let mut projection = Projection::new(source);
     let revision = projection.revision.clone();
     let mut positions = Vec::new();
@@ -493,7 +505,9 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
     let diagnostics = rendered["diagnostics"].as_array_mut().expect("diagnostics");
     for diagnostic in diagnostics.iter_mut() {
         let cluster = diagnostic["cluster"].as_u64().and_then(|index| spans.get(index as usize));
-        let locations = if let Some(cluster) = cluster {
+        let locations = if diagnostic["field"]=="nocite" {
+            nocite.as_ref().map(|selection|vec![selection.span.clone()]).unwrap_or_default()
+        } else if let Some(cluster) = cluster {
             let span = diagnostic["item"].as_u64().and_then(|index| cluster.items.get(index as usize))
                 .and_then(|item| item.fields.get("key")).unwrap_or(&cluster.span);
             vec![span.clone()]

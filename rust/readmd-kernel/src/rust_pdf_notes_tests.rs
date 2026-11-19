@@ -48,7 +48,7 @@ fn definitions_before_references_and_real_quote_list_cell_paths_keep_first_use()
     let custom=Document{front_matter:None,blocks:vec![
         Block::Quote(vec![Block::Paragraph(vec![Inline::Text("[!NOTE] Title ".into()),Inline::FootnoteRef("a".into()),Inline::SoftBreak,Inline::Text("Body ".into()),Inline::FootnoteRef("b".into())])]),
         Block::List{ordered:false,start:1,items:vec![ListItem{task:None,blocks:vec![Block::Paragraph(vec![Inline::FootnoteRef("a".into())])]}]},
-        Block::Table{aligns:vec![],header:vec![vec![Inline::Text("Header".into())]],rows:vec![vec![vec![Inline::FootnoteRef("b".into())]]]},
+        Block::Table{geometry: Default::default(),aligns:vec![],header:vec![vec![Inline::Text("Header".into())]],rows:vec![vec![vec![Inline::FootnoteRef("b".into())]]]},
         Block::FootnoteDef{label:"b".into(),blocks:vec![Block::Paragraph(vec![Inline::Text("B".into())])]},
         Block::FootnoteDef{label:"a".into(),blocks:vec![Block::Paragraph(vec![Inline::Text("A".into())])]},
     ]};
@@ -113,7 +113,7 @@ fn glyph_baseline_destinations_and_every_pdf_goto_are_real_and_author_size_is_ke
 #[test]
 fn paginated_repeated_table_header_keeps_forward_links_and_returns_to_first_paint(){
     let options=style("decimal");let mut rows=Vec::new();for n in 0..110{rows.push(vec![vec![Inline::Text(format!("ROW{n:03} data"))]]);}
-    let doc=Document{front_matter:None,blocks:vec![Block::Table{aligns:vec![],header:vec![vec![Inline::Text("HEADER".into()),Inline::FootnoteRef("table-note".into())]],rows},Block::FootnoteDef{label:"table-note".into(),blocks:vec![Block::Paragraph(vec![Inline::Text("TABLE NOTE".into())])]}]};
+    let doc=Document{front_matter:None,blocks:vec![Block::Table{geometry: Default::default(),aligns:vec![],header:vec![vec![Inline::Text("HEADER".into()),Inline::FootnoteRef("table-note".into())]],rows},Block::FootnoteDef{label:"table-note".into(),blocks:vec![Block::Paragraph(vec![Inline::Text("TABLE NOTE".into())])]}]};
     let value=project(&doc,&options);let marker=markers(&value).into_iter().find(|m|m.role=="reference").unwrap();let layout=rendered(&value,&options);assert!(layout.pages.len()>1);let targets=destinations(&layout);assert_eq!(targets.len(),2);
     let first=targets[&marker.reference];let mut forwards=Vec::new();for(index,page)in layout.pages.iter().enumerate(){for item in &page.items{if let DrawItem::Link{x,y,w,h,href}=item{if href==&marker.href(){forwards.push((index,*x,*y,*w,*h));}}}}
     assert!(forwards.len()>1);assert_eq!(forwards[0].0,first.0);assert!((forwards[0].1-first.1).abs()<0.001);assert!(first.2>=forwards[0].2&&first.2<=forwards[0].2+forwards[0].4);

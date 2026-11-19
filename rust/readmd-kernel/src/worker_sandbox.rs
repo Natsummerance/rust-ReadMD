@@ -733,7 +733,10 @@ mod platform {
         lease: Option<&File>,
     ) -> io::Result<Worker> {
         let app = wide(program.as_os_str());
-        let cwd = wide(directory.as_os_str());
+        // Canonical identity remains verbatim. CreateProcess's cwd uses the
+        // equivalent ordinary path when safe, as std::process does. cmd.exe
+        // otherwise treats a short \\?\ path as UNC and changes directories.
+        let cwd = wide(dunce::simplified(directory).as_os_str());
         let mut command = command_line(program.as_os_str(), args)?;
         let environment = environment_block(environment)?;
         unsafe {
@@ -990,9 +993,17 @@ mod platform {
     }
     fn command_line(program: &OsStr, args: &[OsString]) -> io::Result<Vec<u16>> {
         let mut result = Vec::new();
-        for value in std::iter::once(program).chain(args.iter().map(OsString::as_os_str)) {
+        let cmd = Path::new(program).file_name().is_some_and(|name| name.eq_ignore_ascii_case("cmd.exe"));
+        for (index, value) in std::iter::once(program).chain(args.iter().map(OsString::as_os_str)).enumerate() {
             if !result.is_empty() {
                 result.push(b' ' as u16);
+            }
+            // CMD parses its switch before CRT argument unquoting. Keep the
+            // one fixed /c switch unquoted; the user command stays escaped as
+            // one argument. Other engines retain their tested encoding.
+            if cmd && index == 1 && value.eq_ignore_ascii_case("/c") {
+                result.extend([b'/' as u16, b'c' as u16]);
+                continue;
             }
             result.push(b'"' as u16);
             let mut slashes = 0;
@@ -1077,6 +1088,12 @@ mod platform {
                 "\"engine.exe\" \"a b\" \"x\\\"y\" \"C:\\work\\\\\""
             );
             assert!(command_line(OsStr::new("a\0b"), &[]).is_err());
+        }
+
+        #[test]
+        fn cmd_switch_is_not_quoted_while_the_command_remains_one_argument() {
+            let line = command_line(OsStr::new(r"C:\Windows\System32\cmd.exe"), &["/c".into(), "echo 42".into()]).unwrap();
+            assert_eq!(String::from_utf16(&line[..line.len()-1]).unwrap(), "\"C:\\Windows\\System32\\cmd.exe\" /c \"echo 42\"");
         }
         #[test]
         fn environment_is_explicit_sorted_and_rejects_duplicate_keys() {

@@ -1,0 +1,43 @@
+{
+  "schema": 2,
+  "id": "typst",
+  "version": "0.15.1",
+  "platform": "macos-arm64",
+  "files": [
+    {
+      "path": "bin/typst",
+      "size": 45029488,
+      "sha256": "7c4a136b377f3689400afe37b4f0fe3528d50faaa55cbb1106ac8a128f86ba1a",
+      "executable": true,
+      "compressedSize": 21683998
+    },
+    {
+      "path": "LICENSE",
+      "size": 9723,
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+      "executable": false,
+      "compressedSize": 3554
+    },
+    {
+      "path": "NOTICE",
+      "size": 21066,
+      "sha256": "1778244777547c281b6f5fa9fc0c18ab21f8d4491c803f64e09046800f5fcb26",
+      "executable": false,
+      "compressedSize": 6823
+    }
+  ],
+  "review": {
+    "source": "https://github.com/typst/typst/releases/tag/v0.15.1",
+    "archive": "https://github.com/typst/typst/releases/download/v0.15.1/typst-aarch64-apple-darwin.tar.xz",
+    "archiveSha256": "48f62ed034aa3a7978309579ac6ca00045e2ef0da73114e8af27cfd8e74dc05a",
+    "license": "Apache-2.0; original dependency and font notices included",
+    "minimumPlatform": "macOS 11.0.0",
+    "unchangedOfficialBinary": true,
+    "execution": "Optional offline worker; generated quoted sources, owned root and bounded cancellable process; no package imports",
+    "compression": {
+      "node": "24.22.1",
+      "zlib": "1.2.12",
+      "gzipOS": 255
+    }
+  }
+}

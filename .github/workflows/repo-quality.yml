@@ -17,30 +17,35 @@ permissions:
   contents: read
 
 jobs:
+  native-space-consumers:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/p1-space-acceptance.yml
+
   kernel:
+    permissions:
+      actions: read
+      contents: read
     name: Kernel tests · ${{ matrix.os }}
+    timeout-minutes: 90
     runs-on: ${{ matrix.os }}
     # Native subprocess deadlines are tested separately from the explicit
     # concurrency/stress lanes. Do not oversubscribe a small shared runner.
     env:
-      # Mac installation admission intentionally coordinates every profile of
+      # Installation admission intentionally coordinates every profile of
       # one user. Independent unit fixtures must not race over that real gate;
       # explicit cross-process contention tests still exercise concurrency.
-      RUST_TEST_THREADS: ${{ matrix.os == 'macos-latest' && '1' || '4' }}
+      RUST_TEST_THREADS: 1
       CARGO_BUILD_JOBS: 2
       CARGO_INCREMENTAL: 0
     strategy:
       fail-fast: false
       matrix:
-        # The locked browser supports Ubuntu 24.04. ubuntu-latest has moved
-        # to 26.04; keep the browser host explicit instead of bypassing its
-        # platform checks or downloading an unreviewed replacement driver.
-        os: [ubuntu-24.04, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -54,19 +59,12 @@ jobs:
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
       - name: Canonical owned test temporary directory
         run: node tools/ci-test-temp.mjs
-      # Keep the exact-source CAS lane ahead of generated SVG assets. The
-      # worker build deliberately populates untracked platform resources.
-      - name: Actual two-process session CAS and Windows shared-reader controls
-        run: node tools/test/session-cas-native.mjs
-      - name: Retain exact session CAS receipt and first failure
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: V006-session-CAS-${{ matrix.os }}
-          if-no-files-found: error
-          path: |
-            .cache/session-cas-native/report.json
-            .cache/session-cas-native/first-failure*
+      - name: Portable input diagnostics, package privacy and table edit ownership
+        run: node --test --test-concurrency=2 --test-timeout=20000 tools/test/review-version-fence-input.test.mjs tools/test/vscode-package-privacy.test.mjs tools/test/v007-table-cell.test.cjs
+      - name: Export preview identity and EPUB reading position
+        run: node --test ui-tests/export-review-snapshot.test.cjs tools/test/export-epub-preview.test.cjs
+      - name: Prepare reviewed native Node input and immutable offline pack
+        run: node tools/ci-prepare-node-runtime.mjs
       - name: Prepare pinned Linux SVG source and dependencies
         if: runner.os == 'Linux'
         run: node tools/prepare-linux-svg-worker.mjs prepare
@@ -83,6 +81,17 @@ jobs:
       - name: Native subprocess deadline lane
         run: |
           cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --lib code_chunk_runner:: -- --test-threads=1
+      - name: Actual two-process session CAS, with sanitized first-failure diagnostics
+        run: node tools/test/session-cas-native.mjs
+      - name: Retain actual session CAS receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-session-CAS-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-session-cas/report.json
+            .cache/p1-session-cas/first-failure.log
       - name: Test kernel and xtask
         # Vision model acceptance remains a separate explicit invocation.
         # Keep the real test executable while this non-model regression lane
@@ -94,12 +103,14 @@ jobs:
         run: |
           cargo check --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --bin readmd --features native-qa
           cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --bin readmd --features native-qa native_qa::tests -- --test-threads=1
-      - name: Parse native close scripts without opening a window
+      - name: Parse native batch phase scripts without launching an App
         if: runner.os == 'macOS'
         run: |
           node - <<'JS'
-          const vm = require('node:vm'), {driver} = require('./ui-tests/macos-code-close-system-native.cjs');
-          for (const phase of ['decisions','reopen']) new vm.Script(driver(phase, {}));
+          const vm = require('node:vm'), { driver } = require('./ui-tests/macos-code-batch-system-native.cjs');
+          for (const phase of ['run_save_quit','reopen_undo_close','batch_run_save_quit','batch_reopen_undo_close','empty']) new vm.Script(driver(phase, { source:'/owned/source.md', slow:'/owned/slow.md', batch:'/owned/batch.md' }));
+          const chat = require('./ui-tests/macos-ai-node-system-native.cjs');
+          for (const phase of chat.phases) new vm.Script(chat.driver(phase, { node:'/owned/node.md', ai:'/owned/chat.md' }, {}));
           JS
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
@@ -112,27 +123,184 @@ jobs:
           name: P0-review-undo-http-${{ matrix.os }}
           if-no-files-found: error
           path: .cache/review-undo-http/report.json
-      - name: Locked browser driver for real close and save boundaries
-        run: npm ci --prefix ui-tests
-      - name: Prepare owned headless browser
-        run: node ui-tests/node_modules/@playwright/test/cli.js install --with-deps chromium
-      - name: Real code results respect close, edit exit, undo and external saves
-        env:
-          READMD_CODE_BROWSER: chromium
-        run: node tools/test/code-close-boundary-browser.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/code-close-boundaries
-      - name: Retain real code close and save receipts
+      - name: Build independent maintenance PDF inspector offline in the same target
+        timeout-minutes: 5
+        run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features --example table_pdf_inspector
+      - name: Download the archived previous writer
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: Natsummerance/rust-ReadMD
+          run-id: 41981825560
+          artifact-ids: ${{ runner.os == 'Windows' && '13394464219' || runner.os == 'Linux' && '13394009501' || runner.arch == 'ARM64' && '13394129290' || '13393808994' }}
+          merge-multiple: true
+          path: .cache/p1-previous-writer-artifact
+      - name: P1 previous released writer cannot downgrade resource history
+        run: node tools/test/review-version-fence-platform.mjs
+      - name: P1 real code cancellation, HTTP and MCP lifecycle
+        run: node tools/test/code-lifecycle-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-lifecycle
+      - name: P1 managed Node installation, cancellation, save, undo and new process
+        run: node tools/test/node-runtime-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-managed-node
+      - name: P1 genuine chat streaming, cancellation, failure and new process
+        run: node tools/test/ai-chat-stream-http.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-ai-chat-stream
+      - name: Retain actual chat stream receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: V006-code-close-${{ matrix.os }}
-          if-no-files-found: error
+          name: P1-ai-chat-stream-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-ai-chat-stream/report.json
+      - name: Retain actual managed Node receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-managed-node-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-managed-node/report.json
+      - name: P1 code output, durable history and new MCP processes
+        run: node tools/test/code-output-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-output
+      - name: P1 bounded SQL batches, one undo and new MCP processes
+        run: node tools/test/code-batch-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-batch
+      - name: P1 MCP EOF stops owned SQL and actual Node worker
+        run: node tools/test/code-mcp-eof.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-mcp-eof
+      - name: Retain actual MCP EOF receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-mcp-eof-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-code-mcp-eof/report.json
+      - name: Retain actual code batch receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-batch-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-code-batch/report.json
+      - name: P1 real Unix host exit stops its owned code worker
+        if: runner.os != 'Windows'
+        run: node tools/test/code-host-exit-unix.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-host-exit
+      - name: Retain actual code lifecycle and output receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-lifecycle-${{ matrix.os }}
+          if-no-files-found: ignore
           path: |
-            .cache/code-close-boundaries/report.json
-            .cache/code-close-boundaries/first-failure.png
-            .cache/code-close-boundaries/deadline.json
+            .cache/p1-code-lifecycle/report.json
+            .cache/p1-code-output/report.json
+            .cache/p1-code-host-exit/report.json
+      - name: Retain version fence receipt and any first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-version-fence-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-previous-writer/source-fixture.json
+            .cache/p1-previous-writer/input-diagnostics.json
+            .cache/p1-previous-writer/input-cleanup.json
+            .cache/p1-previous-writer/result/report.json
+            .cache/p1-previous-writer/result/first-failure.json
+
+      - name: P1 actual completion streaming, cancellation and strict protocol cases
+        timeout-minutes: 5
+        run: |
+          node tools/test/ai-completion-stream-http.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-ai-completion-stream
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-ai-completion-stream/report.json');a.equal(r.passed,true);a(r.cases.length>0);a(r.cases.every(c=>c.passed));a.equal(r.productionAuth,true);a.equal(r.rustSourcesUnchanged,true);a.equal(r.binaryUnchanged,true);console.log(JSON.stringify({cases:r.cases.length,passed:r.cases.filter(c=>c.passed).length}));"
+      - name: Retain actual completion streaming receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-completion-stream-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-ai-completion-stream/report.json
+      # This strict native process overlap has an observable window on Mac.
+      # One status-first task must supply its owned copy, actual probe and full
+      # independent digest. Original timing budgets remain unchanged.
+      # All three OSes retain the regular managed Node and Rust lock-guard lanes.
+      - name: P1 status-first Node Run admission, busy resampling and cancellation
+        if: runner.os == 'macOS'
+        timeout-minutes: 5
+        run: node tools/test/node-runtime-status-fairness.cjs --bin rust/target/debug/readmd --evidence .cache/p1-node-status-fairness
+      - name: Retain actual Node status fairness receipt
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-node-status-fairness-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-node-status-fairness/report.json
+      - name: P1 actual editable PPTX tables and frozen snapshot preview
+        timeout-minutes: 5
+        run: |
+          node tools/test/v007-pptx-table-style.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-pptx-table-style
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-pptx-table-style/report.json');a.equal(r.passed,true);a.equal(r.exports.length,5);a(r.checks.every(c=>c.pass));a(r.exports.every(c=>c.previewUsesFrozenSnapshot));a.equal(r.binaryUnchanged,true);a.equal(r.sourceUnchanged,true);a.equal(r.officePixelsCertified,false);"
+      - name: Retain actual PPTX files, fixed inputs and frozen preview evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-pptx-table-style-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-pptx-table-style/report.json
+            .cache/p1-pptx-table-style/first-failure.json
+            .cache/p1-pptx-table-style/fixed-inputs.json
+            .cache/p1-pptx-table-style/*-slides.xml
+            .cache/p1-pptx-table-style/*-preview.html
+            .cache/p1-pptx-table-style/documents/*.pptx
+            .cache/p1-pptx-table-style/documents/*.md
+      - name: P1 actual DOCX and native PDF HTML table safety through independent reader
+        timeout-minutes: 5
+        env:
+          READMD_TEST_PDF_INSPECTOR: ${{ github.workspace }}/rust/target/debug/examples/table_pdf_inspector${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          node tools/test/v007-table-export-safety.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-table-export-safety
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-table-export-safety/report.json');a.equal(r.passed,true);a.equal(r.checks.length,96);a(r.checks.every(c=>c.pass));a.equal(r.pdfInspections.length,5);a.equal(r.pdfInspectorExecutableUnchanged,true);a.equal(r.binaryUnchanged,true);a.equal(r.sourceUnchanged,true);"
+      - name: Retain original HTML table matrix, physical exports and independent reader receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-table-export-safety-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-table-export-safety/report.json
+            .cache/p1-table-export-safety/first-failure.json
+            .cache/p1-table-export-safety/independent-expectations.json
+            .cache/p1-table-export-safety/*-docx.xml
+            .cache/p1-table-export-safety/*-pdf-text.json
+            .cache/p1-table-export-safety/documents/*.docx
+            .cache/p1-table-export-safety/documents/*.pdf
+            .cache/p1-table-export-safety/documents/*.md
+      # Keep this exact physical-PDF unit distinct from the 96-check real
+      # HTTP matrix. Both use independent locked Rust pdf_extract, without
+      # calling product PDF import/OCR.
+      - name: P1 native HTML table physical PDF cells through independent Rust reader
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),cp=require('node:child_process'),assert=require('node:assert/strict');
+          const root='.cache/p1-native-table-pdf',name='md_ast::html_table_tests::native_html_table_rust_pdf_uses_existing_native_table_json_and_retains_all_body_markers';
+          fs.mkdirSync(root,{recursive:true});
+          const result=cp.spawnSync('cargo',['test','--offline','--locked','--manifest-path','rust/Cargo.toml','-p','readmd-kernel','--lib',name,'--','--exact','--test-threads=1'],{encoding:'utf8',maxBuffer:8*1048576});
+          const log=(result.stdout||'')+(result.stderr||'');fs.writeFileSync(root+'/test.log',log,{flag:'wx'});process.stdout.write(log);
+          const passed=result.status===0&&/test result: ok\. 1 passed; 0 failed; 0 ignored/.test(log);
+          fs.writeFileSync(root+'/report.json',JSON.stringify({passed,test:name,reader:'locked Rust pdf_extract',physicalPdf:true,http96Certified:false,productPdfImportUsed:false,modelsRequested:false,status:result.status,signal:result.signal,error:result.error?.code||null},null,2)+'\n',{flag:'wx'});
+          assert(passed,'exact physical-PDF test must run once and pass; empty selection is invalid');
+          JS
+      - name: Retain independent physical PDF test receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-native-table-pdf-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-native-table-pdf/report.json
+            .cache/p1-native-table-pdf/test.log
 
   frontend:
     name: Frontend gates
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -145,10 +313,18 @@ jobs:
           workspaces: rust
       - name: Prepare locked Rust dependencies
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Status-first observation and deadline controls
+        run: node --test tools/test/node-runtime-status-observer.test.cjs
       - name: Boot bundle is up to date
         run: cargo run --offline --locked --quiet --manifest-path rust/Cargo.toml -p xtask -- bundle-boot --check
+      - name: Published website metadata follows its offline stable snapshot
+        run: |
+          node --test website/tools/published-release.test.mjs
+          node website/tools/sync-version.mjs --check --public-only
       - name: i18n keys and literals
-        run: node tools/check-i18n.mjs
+        run: |
+          node tools/check-i18n.mjs
+          node --test tools/test/v007-rc-i18n.test.mjs
       - name: Syntax check sources
         run: for f in assets/app.js assets/readmd.boot.js $(git ls-files 'assets/js/*.js'); do node --check "$f"; done
       - name: Style tokens and contrast (ratchet)
@@ -162,9 +338,28 @@ jobs:
       - name: Privacy scan
         run: node tools/privacy-scan.mjs
       - name: Node tests
-        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs tools/test/zip.test.mjs tools/test/native-build-env.test.mjs tools/test/reader-local-paths.test.mjs tools/test/local-image-auth.test.cjs tools/test/native-picker.test.mjs tools/test/deferred-model-modules.test.cjs tools/test/native-capability-ready.test.cjs tools/test/native-window-preferences.test.cjs tools/test/plugin-panel-readiness.test.cjs tools/test/macos-sign.test.mjs tools/test/native-startup-ready.test.mjs tools/test/refresh-macos-release.test.mjs ui-tests/native-auth-bootstrap.test.cjs
+        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs tools/test/zip.test.mjs tools/test/native-build-env.test.mjs tools/test/reader-local-paths.test.mjs tools/test/local-image-auth.test.cjs tools/test/native-picker.test.mjs tools/test/deferred-model-modules.test.cjs tools/test/native-capability-ready.test.cjs tools/test/native-window-preferences.test.cjs tools/test/plugin-panel-readiness.test.cjs tools/test/macos-sign.test.mjs tools/test/native-startup-ready.test.mjs tools/test/refresh-macos-release.test.mjs ui-tests/native-auth-bootstrap.test.cjs ui-tests/native-quit-queue.test.cjs
       - name: P0 lifecycle ownership and recovery guards
-        run: node --test ui-tests/close-confirm-adapter.test.cjs ui-tests/close-save-target-adapter.test.cjs ui-tests/lifecycle-order-adapter.test.cjs ui-tests/session-cas-adapter.test.cjs ui-tests/session-load-barrier.test.cjs ui-tests/durable-review-adapter.test.cjs
+        run: node --test ui-tests/close-confirm-adapter.test.cjs ui-tests/close-save-target-adapter.test.cjs ui-tests/tab-close-postack-adapter.test.cjs ui-tests/lifecycle-order-adapter.test.cjs ui-tests/session-cas-adapter.test.cjs ui-tests/session-load-barrier.test.cjs ui-tests/durable-review-adapter.test.cjs
+      - name: Formula source ownership and editor byte protections
+        run: node --test tools/test/math-document-context-frontend.test.cjs tools/test/math-source-only-frontend.test.cjs
+      - name: Managed Node input and streaming package regressions
+        run: node --test tools/test/node-runtime-preparation.test.mjs tools/test/stream-capability-pack.test.mjs tools/test/capability-publication.test.mjs
+      - name: Strict chat stream and conversation ownership regressions
+        run: node --test --test-timeout=10000 ui-tests/ai-chat-stream.test.cjs ui-tests/ai-harness-adapter.test.cjs
+
+      - name: Strict inline completion protocol and ownership VM regressions
+        timeout-minutes: 2
+        run: |
+          node -e "require('node:fs').mkdirSync('.cache',{recursive:true})"
+          node --test --test-timeout=10000 --test-reporter=tap --test-reporter-destination=.cache/p1-ai-inline-vm.tap ui-tests/ai-inline-stream.test.cjs
+      - name: Retain strict inline completion VM TAP receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-inline-vm
+          if-no-files-found: ignore
+          path: .cache/p1-ai-inline-vm.tap
 
   integrations:
     name: VS Code and MCP quality
@@ -192,6 +387,8 @@ jobs:
         run: |
           cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
           npm test --prefix packages/vscode-extension
+      - name: Extension Host preparation rejects missing and stale compilation
+        run: node --test ui-tests/openapi-preflight.test.cjs tools/test/interop-diagnostics.test.cjs
       - name: Real MCP stdio and concurrency acceptance
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
@@ -219,6 +416,7 @@ jobs:
         run: |
           node --test website/tools/published-release.test.mjs website/tools/ai-pages.test.mjs website/tools/showcase-history.test.mjs
           npm run verify:release --prefix website
+          node website/tools/sync-version.mjs --check
           node website/tools/motion-smoke.cjs
           node website/tools/ai-smoke.cjs
       - name: Upload integration packages
@@ -232,12 +430,13 @@ jobs:
 
   ui:
     name: UI quality (Playwright)
+    timeout-minutes: 60
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -245,17 +444,215 @@ jobs:
           key: playwright-1.54-ubuntu-24.04
       - name: Prepare locked Rust dependencies
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Prepare reviewed native Node input and immutable offline pack
+        run: node tools/ci-prepare-node-runtime.mjs
       - name: Build headless kernel
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
       - name: Install Playwright
         working-directory: ui-tests
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium
       - name: Modal, task and layout checks
         working-directory: ui-tests
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
           READMD_PANEL_TEST_LOCALES: zh-CN,en,zh-TW,de,ar
           READMD_PANEL_TEST_THEMES: light,dark,sepia
-        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js document-intelligence.spec.js --project=desktop --project=mobile
+        run: npx --no-install playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js document-intelligence.spec.js formula-studio.spec.js --project=desktop --project=mobile
+      - name: P1 real code output in the production browser UI
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/code-output-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-output-browser
+      - name: P1 bounded SQL batch in the production browser UI
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/code-batch-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-batch-browser
+      - name: P1 completed code cannot invalidate a pending dirty-close choice
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/code-close-boundary-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-close-boundary
+      - name: P1 managed Node installation and document history in the production UI
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/node-runtime-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-managed-node-browser
+      - name: P1 real chat controls, partial replies and late conversation receipts
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/ai-chat-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-ai-chat-browser
+      - name: P1 complex local OpenAPI, conflicts, save and durable reopen
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/v007-openapi-baseline.cjs --bin rust/target/debug/readmd --evidence .cache/p1-openapi-baseline
+      - name: P1 single chrome, original document services and live locale preservation
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          mkdir -p .cache/p1-shell-browser
+          node ui-tests/shell-single-chrome-browser.cjs --case shell --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-browser/shell" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node ui-tests/shell-single-chrome-browser.cjs --case rtl --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-browser/rtl" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node -e "const a=require('node:assert/strict');for(const n of ['shell','rtl']){const r=require('./.cache/p1-shell-browser/'+n+'/report.json');a.equal(r.passed,true);a.equal(r.runtimeSourceUnchanged,true);a.equal(r.inferenceRequests.length,0);a.equal(r.pageErrors.length,0);a.equal(r.nativeUiCertified,false);a(r.checks.length>=5);a(r.checks.every(c=>c.passed));}"
+      - name: Close tabs while an identical external recovery body remains durable
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/review-close-external-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/review-close-external-browser"
+      - name: P1 compact shell retains every original action
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          node ui-tests/shell-compact-browser.cjs --source-test
+          node ui-tests/shell-compact-browser.cjs --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-compact-browser" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node - <<'JS'
+          const a=require('node:assert/strict'),r=require('./.cache/p1-shell-compact-browser/report.json');
+          a.equal(r.passed,true);a.equal(r.runtimeSourceUnchanged,true);a.equal(r.nativeUiCertified,false);
+          a.equal(r.scenario,'compact');a.equal(r.inferenceRequests.length,0);a.equal(r.pageErrors.length,0);
+          for(const width of [360,390,412,600,640,641,1024,1160])a(r.checks.some(c=>c.passed&&c.name.endsWith(' at '+width)));
+          a(r.checks.some(c=>c.passed&&c.name.includes('restores to the rail')));
+          JS
+      - name: P1 tab context menu keeps keyboard focus through review resume
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/tab-context-focus-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/p1-tab-context-focus"
+      - name: Retain tab context focus evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-tab-context-focus
+          path: .cache/p1-tab-context-focus/report.json
+      - name: P1 withdraw adjacent review items in the production editor
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/adjacent-review-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/p1-adjacent-review-browser"
+      - name: Retain adjacent review editor evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-adjacent-review-browser
+          path: .cache/p1-adjacent-review-browser/report.json
+      - name: P1 edit and sort Markdown tables through the production editor and reopen
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/table-row-move-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/p1-table-row-move"
+      - name: Retain table row movement evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-table-row-move
+          path: .cache/p1-table-row-move/report.json
+      - name: P1 document repair, pending review, saved bytes and explicit restart
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/reader-fix-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-reader-fix-browser
+      - name: P1 repair dialog geometry and real menu focus return
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          node ui-tests/fix-dialog-visual.cjs --bin rust/target/debug/readmd --evidence .cache/p1-fix-dialog-browser --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-fix-dialog-browser/report.json');a.equal(r.passed,true);a.equal(r.menuFocusReturnPassed,true);a.equal(r.visualScopePassed,true);a.equal(r.sourceUnchanged,true);a.equal(r.cases.length,5);a.equal(r.pageErrors.length,0);"
+      - name: Retain single chrome browser receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-shell-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-shell-browser/*/report.json
+      - name: Retain compact chrome browser receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-shell-compact-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-shell-compact-browser/report.json
+      - name: Retain document repair browser receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-reader-fix-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-reader-fix-browser/report.json
+            .cache/p1-reader-fix-browser/*.png
+      - name: Retain repair dialog and real focus receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-fix-dialog-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-fix-dialog-browser/report.json
+      - name: Retain OpenAPI baseline receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-openapi-baseline
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-openapi-baseline/report.json
+            .cache/p1-openapi-baseline/first-failure.png
+      - name: Retain chat browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-chat-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-ai-chat-browser/report.json
+            .cache/p1-ai-chat-browser/first-failure.png
+      - name: Retain managed Node browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-managed-node-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-managed-node-browser/report.json
+            .cache/p1-managed-node-browser/first-failure.png
+            .cache/p1-managed-node-browser/deadline.json
+      - name: Retain code close-boundary receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-close-boundary-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-code-close-boundary/report.json
+            .cache/p1-code-close-boundary/first-failure.png
+      - name: Retain code batch browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-batch-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-code-batch-browser/report.json
+            .cache/p1-code-batch-browser/first-failure.png
+            .cache/p1-code-batch-browser/deadline.json
+      - name: Retain code output browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-output-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-code-output-browser/report.json
+            .cache/p1-code-output-browser/first-failure.png
+            .cache/p1-code-output-browser/deadline.json
+
+      - name: P1 real inline completion, production CSP and authenticated browser lifecycle
+        timeout-minutes: 5
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          node tools/test/ai-inline-browser.cjs --bin rust/target/debug/readmd --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright/index.js" --evidence .cache/p1-ai-inline-browser
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-ai-inline-browser/report.json');a.equal(r.passed,true);a.equal(r.productionAuthAndCsp,true);a.equal(r.headless,true);a.equal(r.nativeUiCertified,false);a.equal(r.checks.length,7);a.equal(r.scratchAbsent,true);"
+      - name: Retain actual inline completion browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-inline-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-ai-inline-browser/report.json
+            .cache/p1-ai-inline-browser/first-failure.png

@@ -103,7 +103,8 @@ test('saving and reloading sparse and explicit zero presets retains regional lan
   for(const zero of [false,true]){const e=environment({options:{epub:{language:'en-US'},meta:{language:'en-GB'}}});e.apply();if(zero){e.input('marginV').value='0';e.input('marginH').value='0';}await e.save();assert.equal(e.saved.length,1);
     const stored=plain(e.saved[0].custom['Sparse numeric layout']),reopened=environment({options:stored});reopened.apply();assert.equal(reopened.input('language').value,'en-US');assert.equal(reopened.input('fontSize').value,'');assert.equal(reopened.input('lineHeight').value,'');
     if(zero){assert.equal(reopened.input('marginV').value,'0');assert.equal(reopened.collect().epub.marginH,0);}else sparse(reopened.collect().epub);
-    assert.deepEqual(stored,e.saved[0].last.options);assert.equal(e.context.state.original,source);
+    assert.equal(e.saved[0].last.fmt,'epub');
+    assert.deepEqual(stored,{...e.saved[0].last.options,presetFormat:'epub'});assert.equal(e.context.state.original,source);
   }
 });
 test('invalid EPUB values cannot be saved from an EPUB or another-format preset',async()=>{

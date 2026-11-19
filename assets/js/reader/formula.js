@@ -595,12 +595,12 @@ function renderMath(body) {
     }
   }
 
-  if (window.MathJax) {
-    if (typeof MathJax.typesetPromise === 'function') { try { doTypeset(); } catch (_) {} }
-    else if (mathReadyPromise) mathReadyPromise.then(doTypeset).catch(() => {});
-    return;
-  }
+  void ensureMathRenderer().then(doTypeset).catch(() => {});
+}
 
+function ensureMathRenderer() {
+  if (typeof window.MathJax?.typesetPromise === 'function') return Promise.resolve();
+  if (mathReadyPromise) return mathReadyPromise;
   window.MathJax = {
     // html is already used by the formula tools; load the pinned local
     // component before TeX configuration, rather than a missing lazy URL.
@@ -628,6 +628,6 @@ function renderMath(body) {
     s.onload = () => Promise.resolve(MathJax.startup?.promise).then(resolve, reject);
     s.onerror = () => reject(Error('Local math renderer unavailable'));
   });
-  mathReadyPromise.then(doTypeset).catch(() => {});
   document.head.appendChild(s);
+  return mathReadyPromise;
 }

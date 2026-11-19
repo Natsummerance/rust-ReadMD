@@ -575,8 +575,16 @@ pub fn reference_keys(format: &str, data: &str) -> ApiResult<std::collections::H
     Ok(reference_summaries(format,data)?.into_iter().map(|entry|entry.key).collect())
 }
 pub fn citations(request: &Request) -> ApiResult<Value> {
+    citations_with_nocite(request, &[])
+}
+
+/// Include bibliography-only items after the real citation stream. Hidden
+/// Hayagriva items participate in bibliography sorting and disambiguation, but
+/// cannot consume an authored note or change a later citation's first/ibid state.
+pub(crate) fn citations_with_nocite(request: &Request, nocite: &[String]) -> ApiResult<Value> {
     if request.data.len() > 2 * 1024 * 1024
         || request.clusters.len() > 10000
+        || nocite.len() > 5000
         || request.clusters.iter().any(|c| c.len() > 100)
         || request.locale.len() > 255
         || request.locale_xml.as_ref().is_some_and(|xml| xml.len() > 256 * 1024)
@@ -585,6 +593,9 @@ pub fn citations(request: &Request) -> ApiResult<Value> {
         || (!request.contexts.is_empty() && request.contexts.len() != request.clusters.len())
     {
         return Err(ApiError::new(413, "academic_budget"));
+    }
+    if nocite.iter().any(|key| key.is_empty() || key.len() > 1024) {
+        return Err(context_error("nocite"));
     }
     for (index, context) in request.contexts.iter().enumerate() {
         if context.note_number.is_some_and(|number| number == 0 || number > 10000) || (context.in_note && context.note_number.is_none()) {
@@ -655,6 +666,7 @@ pub fn citations(request: &Request) -> ApiResult<Value> {
         let mut driver=BibliographyDriver::new();
         let mut issued_notes=0usize;
         let mut slots=Vec::new();
+        let mut cited=std::collections::HashSet::new();
         for(index,cluster)in request.clusters.iter().enumerate(){
             let mut items=Vec::new();
             for(item_index,cite)in cluster.iter().enumerate(){
@@ -674,11 +686,24 @@ pub fn citations(request: &Request) -> ApiResult<Value> {
             // A partially resolved cluster is not a citation event. Feeding its
             // known subset to the driver would change later first/ibid state.
             if !complete {continue;}
+            cited.extend(cluster.iter().map(|cite|cite.key.as_str()));
             let prose_only=cluster.iter().all(|cite|cite.mode==CiteMode::AuthorOnly);
             let note=if let Some(context)=request.contexts.get(index){context.note_number}
                 else if prose_only||style.settings.class!=hayagriva::citationberg::StyleClass::Note{None}else{issued_notes+=1;Some(request.preceding_notes.get(index).copied().unwrap_or(0)+issued_notes)};
             driver.citation(CitationRequest::new(items,&style,locale.clone(),&locales,note).with_intext(intext.as_ref()));
             slots.push(index);
+        }
+        let mut hidden=Vec::new();
+        for (index,key) in nocite.iter().enumerate() {
+            if !cited.insert(key.as_str()) { continue; }
+            if let Some(entry)=entries.get(key) {
+                hidden.push(CitationItem::new(*entry,None,None,true,None));
+            } else {
+                diagnostics.push(json!({"code":"academic_missing_reference","key":key,"field":"nocite","nocite":index}));
+            }
+        }
+        if !hidden.is_empty() {
+            driver.citation(CitationRequest::new(hidden,&style,locale.clone(),&locales,None));
         }
         let rendered=driver.finish(BibliographyRequest{style:&style,locale:locale.clone(),locale_files:&locales});
         let mut citations=vec![json!({"text":"","html":"","markdown":"","rich":[],"layout":[],"inline_layout":[],"note_layout":[],"markdown_format_exact":true,"note_number":null,"complete":false});request.clusters.len()];

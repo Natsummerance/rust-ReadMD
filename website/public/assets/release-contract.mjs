@@ -140,7 +140,7 @@ export function updateReleaseHtml(html, r, { download = false, historical = fals
       .replace(/可攜免安裝版 \(\.exe\)/g, '可攜免安裝版 (.zip)')
       .replace(/(Portable[^<\n]*?)\(\.exe\)/gi, '$1(.zip)')
       .replace(/(ポータブル[^<\n]*?)\(\.exe\)/g, '$1(.zip)')
-      .replace(/<code>(?:ReadMD --mcp|readmd-mcp-server\.zip)<\/code>/g, `<code>readmd-mcp-server-${r.version}.zip</code>`);
+      .replace(/<code>(?:ReadMD --mcp|readmd-mcp-server(?:-\d+\.\d+\.\d+)?\.zip)<\/code>/g, `<code>readmd-mcp-server-${r.version}.zip</code>`);
   }
   if (!html.includes('src="/assets/release.js"'))
     html = html.replace('</body>', '<script type="module" src="/assets/release.js"></script></body>');

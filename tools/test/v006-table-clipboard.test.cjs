@@ -194,3 +194,14 @@ test('image clipboard takes precedence over table budgets and stale async images
     assert.equal(f.text(), 'Image target');
   }
 });
+
+test('image target retains its original range and expires after an intervening editing generation', () => {
+  const f = host({source: 'left right', selection: {anchor: 0, head: 4}});
+  const target = f.context.imageEditTarget();
+  f.setSelection(10);
+  assert.equal(target.current(), true);
+  assert.deepEqual([target.from, target.to], [0, 4]);
+  f.tab.editGeneration = (f.tab.editGeneration || 0) + 2;
+  assert.equal(target.current(), false);
+  assert.equal(f.text(), 'left right');
+});

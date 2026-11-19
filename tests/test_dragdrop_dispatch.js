@@ -1,6 +1,6 @@
 // tests/test_dragdrop_dispatch.js — Node 内置测试，无第三方依赖
 // handleDroppedEntries 按条目类型分派：带 path 的文本走原路径打开（可写回），
-// 不带 path 的走上传；文档走转换；ZIP 走解压；文件夹打开文件树。
+// 不带 path 的走上传；Office/PDF 阅读原排版；ZIP 走解压；文件夹打开文件树。
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -19,6 +19,7 @@ function load() {
     showToast: () => {},
     uploadFile: async f => { calls.push(['upload', f.name]); return 'C:/uploads/' + f.name; },
     loadFile: async (p, o) => { calls.push(['load', p, !!(o && o.browserCopy)]); },
+    openDocumentPath: async (p, o) => { calls.push(['open', p, !!(o && o.browserCopy)]); },
     convertOrOcr: (p, m) => { calls.push(['convert', p, m]); },
     enqueueBatchFiles: (ps, conv) => { calls.push(['batch', ps.slice(), conv]); },
     listFolder: async d => { calls.push(['folder', d]); },
@@ -31,18 +32,24 @@ function load() {
   return context;
 }
 
-test('native paths open in place, documents convert, zip extracts, folders list', async () => {
+test('native paths open in place, Office/PDF preview, zip extracts, folders list', async () => {
   const c = load();
   await c.handleDroppedEntries([
     { name: 'notes.md', path: 'D:/docs/notes.md' },
     { name: 'report.docx', path: 'D:/docs/report.docx' },
+    { name: 'slides.pptx', path: 'D:/docs/slides.pptx' },
+    { name: 'source.pdf', path: 'D:/docs/source.pdf' },
+    { name: 'legacy.doc', path: 'D:/docs/legacy.doc' },
     { name: 'bundle.zip', path: 'D:/docs/bundle.zip' },
     { name: 'docs', path: 'D:/docs', isDir: true },
   ]);
   const calls = JSON.parse(JSON.stringify(c.calls));
   assert.deepEqual(calls.find(x => x[0] === 'folder'), ['folder', 'D:/docs']);
   assert.deepEqual(calls.find(x => x[0] === 'load'), ['load', 'D:/docs/notes.md', false]);
-  assert.deepEqual(calls.find(x => x[0] === 'convert'), ['convert', 'D:/docs/report.docx', 'convert']);
+  assert.deepEqual(calls.filter(x => x[0] === 'open'), [
+    ['open', 'D:/docs/source.pdf', false], ['open', 'D:/docs/report.docx', false], ['open', 'D:/docs/slides.pptx', false]
+  ]);
+  assert.deepEqual(calls.find(x => x[0] === 'convert'), ['convert', 'D:/docs/legacy.doc', 'convert']);
   assert.deepEqual(calls.find(x => x[0] === 'api'), ['api', '/api/batch/extract-zip', 'application/json']);
   assert.deepEqual(calls.find(x => x[0] === 'batch'), ['batch', ['C:/x/a.md'], false]);
   assert.ok(!calls.some(x => x[0] === 'upload'), 'paths are never re-uploaded');
@@ -54,11 +61,17 @@ test('browser drops without a path upload a copy', async () => {
     { name: 'a.md', path: '', file: { name: 'a.md' } },
     { name: 'b.pdf', path: '', file: { name: 'b.pdf' } },
     { name: 'c.pdf', path: '', file: { name: 'c.pdf' } },
+    { name: '原稿.docx', path: '', file: { name: '原稿.docx' } },
+    { name: '演示.pptx', path: '', file: { name: '演示.pptx' } },
   ]);
   const calls = JSON.parse(JSON.stringify(c.calls));
-  assert.deepEqual(calls.filter(x => x[0] === 'upload').map(x => x[1]), ['a.md', 'b.pdf', 'c.pdf']);
+  assert.deepEqual(calls.filter(x => x[0] === 'upload').map(x => x[1]), ['a.md', 'b.pdf', 'c.pdf', '原稿.docx', '演示.pptx']);
   assert.deepEqual(calls.find(x => x[0] === 'load'), ['load', 'C:/uploads/a.md', true]);
-  assert.deepEqual(calls.find(x => x[0] === 'batch'), ['batch', ['C:/uploads/b.pdf', 'C:/uploads/c.pdf'], false]);
+  assert.deepEqual(calls.filter(x => x[0] === 'open'), [
+    ['open', 'C:/uploads/b.pdf', true], ['open', 'C:/uploads/c.pdf', true],
+    ['open', 'C:/uploads/原稿.docx', true], ['open', 'C:/uploads/演示.pptx', true],
+  ]);
+  assert.ok(!calls.some(x => x[0] === 'batch' || x[0] === 'convert'));
 });
 
 test('the native bridge forwards drops with their real paths', async () => {

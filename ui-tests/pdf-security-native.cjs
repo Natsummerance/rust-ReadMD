@@ -22,6 +22,41 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
   phase='annotation and page operations';s=(await api({action:'open',path:locked})).data;const note=s.annotations.find(a=>a.text==='After unlock');assert.ok(note);response=await api({action:'edit',session:s.session,revision:s.revision,operation:{kind:'annotation',page:0,annotation:note.id,text:'Reviewed again'}});assert.equal(response.status,200);s=response.data;assert.ok(s.annotations.some(a=>a.text==='Reviewed again'));
   s=(await api({action:'edit',session:s.session,revision:s.revision,operation:{kind:'remove_annotation',page:0,annotation:note.id}})).data;assert.ok(!s.annotations.some(a=>a.text==='Reviewed again'));s=(await api({action:'undo',session:s.session,revision:s.revision})).data;assert.ok(s.annotations.some(a=>a.text==='Reviewed again'));
   s=(await api({action:'edit',session:s.session,revision:s.revision,operation:{kind:'rotate',page:0,turns:1}})).data;assert.equal(s.rotation,1);assert.ok(s.width>s.height);s=(await api({action:'edit',session:s.session,revision:s.revision,operation:{kind:'delete_page',page:1}})).data;assert.equal(s.pages,1);response=await api({action:'edit',session:s.session,revision:s.revision,operation:{kind:'delete_page',page:0}});assert.equal(response.status,422);assert.equal(response.data.error_code,'pdf_last_page');await api({action:'close',session:s.session,discard:true});checks.push({name:'native note editing/removal/undo, rotation and page deletion; final page cannot be removed',passed:true});
+  phase='page insertion and reordering';
+  const assembled=path.join(data,'Assembly.pdf');fs.copyFileSync(locked,assembled);
+  s=(await api({action:'open',path:assembled})).data;
+  async function modify(action, extra={}) {
+    const reply=await api({action,session:s.session,revision:s.revision,...extra});
+    assert.equal(reply.status,200,reply.data.error_code);s=reply.data;
+  }
+  await modify('edit',{page:1,operation:{kind:'insert_page',page:0}});
+  assert.equal(s.pages,3);assert.equal(s.objects.length,0);
+  await modify('edit',{page:2,operation:{kind:'move_page',page:0,to:2}});
+  assert(s.annotations.some(a=>a.text==='After unlock'));
+  await modify('undo',{page:0});assert(s.annotations.some(a=>a.text==='After unlock'));
+  await modify('redo',{page:2});assert(s.annotations.some(a=>a.text==='After unlock'));
+  assert.equal((await api({action:'save',session:s.session,revision:s.revision})).status,200);
+  await api({action:'close',session:s.session});
+  s=(await api({action:'open',path:assembled,page:2})).data;
+  if(s.page!==2)await modify('render',{page:2});
+  assert.equal(s.pages,3);assert(s.annotations.some(a=>a.text==='After unlock'));
+  await api({action:'close',session:s.session});
+  checks.push({name:'editable blank page and reordered original keep annotations through undo, redo, save and reopen',passed:true});
+  phase='protected text fields';
+  for(const flags of [1 << 13, 1 << 20, 1 << 25]){
+    for(const inherited of [false,true]){
+      const file=path.join(data,`Field-${flags}-${inherited}.pdf`), bytes=fixture({fieldFlags:flags,inherited});
+      fs.writeFileSync(file,bytes);
+      const opened=await api({action:'open',path:file});assert.equal(opened.status,200);
+      const current=opened.data, field=current.annotations.find(a=>a.name==='reviewer');
+      assert(field?.readonly);assert.equal(field.kind,'unsupported_field');assert(!Object.hasOwn(field,'text'));
+      const denied=await api({action:'edit',session:current.session,revision:current.revision,operation:{kind:'field',page:0,annotation:field.id,text:'unwritten'}});
+      assert.equal(denied.data.error_code,'pdf_unsupported_object');
+      await api({action:'close',session:current.session,revision:current.revision});
+      assert.deepEqual(fs.readFileSync(file),bytes);
+    }
+  }
+  checks.push({name:'protected text widgets omit values and reject edits for direct and inherited field flags',passed:true});
   phase='in-flight cancellation';s=(await api({action:'open',path:locked})).data;const taskId=crypto.randomUUID();
   await native.page.evaluate(({session,revision,taskId})=>{window.__pdfCancelled=null;apiFetch('/api/pdf/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'edit',session,revision,task_id:taskId,width:2400,operation:{kind:'note',page:0,x:40,y:700,text:'Must not commit'}})}).then(async r=>window.__pdfCancelled={status:r.status,data:await r.json()});},{session:s.session,revision:s.revision,taskId});
   let cancellation;const deadline=Date.now()+2000;do{cancellation=await native.page.evaluate(async id=>{const r=await apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});return r.json();},taskId);if(cancellation.state==='cancelling')break;await delay(2);}while(Date.now()<deadline);

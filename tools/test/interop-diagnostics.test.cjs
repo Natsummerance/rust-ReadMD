@@ -100,7 +100,13 @@ test('VS Code plan checks real repository layout without importing the graphical
     launcher = require(launcherFile);
     const plan = launcher.buildLaunchPlan({ environment: { READMD_BIN: process.execPath, READMD_VSCODE_BIN: process.execPath } });
     assert.equal(launcher.ROOT, ROOT);
-    assert.equal(plan.ready, true);
+    // Real source paths do not imply a prepared Extension Host artifact.
+    // The dedicated preflight suite covers fresh and stale compilation.
+    assert.equal(plan.ready, plan.build.ready);
+    if (!fs.existsSync(path.join(ROOT, 'packages/vscode-extension/out/extension.js'))) {
+      assert.equal(plan.ready, false);
+      assert.equal(plan.build.reason, 'extension_entrypoint_missing');
+    }
     assert.ok(plan.checks.every(check => check.exists));
     assert.ok(plan.args.includes('--extensionDevelopmentPath=' + path.join(ROOT, 'packages/vscode-extension')));
     assert.ok(plan.args.includes('--extensionTestsPath=' + path.join(ROOT, 'ui-tests/vscode-openapi-native.cjs')));

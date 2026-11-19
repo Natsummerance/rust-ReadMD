@@ -6,7 +6,7 @@
 !include "LogicLib.nsh"
 !include "installer\capability-components.nsh"
 !ifndef APP_VERSION
-  !define APP_VERSION "0.0.5"
+  !define APP_VERSION "0.0.7"
 !endif
 
 Name "ReadMD"
@@ -35,8 +35,13 @@ RequestExecutionLevel user
 
 LangString CoreName ${LANG_SIMPCHINESE} "ReadMD（必需；已含 Markdown、Word、电子书、基础 PDF 与图表能力）"
 LangString CoreName ${LANG_ENGLISH} "ReadMD (required; Markdown, Word, EPUB, basic PDF and charts included)"
+!ifdef BUNDLED_PDFIUM_INSTALLED_KIB
+LangString PdfName ${LANG_SIMPCHINESE} "PDF 原位编辑（已随附，可离线安装）"
+LangString PdfName ${LANG_ENGLISH} "PDF object editing (included for offline installation)"
+!else
 LangString PdfName ${LANG_SIMPCHINESE} "PDF 原位编辑（下载 ${PDF_PACK_DOWNLOAD_MIB} MiB；安装后 ${PDF_PACK_INSTALLED_MIB} MiB）"
 LangString PdfName ${LANG_ENGLISH} "PDF object editing (${PDF_PACK_DOWNLOAD_MIB} MiB download; ${PDF_PACK_INSTALLED_MIB} MiB installed)"
+!endif
 LangString TypstName ${LANG_SIMPCHINESE} "学术 PDF 排版（下载 ${TYPST_PACK_DOWNLOAD_MIB} MiB；安装后 ${TYPST_PACK_INSTALLED_MIB} MiB）"
 LangString TypstName ${LANG_ENGLISH} "Academic PDF typesetting (${TYPST_PACK_DOWNLOAD_MIB} MiB download; ${TYPST_PACK_INSTALLED_MIB} MiB installed)"
 LangString OcrName ${LANG_SIMPCHINESE} "离线中英文识别（下载 ${OCR_PACK_DOWNLOAD_MIB} MiB；安装后 ${OCR_PACK_INSTALLED_MIB} MiB）"
@@ -47,8 +52,13 @@ LangString FontsDescription ${LANG_SIMPCHINESE} "选装。PDF 使用的黑体、
 LangString FontsDescription ${LANG_ENGLISH} "Optional. Private regular/bold sans and serif fonts for PDF. Math font is already included in the core. No Office or system Chinese font installation."
 LangString OcrDescription ${LANG_SIMPCHINESE} "推荐，可取消选择。自带简中、繁中、英文模型，无需 Office、Python 或系统识别语言包。扫描 PDF 另外使用 PDF 原位编辑引擎。"
 LangString OcrDescription ${LANG_ENGLISH} "Recommended; may be deselected. Includes Simplified/Traditional Chinese and English models. No Office, Python or OS OCR languages required. Scanned PDFs also use the PDF object engine."
+!ifdef BUNDLED_PDFIUM_INSTALLED_KIB
+LangString PdfDescription ${LANG_SIMPCHINESE} "选装。编辑 PDF 文字、图片、批注与页面。不需要 Acrobat。使用已随附的能力包，无需联网；以后也能在功能入口安装。"
+LangString PdfDescription ${LANG_ENGLISH} "Optional. Edit PDF text, images, annotations and pages without Acrobat. Install offline from the included pack, or install later at the feature entry."
+!else
 LangString PdfDescription ${LANG_SIMPCHINESE} "选装。编辑 PDF 文字、图片、批注与页面。不需要 Acrobat。安装时联网下载经校验的 ReadMD 能力包；以后也能在功能入口安装或离线导入。"
 LangString PdfDescription ${LANG_ENGLISH} "Optional. Edit PDF text, images, annotations and pages without Acrobat. Downloads a verified ReadMD capability pack; also available later at the feature entry or by offline import."
+!endif
 LangString TypstDescription ${LANG_SIMPCHINESE} "选装。真实分页、论文双栏、矢量公式与科研图表。不需要 Office 或预装 Typst。安装时下载锁定的独立运行包。"
 LangString TypstDescription ${LANG_ENGLISH} "Optional. True pagination, two-column papers, vector math and research figures. No Office or system Typst required. Downloads a pinned standalone runtime."
 LangString PackFailure ${LANG_SIMPCHINESE} "能力包安装未完成，基础软件仍可使用。可稍后在功能入口重试，或导入离线能力包。"
@@ -107,7 +117,11 @@ Section "$(OcrName)" SEC_OCR
   ${EndIf}
 SectionEnd
 Section /o "$(PdfName)" SEC_PDF
+  !ifdef BUNDLED_PDFIUM_INSTALLED_KIB
+  AddSize ${BUNDLED_PDFIUM_INSTALLED_KIB}
+  !else
   AddSize ${PDF_PACK_INSTALLED_KIB}
+  !endif
   nsExec::ExecToStack '"$INSTDIR\ReadMD.exe" --install-capability pdfium --assets "$INSTDIR\assets"'
   Pop $0
   Pop $1

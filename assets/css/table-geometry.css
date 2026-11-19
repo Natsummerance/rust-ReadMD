@@ -1,0 +1,35 @@
+/* Authored cell choices outrank reader/preset defaults, including late-loaded
+   reader styles, without changing other tables or the editor resize handles. */
+table.readmd-table-geometry :is(th, td)[align="left"],
+:is(.rd-article, .readmd-layout-article) table.readmd-table-geometry :is(th, td)[align="left"],
+#ai-panel #ai-output .ai-msg-body table.readmd-table-geometry :is(th, td)[align="left"] { text-align: left; }
+table.readmd-table-geometry :is(th, td)[align="center"],
+:is(.rd-article, .readmd-layout-article) table.readmd-table-geometry :is(th, td)[align="center"],
+#ai-panel #ai-output .ai-msg-body table.readmd-table-geometry :is(th, td)[align="center"] { text-align: center; }
+table.readmd-table-geometry :is(th, td)[align="right"],
+:is(.rd-article, .readmd-layout-article) table.readmd-table-geometry :is(th, td)[align="right"],
+#ai-panel #ai-output .ai-msg-body table.readmd-table-geometry :is(th, td)[align="right"] { text-align: right; }
+table.readmd-table-geometry :is(th, td)[valign="top"],
+:is(.rd-article, .readmd-layout-article) table.readmd-table-geometry :is(th, td)[valign="top"],
+#ai-panel #ai-output .ai-msg-body table.readmd-table-geometry :is(th, td)[valign="top"] { vertical-align: top; }
+table.readmd-table-geometry :is(th, td)[valign="middle"],
+:is(.rd-article, .readmd-layout-article) table.readmd-table-geometry :is(th, td)[valign="middle"],
+#ai-panel #ai-output .ai-msg-body table.readmd-table-geometry :is(th, td)[valign="middle"] { vertical-align: middle; }
+table.readmd-table-geometry :is(th, td)[valign="bottom"],
+:is(.rd-article, .readmd-layout-article) table.readmd-table-geometry :is(th, td)[valign="bottom"],
+#ai-panel #ai-output .ai-msg-body table.readmd-table-geometry :is(th, td)[valign="bottom"] { vertical-align: bottom; }
+
+.readmd-table-geometry--columns,
+.rd-article .rd-table-wrap .readmd-table-geometry--columns {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+}
+.readmd-table-geometry--columns :is(th, td),
+.rd-article .rd-table-wrap table.readmd-table-geometry--columns :is(th, td) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.rd-article .rd-table-wrap table.readmd-table-geometry--columns :is(th, td) {
+  padding-inline: min(var(--space-4), .5rem);
+}

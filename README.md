@@ -13,143 +13,81 @@
 
  **Rust 原生内核的跨平台 Markdown 阅读器与编辑器**
 
- 长文档语义分页 · 显示层非破坏纠错 · Office/PDF/网页转 MD · 离线 OCR · LaTeX 学术增强 · MCP 接入 · 零 Python 依赖
+ 长文档语义分页 · 非破坏显示修复 · Office/PDF 原版阅读与提取 · 表格编辑与出版 · AI 审阅 · VS Code / MCP
 
- 官网地址：[https://rust.readmd.asia](https://rust.readmd.asia) ｜ 赞助支持（爱发电）：[https://ifdian.net/a/natsummerance](https://ifdian.net/a/natsummerance)
+ [官网](https://rust.readmd.asia) ｜ [V0.0.7 发布说明](release/release_notes.md) ｜ [赞助支持](https://ifdian.net/a/natsummerance)
 
-> [!IMPORTANT]
-> **Rust 原生架构版（`rust-ReadMD`）**：阅读、编辑、保存及格式适配由 Rust 内核管理，运行软件不需要 Python 或 Office。桌面界面使用系统 WebView；重型排版、OCR 等能力采用独立、可离线导入的受管理能力包。Windows 为当前主要实测平台；其他平台的构建产物与完整原生验收分别记录，见 `release/platform-matrix.json`。
-
- [![platform](https://img.shields.io/badge/Windows%2010%2F11%20%7C%20macOS%2013%2B%20%7C%20Linux%20%7C%20UOS%20%7C%20Kylin-blue)](#正式下载矩阵-release-assets)
- [![i18n](https://img.shields.io/badge/languages-46-orange)](#46-种语言与本地化)
+ [![platform](https://img.shields.io/badge/Windows%2010%2F11%20%7C%20macOS%2013%2B%20%7C%20Linux-blue)](#下载与安装)
+ [![i18n](https://img.shields.io/badge/languages-46-orange)](docs/i18n-language-reference.md)
  [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
  [![release](https://img.shields.io/github/v/release/Natsummerance/rust-ReadMD)](https://github.com/Natsummerance/rust-ReadMD/releases/latest)
- [![website](https://img.shields.io/badge/site-rust.readmd.asia-black)](https://rust.readmd.asia)
 </div>
+
+ReadMD 把阅读、编辑、格式转换与出版放在同一个本地工作流中。Rust 内核管理正文和保存，桌面界面使用系统 WebView，运行应用无需安装 Python 或 Microsoft Office。较大的排版、OCR、字体与媒体能力按平台通过受管理能力包提供，支持离线导入。
 
 ## 30 秒判断它适不适合你
 
 | 你的情况 | ReadMD 的做法 |
 | --- | --- |
-| 文件超过 8,000 行或 500KB | 自动启用语义分页；目录和 Ctrl+F 跨页联动 |
-| 表格缺分隔线或公式未闭合 | 渲染前在内存修正；原文件仍保持不变 |
-| 手里有 DOCX / PPTX / XLSX / PDF / HTML | 一键转入 Markdown，减少手工搬运 |
-| 需要提取扫描件文字 | 在有对应 OCR 能力包的平台离线识别，能力包按需安装 |
-| 写论文或技术文档 | BibTeX 引用卡片、定理/证明盒子与 LaTeX 导出 |
-| 想要桌面伴读或角色互动 | CC0 Arch-Chan Live2D 与 73 款微呼吸精灵图，全端台词同步 |
-| 需要编辑 PDF | 在支持的平台安装 PDFium 能力包，编辑后保存为 PDF；支持范围见能力状态 |
-| 想接入 AI 编程助手 | 提供 VS Code 扩展和 Rust stdio MCP Server |
-| 希望使用自己的界面语言 | 提供 46 种界面语言，持续校验词条、占位符及长文本布局 |
+| 文件超过约 8,000 行或 500 KB | 自动启用语义分页，目录与全文搜索跨页联动 |
+| 表格缺分隔线或公式未闭合 | 在内存中修复显示；只有明确编辑保存才改写源文件 |
+| 需要先看 PDF、DOCX 或 PPTX | 先阅读页面，再按需提取 Markdown；办公文档原排版视图为只读 |
+| 需要整理复杂表格 | 合并／拆分单元格、调整行列尺寸、复制粘贴合并区域，并撤销修改 |
+| 写论文、书籍或技术资料 | 使用引用、公式、定理块和出版预设，导出 PDF、DOCX、EPUB、HTML、TeX、PPTX |
+| 希望 AI 帮忙修改 | 显式选择连接和模型，逐块审阅修改，保留草稿与恢复记录 |
+| 在编辑器或 AI 客户端中工作 | 使用配套 VS Code 扩展和 Rust stdio MCP 入口 |
 
-## 直接下载
+## V0.0.7 更新
 
-[Windows 安装包](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) ·
-[Windows 便携版](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) ·
-[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) ·
-[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) ·
-[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) ·
-[UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) ·
-[VS Code 扩展](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/readmd-vscode-0.0.6.vsix) ·
-[MCP 配置包](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/readmd-mcp-server-0.0.6.zip) ·
-[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt)
+- **先阅读，再提取**：PDF 默认进入原版页面阅读；DOCX／PPTX 增加只读原排版阅读。提取时报告格式损失，保护源文件和已有同名 Markdown。
+- **表格与出版**：增加矩形合并、拆分、单元格属性、行列尺寸和合并区域粘贴；PDF／DOCX／PPTX 输出保留各自支持的表格布局。
+- **保存与恢复**：改进连续关闭标签、编码确认、图片与历史跨目录另存、待审修改撤回、批量转换回执及媒体任务续作。
+- **共享审阅与绘图**：冲突建议可对照原文、当前内容和建议手动合并；绘图保存为 SVG，支持重开、撤销和恢复。
+- **开发者与 AI**：多文件 OpenAPI 本地引用与更新复用同一生成服务；过期源文件会使旧预览失效。聊天取消、失败与隐私模式遵循统一的历史保存边界。
 
-V0.0.6 热修复（2026-11-05）已同步更新全部安装与集成包；已有同版本用户可重新下载后覆盖安装。[真实验证、安装及平台边界](docs/reviews/readmd-v006-session-refresh-published-2026-11-05.md)。
+详见[本版说明](release/release_notes.md)；[历次更新](RELEASE_NOTES.md)保留旧版记录。
 
-## 三步开始
+## 下载与安装
 
-1. 按系统下载安装包，或选择免安装便携版。
-2. 打开一个真实的大文件；先检查目录、搜索和表格渲染。
-3. 需要修改时再编辑保存；自动修复不会在你不知情时改写源文件。
+桌面包、扩展和 MCP 配置包统一为 **V0.0.7**。[全部资产与 SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7)。
 
-## AI 助手引用入口
+| 平台 | 下载 | 安装说明 |
+| --- | --- | --- |
+| Windows 10/11 x64 | [安装版](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMDSetup-windows-x64.exe) · [便携 ZIP](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-windows-x64.zip) | 便携版须完整解压并保留 assets 和运行库，再运行 `ReadMD.exe`；需要 WebView2 |
+| macOS 13+ · Apple Silicon | [DMG](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-arm64.dmg) · [ZIP](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-arm64.zip) | 把 `ReadMD.app` 移入“应用程序”；见 [Mac 安装说明](release/macos-install.md) |
+| macOS 13+ · Intel | [DMG](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-x64.dmg) · [ZIP](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-macos-x64.zip) | 选择 x64 包，使用系统 WebKit |
+| Linux x86_64 | [DEB](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-linux-x86_64.deb) · [tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/ReadMD-linux-x86_64.tar.gz) | 需要 GTK3、WebKitGTK 4.1 等系统运行库；DEB 声明所需依赖 |
+| VS Code／兼容编辑器 | [readmd-vscode-0.0.7.vsix](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/readmd-vscode-0.0.7.vsix) | 安装桌面端后，从扩展菜单选择“从 VSIX 安装”；见[扩展说明](packages/vscode-extension/README.md) |
+| MCP 客户端 | [readmd-mcp-server-0.0.7.zip](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/readmd-mcp-server-0.0.7.zip) | 文档与连接模板；内核使用已安装桌面程序的 `--mcp` 入口 |
 
-- [简明产品索引](https://rust.readmd.asia/llms.txt)：版本、平台、隐私边界和关键事实。
-- [完整引用语料](https://rust.readmd.asia/llms-full.txt)：长文档分页、非破坏修正、转换范围和常见问题的直接答案。
+下载后可用 [SHA256SUMS.txt](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/SHA256SUMS.txt) 核对文件。替换旧版前先退出应用，个人文档无需移动。
 
-## 为什么值得 Star
+Mac 包采用**免费 ad hoc 签名，未使用 Developer ID，未作 Apple 公证**。首次打开可能被 Gatekeeper 拦截；按[安装说明](release/macos-install.md)在“系统设置 → 隐私与安全性”中仅允许 ReadMD 打开。
 
-ReadMD 解决的是长期资料库里的实际问题：大文件能继续读，导入稿不用重排，敏感内容可以留在本机，原文始终保留最终决定权。如果你在 Windows、macOS、Linux 或信创环境之间切换，它提供一致的工作流。
+本版发布目标为 Windows x64、Linux x64、macOS ARM64／Intel，并提供 VSIX 和 MCP 配置包。UOS、银河麒麟、Deepin 等系统的兼容性取决于系统运行库与对应实机记录。Windows／Linux ARM64、AppImage、HarmonyOS／OpenHarmony 不在本版下载资产内。
 
-如果它帮你省下一次整理时间，请 [点 Star](https://github.com/Natsummerance/rust-ReadMD)，让更多写作者找到这个项目。
+## 原版阅读与可选能力
 
-## 候选下载矩阵 (Preview Release Assets)
+桌面分发包包含匹配平台的 Office 阅读运行时及离线 PDFium 包。应用按需准备这些资源，功能状态会区分安装、探测和实际操作。Office 原排版视图使用随包排版引擎，复杂文档的显示可能与 Word／PowerPoint 有差异；提取为 Markdown 会明确报告不能保留的内容。
 
-下载资产不代表所有平台均已完成原生验收；实际支持范围与证据见 `release/platform-matrix.json`。Windows 7/8、HarmonyOS/OpenHarmony 与未发布架构不在 V0.0.5 发布范围。
+OCR、Typst、出版字体、代码运行时和音视频转写按实际平台目录提供。扫描 PDF 需要 OCR 与 PDFium；转写需要匹配平台的 FFmpeg、Whisper 引擎和模型。**FFmpeg／Whisper 独立离线包不包含在上表的桌面和集成资产中**。本轮媒体包实测范围为 macOS ARM64，其他平台以实际可获得的包和能力状态为准。
 
-| 操作系统 / 平台 | 架构 / 格式 | 直接下载链接 (GitHub Release) | 说明 |
-| :--- | :--- | :--- | :--- |
-| **Windows** | x64 (安装版) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) | Windows x64 安装包；默认打开方式由系统设置选择 |
-| **Windows** | x64 (绿色便携版) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) | 完整解压 ZIP，保留 assets 与运行库，再运行 ReadMD.exe |
-| **macOS** | Apple Silicon (M系列) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) | Apple Silicon Mac 应用包；原生验收状态见平台矩阵 |
-| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) | Intel Mac 应用包；原生验收状态见平台矩阵 |
-| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) | 解压后运行 ReadMD；需要系统 GTK / WebKitGTK |
-| **国产信创系统** | 统信 UOS / 银河麒麟 / Deepin / Ubuntu | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) | Deb 原生安装包；需以对应系统的实机验收记录为准 |
-| **SHA-256 校验** | 完整性清单 | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt) | 全量资产 SHA-256 哈希校验清单 |
+PDF 默认以阅读模式打开；选择“编辑原 PDF”后进入支持的编辑操作，保存前保留恢复与源文件冲突保护。PDF 表单、签名、权限及复杂 Office 往返按具体格式的支持范围处理。PPTX 公式保留为图片并在备注保留源码。
 
-Windows ZIP 必须完整解压并保留目录结构。桌面启动需要 Windows WebView2、macOS 系统 WebKit 或 Linux GTK / WebKitGTK。OCR、PDFium、Typst 和出版字体为可选能力包，不包含在基础安装包或 ZIP 中；当前引擎包仅 Windows x64 已准备并实测，其他平台以实际包目录为准。Linux ARM64 / 麒麟 ARM64 当前仅有构建脚本，尚未发布原生安装包。
+## 本地工作流与 AI
 
----
+- 阅读、编辑与本地转换在本机进行；网页提取、AI、邮件等联网操作需要用户主动调用并配置服务。
+- AI 结果可逐块审阅；失败、取消和隐私聊天不写入部分聊天历史。保存正文、同意修改和任务完成分别显示状态。
+- 分享支持局域网阅读、编辑和建议审阅；共享内容在本地明确保存后才写入文档。
+- 可使用 BibTeX 卡片、学术块、公式编辑、离线 HTML 演讲与桌面伴读宠物。桌宠全局键鼠监听以 Windows 支持范围为准。
+- 提供 46 种界面语言；键与占位符有自动检查，部分新增工作流提示仍使用英文。
 
-## 多系统与信创国产适配
+## VS Code 与 MCP
 
-### 1. Linux 与国产操作系统适配（统信 UOS / 银河麒麟 / 深度）
-- **直接安装使用**：下载 [`ReadMD-linux-x86_64.deb`](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) 安装，或解压 [`ReadMD-linux-x86_64.tar.gz`](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) 后运行 `ReadMD`。ARM64 构建脚本位于 [`scripts/linux`](scripts/linux)，不代表已发布安装包。
-- **飞腾安全回退**：自动识别 Phytium D2000/E2000/FT 系列；WebKitGTK 启动时优先选择 UKUI/X11、禁用 DMABUF 合成并回退 llvmpipe，避免旧 GPU 驱动白屏或崩溃。
-- **系统与环境识别**：100% 纯原生 Rust 内核（`native_system`）自动识别系统发行版，自适应配置 Wayland / X11 显示后端。
-- **桌面与深色模式**：自动侦测 DDE（统信/Deepin）、UKUI（银河麒麟）与 GNOME/KDE 的外观主题，实时同步深色/浅色配色。
-- **桌面集成与关联**：包含 FreeDesktop 桌面入口与 MIME 类型声明，默认打开方式由系统设置选择。
-- **支持边界**：本版本不宣称 openEuler、玲珑或其他未列出的发行版具备完整原生支持。
+安装 [VSIX](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.7/readmd-vscode-0.0.7.vsix) 后，使用命令面板中的 ReadMD 命令进行预览、修复、转换、导出、工作区检索和 OpenAPI 文档更新。需要时将 `readmd.executablePath` 设为桌面可执行文件的绝对路径。行内 AI 补全默认关闭，可在受信任工作区中选择启用。详见[扩展文档](packages/vscode-extension/README.md)。
 
-### 2. Windows & macOS 平台特性
-- **Windows**：使用 WebView2 窗口及系统托盘；OCR 引擎通过可选能力包安装。
-- **macOS**：使用系统 WebKit 窗口；应用构建与功能原生验收分别记录。
+MCP 与桌面共用 Rust 内核，不需要 Python。把以下 `command` 替换为实际可执行文件的绝对路径：
 
----
-
-## 桌面伴读宠物系统 (Live2D & 73 款微呼吸精灵图)
-
-- **CC0 Arch-Chan Live2D**：高精 Live2D 骨骼动画，随阅读进度与时段动态互动，支持平滑拖动、鼠标穿透和高灵敏点击命中。
-- **73 款 Petdex 精灵图自适应与活态微呼吸**：内置几何自动推断算法，零延迟智能适配高密序列帧与单立绘小图，彻底杜绝撕裂错位；脚底锚点正弦微呼吸浮动赋予生动生命感。
-- **伴读伴侣生活状态引擎**：等级、体力、心情、亲密度成长系统，支持摸摸头、喂食、玩耍、休息、唤醒等互动。
-- **全端气泡联动**：桌面悬浮窗、应用内桌宠小部件、设置面板舞台三端实时同步对话台词，Electron 托盘右键菜单无缝下发。
-- **高定苹果风原生滑块 (/apple-design)**：采用 Apple HIG 4px 极简精致轨道与 18px 实体物理质感悬浮圆钮，Active 触觉光晕与等宽数字药丸读数。
-
----
-
-## 原生高保真矢量 PDF 编辑器
-
-- **结构与微观审计**：自动审计 PDF 几何尺寸、DPI、旋转、系统文件锁，并对指定区域进行底色与噪点采样。
-- **零污染差分质检 (Zero-Contamination Gate)**：沙箱模拟编辑并自动生成对比图与热力图，未通过复核绝不写入原文件。
-- **安全无损落盘与一键回滚**：落盘前强制生成 `.bak` 物理备份，解锁 Windows 只读属性；支持一键回滚恢复初始状态。
-
----
-
-## VSCode 扩展与 MCP Server 生态
-
-### 1. VSCode 插件安装与使用
-- **界面安装**：下载 [`readmd-vscode-0.0.6.vsix`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/readmd-vscode-0.0.6.vsix) -> 在 VSCode 扩展面板选择 `... -> 从 VSIX 安装...`。
-- **命令行安装**：
- ```bash
- code --install-extension readmd-vscode-0.0.6.vsix
- ```
-- **核心功能**：打开 Markdown 文件点击右上角书本图标开启同步预览；右键菜单支持一键自动修复语法错误与转换为 LaTeX 源码。
-
-### 2. MCP (Model Context Protocol) Server 配置
-下载 [`readmd-mcp-server-0.0.6.zip`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/readmd-mcp-server-0.0.6.zip) 获取文档与连接模板；该包不包含可执行内核。先安装桌面端，再在 Claude Desktop、Cursor、Antigravity 与 Cline 中配置（请将 `command` 替换为已安装 ReadMD 可执行文件的**绝对路径**）：
-
-**Windows**:
-```json
-{
-  "mcpServers": {
-    "readmd": {
-      "command": "C:\\Program Files\\ReadMD\\ReadMD.exe",
-      "args": ["--mcp"]
-    }
-  }
-}
-```
-
-**macOS / Linux**:
 ```json
 {
   "mcpServers": {
@@ -161,121 +99,18 @@ Windows ZIP 必须完整解压并保留目录结构。桌面启动需要 Windows
 }
 ```
 
-> **注意**：必须使用脚本的完整绝对路径，不能使用相对路径；Windows 路径中的反斜杠必须写为 `\\` 或改用正斜杠 `/`。推荐配置 `PYTHONIOENCODING=utf-8` 以确保跨平台编码一致。
+macOS 通常为 `/Applications/ReadMD.app/Contents/MacOS/ReadMD`；Windows 使用 `ReadMD.exe` 的完整路径，JSON 中反斜杠写作 `\\`。更多模板见 [MCP 说明](packages/mcp-server/README.md)。
 
+## 验证与源码
 
----
+V0.0.7 在 macOS ARM64 完成六组共 **244 项原生检查**，包括关闭与恢复、六格式导出、最终 ZIP 冷启动／重开和 V0.0.6 隔离会话升级；另从归档中的生产二进制执行 46 语言的保存编码流程，页面异常为 0。[Mac 验证记录](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败及同包复测结果。这里的检查范围与跨应用兼容性、各系统实机覆盖分别记录。
 
-## LaTeX PRO 学术增强与 BibTeX 引用
+[发行 CI](.github/workflows/release.yml)配置四个桌面目标与配套集成包，并在发布前等待共享质量检查和全部构建。各平台证据见[平台矩阵](release/platform-matrix.json)，详细功能记录见 [docs/reviews](docs/reviews)。
 
-1. **BibTeX 自动扫描与引用卡片**：
- - 自动扫描同目录下 `.bib` 参考文献文件；
- - 文中书写 `[@vaswani2017attention]` 或 `@author2024` 自动渲染为引用徽章；
- - 悬停徽章展示论文标题、作者、年份、DOI 链接并支持一键复制 BibTeX；文末自动汇总生成参考文献表。
-2. **学术 Callout 盒子**：
- - `::: theorem [定理名称]` / `::: lemma [引理名称]` / `::: definition [概念定义]`
- - `::: proof` 证明块自动添加文末 Q.E.D. ■ 符号。
-
----
-
-## Editor Studio PRO 沉浸编辑
-
-- **Zen Mode 禅模式**：按 <kbd>F11</kbd> 或点击编辑栏「 禅模式」全屏专注写作，按 <kbd>Esc</kbd> 退出。
-- **10×10 可视化表格设计器**：鼠标自由滑选行列生成工整 Markdown 表格。
-- **智能表格粘贴**：复制 Excel、WPS、Numbers 或网页表格，在编辑器中直接粘贴为 Markdown 表格。
-- **实时文档统计**：实时显示中文字数、西文词数与预计阅读时间。
-
----
-
-## 46 种语言与本地化
-
-ReadMD 提供 46 个 locale；每次发布均校验键、占位符与方向一致性。候选版的语义翻译质量和原生平台可用性以对应验收证据为准，不以静态字典数量替代实测。
-
-| 分区 | 覆盖语言 | 详细语言列表 |
-| :--- | :--- | :--- |
-| **东亚** (6语) | 中文/日/韩/蒙 | 简体中文 (`zh-CN`)、繁体中文·香港 (`zh-HK`)、繁体中文·台湾 (`zh-TW`)、日本語 (`ja`)、한국어 (`ko`)、Монгол хэл (`mn`) |
-| **欧洲主流** (19语) | 西欧/中欧/东欧/北欧 | English (`en`)、Français (`fr`)、Deutsch (`de`)、Español (`es`)、Português (`pt`)、Русский (`ru`)、Italiano (`it`)、Nederlands (`nl`)、Türkçe (`tr`)、Ελληνικά (`el`)、Magyar (`hu`)、Українська (`uk`)、Hrvatski (`hr`)、Slovenščina (`sl`)、Română (`ro`)、Dansk (`da`)、Norsk (`no`)、Svenska (`sv`)、Suomi (`fi`) |
-| **中东与南亚** (7语) | 阿/希/维/藏/印/孟/尼 | العربية (`ar`, RTL)、עברית (`he`, RTL)、ئۇيغۇرچە (`ug`, RTL)、བོད་སྐད། (`bo`)、हिन्दी (`hi`)、বাংলা (`bn`)、नेपाली (`ne`) |
-| **东南亚** (8语) | 泰/越/印尼/马/缅/老/高棉/菲 | ภาษาไทย (`th`)、Tiếng Việt (`vi`)、Bahasa Indonesia (`id`)、Bahasa Melayu (`ms`)、မြန်မာဘာသာ (`my`)、ພາສາລາວ (`lo`)、ភាសាខ្មែរ (`km`)、Tagalog (`tl`) |
-| **特色与区域** (6语) | 爱/马耳他/格陵兰/世界/非 | Gaeilge (`ga`)、Malti (`mt`)、Kalaallisut (`kl`)、Esperanto (`eo`)、Ikinyarwanda (`rw`)、Kikongo (`kg`) |
-
-> 详细规范与词条清单：[`docs/i18n-language-reference.md`](docs/i18n-language-reference.md)
-
----
-
-## 核心功能与使用指南
-
-- **自动修正**：表格缺线对齐补全、加粗与公式未闭合自动闭合、`#标题` 补空格，修正详情在「 修复」面板中清晰展示。
-- **万物转 MD**：支持 Word、PowerPoint、Excel、PDF、HTML、LaTeX 等批量或拖拽转换，转换后自动在新标签页打开。
-- **扫描 OCR**：通过匹配平台的可选 OCR 能力包进行本地离线识别；扫描 PDF 另需 PDFium。
-- **网页转 MD**：Trafilatura 智能抽取正文，动态单页应用自动通过无头 WebView 渲染提取。
-- **局域网共享**：点击工具栏「」生成二维码与随机密钥，手机扫码在同 Wi-Fi 下阅读与编辑。
-
----
-
-## ️ 常用快捷键
-
-| 快捷键 | 功能操作 | 快捷键 | 功能操作 |
-| :--- | :--- | :--- | :--- |
-| <kbd>Ctrl</kbd>+<kbd>O</kbd> | 打开 Markdown 文件 | <kbd>Ctrl</kbd>+<kbd>E</kbd> | 进入/退出编辑模式 |
-| <kbd>Ctrl</kbd>+<kbd>S</kbd> | 保存当前文档（首存自动备份） | <kbd>Ctrl</kbd>+<kbd>P</kbd> | 打开导出面板 (PDF/Word/HTML) |
-| <kbd>Ctrl</kbd>+<kbd>F</kbd> | 全文搜索 (Enter 下一个 / Esc 退出) | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | 展开/收起目录大纲侧栏 |
-| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> | 呼出 AI 助手面板 | <kbd>Ctrl</kbd>+<kbd>U</kbd> | 打开网页转 MD 弹窗 |
-| <kbd>Ctrl</kbd>+<kbd>D</kbd> | 切换主题 (浅色/暗色/复古) | <kbd>F11</kbd> / <kbd>Esc</kbd> | 进入 / 退出 Zen 禅模式 |
-
----
-
-## 架构与源码构建
-
-```
-readmd/
-├─ rust/readmd-kernel/ # 100% 纯原生 Rust 高性能内核（HTTP 服务 + 自动修正 + 格式转换 + 矢量 PDF + 伴读桌宠）
-│ └─ src/ # 原生平台适配 / OCR / 转换 / AI / 插件引擎
-├─ ReadMD.exe # Rust 桌面启动程序，分发时保留 assets 与随附运行库
-├─ packages/ # 多端生态分包
-│ ├─ vscode-extension/ # VSCode 官方扩展
-│ ├─ mcp-server/ # Rust stdio MCP 文档与连接模板
-│ ├─ harmonyos-app/ # HarmonyOS/OpenHarmony 实验性源码预览（未支持）
-│ └─ linglong/ # 统信 UOS 玲珑容器打包配置
-├─ scripts/ # 构建与打包脚本 (windows / linux / unix)
-├─ assets/ # 前端渲染、主题 token 与 46 语种 i18n 资源
-├─ docs/ # 架构规范、语言对照清单与开发文档
-└─ tests/ # 自动化测试套件 (Rust 1,784 项单元测试 + 前端验收全通过)
+```sh
+cargo build --locked --release --manifest-path rust/Cargo.toml -p readmd-kernel
 ```
 
-**本地构建与运行**：
-- 使用 Cargo 编译：`cargo build --release -p readmd-kernel`，构建产物位于 `rust/target/release/readmd.exe`（根目录 `ReadMD.exe` 即为此纯原生二进制）。
-- Windows：运行 `scripts\run.bat` 直接启动原生内核；或直接双击 `ReadMD.exe`。
-- Linux：运行 `bash scripts/linux/build_linux.sh` 进行本地构建与打包；正式发布资产为上表中的 tar.gz / Deb，脚本不代表其他格式已发布。
-- macOS：运行 `cargo build --release -p readmd-kernel` 构建原生二进制。
-- HarmonyOS/OpenHarmony：本版本不支持，目录仅保留实验性源码预览。
+桌面二进制位于 `rust/target/release/`。分发包还需要前端资源和平台运行时，相关脚本在 [tools](tools) 与 [scripts](scripts)。可选代码执行需要对应语言运行时。
 
----
-
-## 更新日志 (v0.0.1-preview.1)
-
-- **46 语种全量母语化与机翻清洗**：深入审核 42 个非中英文语言字典，消除波兰语混淆、西部之塔、农作物裁剪等全部系统性翻译错误，实现 100% 完整覆盖。
-- **Linux 与信创国产系统适配**：原生 Rust `native_system` 模块；正式支持只覆盖矩阵中有实机证据的 Ubuntu、Debian、UOS、银河麒麟和 Deepin 架构。
-- **离线来源与 Skills**：上游原文、许可证和适配元数据随包提供，AI 指令统一从 Skills 加载。
-- **LaTeX PRO 学术论文套件**：零配置 `.bib` 参考文献浮动卡片、学术 Callout 盒子与 LaTeX 导出。
-- **Editor Studio PRO 体验重塑**：Zen 禅模式全屏专注、10×10 表格设计器、Excel 智能转换。
-- **VSCode 插件与 MCP Server 生态完善**：升级至 v0.0.1，提供多端 AI 写作协作流。
-
----
-
-## 常见问题
-
-- **Q: 为什么双击打开速度极快？**
- - A: 安装版为 onedir 目录部署，启动无需临时解压；关闭后常驻系统托盘，二次打开通过轻量本地通信在 0.3s 内瞬间唤醒。
-- **Q: 打开未签名安装包被系统拦截怎么办？**
- - A: Windows 在 SmartScreen 提示点击「更多信息 → 仍要运行」；macOS 首次提示无法验证开发者时，先核对来源及 `SHA256SUMS.txt`，再按[逐应用安装说明](release/macos-install.md)在「系统设置 → 隐私与安全性」确认打开。当前使用免费 ad-hoc 签名，未进行 Apple 公证。
-- **Q: 文档格式自动修正常见错误会改写我的原始文件吗？**
- - A: **绝不会**。自动修正仅发生在内存渲染阶段，原 `.md` 源码保持 100% 完好无损。
-
----
-
-<div align="center">
-
-**ReadMD** · 纯本地优先，在已验收平台上自由阅读写作。
-
-</div>
+[产品索引](https://rust.readmd.asia/llms.txt) · [完整产品资料](https://rust.readmd.asia/llms-full.txt) · [问题反馈](https://github.com/Natsummerance/rust-ReadMD/issues) · [MIT 许可](LICENSE)

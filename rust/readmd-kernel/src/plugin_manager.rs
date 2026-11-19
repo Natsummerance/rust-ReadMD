@@ -689,15 +689,19 @@ static MANIFEST_MUTATIONS: Mutex<()> = Mutex::new(());
 /// Execute registered Rust extension profiles around the real converter.
 /// The core reader remains available when optional profiles are uninstalled.
 pub fn convert_document(sandbox: &Sandbox, path: &str, form_tables: bool, language: Option<&str>) -> crate::convert::ConvertTriple {
+    convert_document_with_source(sandbox, path, form_tables, language, None)
+}
+
+pub(crate) fn convert_document_with_source(sandbox: &Sandbox, path: &str, form_tables: bool, language: Option<&str>, office_bytes: Option<&[u8]>) -> crate::convert::ConvertTriple {
     let data_dir = sandbox.plugins_root.parent().unwrap_or(&sandbox.plugins_root);
-    let (mut result, assets, asset_error) = crate::document_assets::with_staging(data_dir, || convert_document_inner(sandbox, path, form_tables, language));
+    let (mut result, assets, asset_error) = crate::document_assets::with_staging(data_dir, || convert_document_inner(sandbox, path, form_tables, language, office_bytes));
     result.assets = assets;
     // Never present a conversion with silently missing extracted images as success.
     if let Some(error) = asset_error { result.text.clear(); result.error = Some(error); }
     result
 }
 
-fn convert_document_inner(sandbox: &Sandbox, path: &str, form_tables: bool, language: Option<&str>) -> crate::convert::ConvertTriple {
+fn convert_document_inner(sandbox: &Sandbox, path: &str, form_tables: bool, language: Option<&str>, office_bytes: Option<&[u8]>) -> crate::convert::ConvertTriple {
     // Select and reserve under the same lock as uninstall. Otherwise a
     // profile could disappear between selection and registering its use.
     let selection_guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e|e.into_inner());
@@ -734,15 +738,15 @@ fn convert_document_inner(sandbox: &Sandbox, path: &str, form_tables: bool, lang
     let mut result=if ids.contains(&"docling") {
         match crate::ocr::ocr_pdf_to_md(path, 200) {
             Ok(text) if !text.trim().is_empty() && !text.trim().starts_with(crate::ocr::OCR_PDF_EMPTY_PLACEHOLDER) => crate::convert::ConvertTriple::ok(text,"system-ocr"),
-            _ => crate::convert::convert_triple_with_language(path,form_tables,language),
+            _ => crate::convert::convert_triple_from_source(path,form_tables,language,office_bytes),
         }
     } else if ids.contains(&"trafilatura") {
         crate::convert::read_text_smart(path).ok()
             .and_then(|(html,_)|crate::headless_renderer::extract_article(&html,false))
             .filter(|text|!text.trim().is_empty())
             .map(|text|crate::convert::ConvertTriple::ok(text,"native-article"))
-            .unwrap_or_else(||crate::convert::convert_triple_with_language(path,form_tables,language))
-    } else {crate::convert::convert_triple_with_language(path,form_tables,language)};
+            .unwrap_or_else(||crate::convert::convert_triple_from_source(path,form_tables,language,office_bytes))
+    } else {crate::convert::convert_triple_from_source(path,form_tables,language,office_bytes)};
     if result.error.is_none() && !result.text.trim().is_empty() {
         if ids.contains(&"jieba") {
             let words=keyphrases(&result.text);

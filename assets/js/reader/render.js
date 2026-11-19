@@ -129,6 +129,9 @@ function deferSessionOperation(action, alreadyQueued) {
 async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false, _lifecycleOwner = null } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
+  // Original Office/PDF opens must never reach the text-conversion fallback.
+  if (window.ReadMDOffice?.isPath(path)) return window.ReadMDOffice.open(path, { force, browserCopy, _sessionQueued, _sessionRestoring, _lifecycleOwner });
+  if (/\.pdf$/i.test(path)) return openDocumentPath(path, { _sessionQueued, _sessionRestoring, _lifecycleOwner });
   const ownsLifecycle = () => window.ReadMDLifecycle?.isOwner(_lifecycleOwner) || (discardConfirmed && window.ReadMDLifecycle?.saveReload(path));
   const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
@@ -227,7 +230,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       original: d.original != null ? d.original : d.content,
       fixed: d.content,
       title: isBrowserCopy ? `${d.name} (${_t('app.browserCopy') || 'browser copy'})` : d.name,
-      fixes: d.fixes || [],
+      fixes: d.fix_details ?? d.fixes ?? [],
       stats: d.stats || {},
       size: d.size,
       mtime: d.mtime,
@@ -256,7 +259,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       if (wasActive) {
         await prepareDocCitations(d.path, existingTab.content);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
-        setFixes(d.fixes || [], d.stats || {});
+        setFixes(fileFields.fixes, d.stats || {});
         await renderContent(existingTab.content, d.name);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         if (state.pagination.enabled && state.pagination.mode === 'paged' && previousPage > 0) {
@@ -292,7 +295,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       syncStateFromActiveTab();
       await prepareDocCitations(d.path, newTab.content);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
-      setFixes(d.fixes || [], d.stats || {});
+      setFixes(fileFields.fixes, d.stats || {});
       await renderContent(newTab.content, d.name);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (state.pagination.enabled && state.pagination.totalPages > 1) {
@@ -355,7 +358,6 @@ function setEditBtn(label) {
   if (!el) return;
   const sp = el.querySelector('span.tb-label');
   if (sp) sp.textContent = label;
-  else el.textContent = label;
   el.setAttribute('aria-pressed', String(Boolean(state.editing)));
   el.setAttribute('aria-label', label);
   el.title = /Ctrl\+E|⌘/.test(label) ? label : `${label} (Ctrl+E)`;
@@ -691,7 +693,21 @@ function showPaginationBar(show) {
 
 function updatePaginationBar() {
   const p = state.pagination;
-  if (!p || !p.enabled || !p.pages || !p.pages.length) {
+  const office = state.mode === 'office-preview' && p?.kind === 'office';
+  const toggle = $('pg-mode-toggle');
+  if (toggle) {
+    toggle.hidden = office;
+    toggle.classList.toggle('hidden', office);
+    toggle.disabled = office;
+  }
+  const stBadge = $('status-pagination');
+  if (stBadge) {
+    stBadge.disabled = office;
+    stBadge.dataset.i18nTitle = office ? 'pagination.pagedBadge' : 'pagination.switchModeTitle';
+  }
+  const bar = $('pagination-bar');
+  if (bar) bar.setAttribute('aria-busy', String(office && !!p.loading));
+  if (!p || !p.enabled || !p.pages || (!p.pages.length && !office)) {
     showPaginationBar(false);
     return;
   }
@@ -705,24 +721,25 @@ function updatePaginationBar() {
   if (chLabel) chLabel.textContent = curPage.title || '';
 
   const totalLbl = $('pg-total-label');
-  if (totalLbl) totalLbl.textContent = `/ ${total}`;
+  if (totalLbl) totalLbl.textContent = total ? `/ ${total}` : '';
+  const unavailable = office && (p.loading || !total);
 
   const btnFirst = $('pg-first-btn');
-  if (btnFirst) btnFirst.disabled = (cur === 0 || p.mode === 'continuous');
+  if (btnFirst) btnFirst.disabled = unavailable || cur === 0 || p.mode === 'continuous';
 
   const btnPrev = $('pg-prev-btn');
-  if (btnPrev) btnPrev.disabled = (cur === 0 || p.mode === 'continuous');
+  if (btnPrev) btnPrev.disabled = unavailable || cur === 0 || p.mode === 'continuous';
 
   const btnNext = $('pg-next-btn');
-  if (btnNext) btnNext.disabled = (cur >= total - 1 || p.mode === 'continuous');
+  if (btnNext) btnNext.disabled = unavailable || cur >= total - 1 || p.mode === 'continuous';
 
   const btnLast = $('pg-last-btn');
-  if (btnLast) btnLast.disabled = (cur >= total - 1 || p.mode === 'continuous');
+  if (btnLast) btnLast.disabled = unavailable || cur >= total - 1 || p.mode === 'continuous';
 
   const sel = $('pg-page-select');
   if (sel) {
-    sel.disabled = (p.mode === 'continuous');
-    const pageSignature = p.pages.map(page => `${page.pageIndex}:${page.title || ''}`).join('|');
+    sel.disabled = unavailable || p.mode === 'continuous';
+    const pageSignature = (office ? 'office:' : 'markdown:') + p.pages.map(page => `${page.pageIndex}:${page.title || ''}`).join('|');
     if (sel.options.length !== total || sel.dataset.pageSignature !== pageSignature) {
       sel.dataset.pageSignature = pageSignature;
       sel.innerHTML = '';
@@ -731,11 +748,11 @@ function updatePaginationBar() {
         opt.value = idx;
         const num = idx + 1;
         const shortTitle = pg.title ? (pg.title.length > 22 ? pg.title.slice(0, 22) + '…' : pg.title) : `${num}`;
-        opt.textContent = `${num}. ${shortTitle}`;
+        opt.textContent = office ? String(num) : `${num}. ${shortTitle}`;
         sel.appendChild(opt);
       });
     }
-    sel.value = cur;
+    sel.value = total ? cur : '';
   }
 
   const iconContinuous = $('pg-mode-icon-continuous');
@@ -752,9 +769,8 @@ function updatePaginationBar() {
   $('pg-mode-toggle')?.setAttribute('aria-pressed', p.mode === 'paged' ? 'true' : 'false');
 
   const _t = (k, params) => window.i18n ? window.i18n.t(k, params) : k;
-  const stBadge = $('status-pagination');
   if (stBadge) {
-    stBadge.textContent = p.mode === 'paged'
+    stBadge.textContent = !total ? '—' : p.mode === 'paged'
       ? `${cur + 1} / ${total}`
       : (_t('pagination.continuousBadge') || '全卷');
     stBadge.title = p.mode === 'paged'
@@ -764,7 +780,9 @@ function updatePaginationBar() {
 
   const live = $('pagination-live');
   if (live) {
-    live.textContent = p.mode === 'paged'
+    live.textContent = office && p.loading ? _t('audit.loading')
+      : office && p.error ? _t('editor.previewRenderFail')
+      : !total ? '' : p.mode === 'paged'
       ? (_t('pagination.pageInfo', { current: cur + 1, total }) + (curPage.title ? ` · ${curPage.title}` : ''))
       : (_t('pagination.continuousBadge') || '全卷连续');
   }
@@ -805,6 +823,7 @@ async function togglePaginationMode() {
   const p = state.pagination;
   if (!p || !p.enabled) return;
   const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  if (window.ReadMDOffice?.isTab(activeTab)) return;
   const navigation = captureNavigationEpoch();
 
   if (p.mode === 'paged') {
@@ -833,6 +852,8 @@ async function togglePaginationMode() {
 }
 
 function renderPage(pageIndex, targetHeadingId, preserveScroll) {
+  if (window.ReadMDOffice?.isTab(typeof getActiveTab === 'function' ? getActiveTab() : null))
+    return window.ReadMDOffice.goToPage(pageIndex);
   if (!state.pagination.pages || !state.pagination.pages.length) return;
   pageIndex = Math.max(0, Math.min(pageIndex, state.pagination.pages.length - 1));
   state.pagination.currentPage = pageIndex;
@@ -1018,7 +1039,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
     const renderer = new marked.Renderer();
 
     // 1. 分词并记录顶级 AST 节点的源码起始行号
-    const tokens = marked.lexer(content, { gfm: true, breaks: breaks });
+    const tokens = marked.lexer(content, { ...marked.defaults, gfm: true, breaks });
     let lineCursor = 1;
     tokens.forEach(tok => {
       tok.sourceLine = lineCursor;
@@ -1065,7 +1086,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
     };
 
     renderer.table = function(token) {
-      const html = marked.Renderer.prototype.table.call(this, token);
+      const html = window.ReadMDTableView?.render(token, this) || marked.Renderer.prototype.table.call(this, token);
       const lineAttr = (token && token.sourceLine) ? ` data-source-line="${token.sourceLine}"` : '';
       if (lineAttr && html && html.startsWith('<table')) {
         return '<table' + lineAttr + html.slice(6);
@@ -1183,7 +1204,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
 window.parseMarkdownWithSourceMap = parseMarkdownWithSourceMap;
 
 const MARKDOWN_ALLOWED_TAGS = new Set([
-  'a', 'abbr', 'article', 'b', 'blockquote', 'br', 'caption', 'cite', 'code',
+  'a', 'abbr', 'article', 'b', 'blockquote', 'br', 'caption', 'cite', 'code', 'col', 'colgroup',
   'dd', 'del', 'details', 'div', 'dl', 'dt', 'em', 'figcaption', 'figure',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'input', 'ins',
   'button', 'kbd', 'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'section', 'span',
@@ -1214,6 +1235,7 @@ let readerRenderAborter = null;
 let documentLoadEpoch = 0;
 
 function beginReaderRender() {
+  window.ReadMDOffice?.releaseView();
   const epoch = ++readerRenderEpoch;
   if (readerRenderAborter) readerRenderAborter.abort();
   readerRenderAborter = new AbortController();
@@ -1315,6 +1337,9 @@ function sanitizeRenderedHtml(html, { allowInteractive = true } = {}) {
         node.removeAttribute(attribute.name);
         return;
       }
+      if ((tag === 'td' || tag === 'th') &&
+          ((name === 'align' && ['left', 'center', 'right'].includes(value)) ||
+           (name === 'valign' && ['top', 'middle', 'bottom'].includes(value)))) return;
       if (name.startsWith('data-') || name === 'class' || name.startsWith('aria-') ||
           ['title', 'lang', 'dir', 'alt', 'width', 'height', 'loading',
            'colspan', 'rowspan', 'datetime', 'cite'].includes(name)) return;
@@ -1921,6 +1946,55 @@ function postProcess(container) {
   if (window.ReadMDReader) window.ReadMDReader.afterRender(body);
 }
 
+window.ReadMDCodeRuns = (() => {
+  const active = new Set();
+  const writers = new Set(); let reserved = 0;
+  const wake = () => { for (const resolve of writers) resolve(); writers.clear(); };
+  const id = () => 'code-' + window.crypto.randomUUID();
+  function create(tab, batch = false) {
+    if (reserved || [...active].some(job => job.tab === tab && (batch || job.batch))) return null;
+    const job = { tab, batch, taskId: id(), insertTaskId: id(), controller: new AbortController(), phase: 'preparing', cancelled: false, finished: false };
+    job.done = new Promise(resolve => { job.resolve = resolve; }); active.add(job); return job;
+  }
+  function cancel(job) {
+    if (!job || job.finished) return;
+    job.cancelled = true; job.controller.abort();
+    wake();
+    const taskId = job.phase === 'writing' ? job.insertTaskId : job.taskId;
+    if (job.phase !== 'preparing') void window.ReadMDReview?.cancelAi(taskId, () => !job.finished);
+  }
+  function finish(job) { job.finished = true; active.delete(job); job.resolve(); }
+  function mountEditor(tab) {
+    // Incremental widgets belong to one document. The existing editor mount
+    // runs before its preview; equal Markdown in another page must not reuse
+    // old listeners or task output. In-flight old renders keep their guards.
+    const pane = document.getElementById('preview-pane');
+    if (pane && pane._readmdPreviewOwner !== tab) {
+      // Layout can render the textarea draft before CodeMirror mounts. Its
+      // identical text must not certify a pane we are about to clear.
+      if (typeof pvRenderEpoch !== 'undefined') pvRenderEpoch++;
+      if (typeof pvLast !== 'undefined') pvLast = '';
+      pane._readmdPreviewOwner = tab; pane.replaceChildren();
+    }
+  }
+  function cancelTabs(tabs) { for (const job of active) if (tabs.includes(job.tab)) cancel(job); }
+  function reserveWrites() {
+    reserved++; let released = false;
+    return () => { if (!released) { released = true; reserved--; wake(); } };
+  }
+  async function beforeWrite(job) {
+    while (reserved && !job.cancelled) await new Promise(resolve => writers.add(resolve));
+    if (job.cancelled) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+  }
+  async function cancelAll() {
+    const jobs = [...active]; jobs.forEach(cancel);
+    let timer;
+    const stopped = await Promise.race([Promise.all(jobs.map(job => job.done)).then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 2000); })]);
+    clearTimeout(timer); return stopped;
+  }
+  return { create, cancel, finish, mountEditor, cancelTabs, cancelAll, reserveWrites, beforeWrite, batchFor: tab => [...active].find(job => job.tab === tab && job.batch), busy: () => active.size };
+})();
+
 function renderAllCodeChunks(container) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const cards = (container || document).querySelectorAll('.code-chunk-card');
@@ -1938,6 +2012,8 @@ function renderAllCodeChunks(container) {
     const owner = typeof getActiveTab === 'function' ? getActiveTab() : null;
     if (card._bound && card._readmdCodeOwner === owner) return;
     if (card._bound) {
+      // A reused reading node cannot keep another document's listeners. The
+      // previous task may finish against its detached node and fixed target.
       const fresh = card.cloneNode(true); card.replaceWith(fresh); card = fresh;
     }
     card._bound = true;
@@ -1955,34 +2031,73 @@ function renderAllCodeChunks(container) {
 
     const lang = card.dataset.lang || 'python';
     const code = decodeURIComponent(card.dataset.code || '');
-    let running = false;
+    let currentJob = null;
+    let ensuringRuntime = false;
 
-    const run = async () => {
-      if (running || !owner || getActiveTab() !== owner || !state.tabs.includes(owner) || window.ReadMDLifecycle?.busy()) return;
-      running = true;
-      const context = { tab: owner, wasEditing: Boolean(state.editing), inputGeneration: owner.inputGeneration || 0,
-        sourceLine: Number(card.dataset.sourceLine), code, stamp: null };
+    card._readmdBatchState = (job, phase, result, error) => {
+      const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
+      if (phase === 'start') {
+        currentJob = job; statusEl.className = 'code-chunk-status running'; statusEl.textContent = _t('status.loading');
+        btn.textContent = _t('common.cancel'); if (copy) copy.disabled = true; if (clear) clear.disabled = true;
+        outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren(); timerEl.textContent = '';
+        return;
+      }
+      if (phase === 'pending') { statusEl.textContent = _t('convert.statusPending'); return; }
+      currentJob = null; btn.textContent = `▶ ${_t('reader.runAgain')}`;
+      if (copy) copy.disabled = false; if (clear) clear.disabled = false;
+      const cancelled = job.cancelled || /cancelled/.test(error?.code || '');
+      statusEl.className = 'code-chunk-status ' + (phase === 'success' ? 'success' : 'error');
+      statusEl.textContent = _t(phase === 'success' ? 'convert.statusOk' : cancelled ? 'task.cancelled' : 'reader.callFailed');
+      if (result && String(card.dataset.outputFormat || '').toLowerCase() !== 'none') {
+        outWrap.classList.remove('hidden');
+        stdoutEl.textContent = (result.stdout || '') + (result.stderr ? '\n' + result.stderr : '');
+        if (!stdoutEl.textContent.trim()) stdoutEl.textContent = _t('reader.noConsoleOutput');
+      } else if (phase !== 'success') {
+        outWrap.classList.remove('hidden');
+        stdoutEl.textContent = _t(cancelled ? 'task.cancelled' : error?.code === 'capability_pack_unavailable' ? 'error.capability_pack_unavailable' : /stale|conflict/.test(error?.code || '') ? 'review.conflict' : /budget/.test(error?.code || '') ? 'review.limit' : 'toast.unknownError');
+      }
+    };
+
+    const run = async ({ batch = false } = {}) => {
+      if (currentJob) { if (!batch) window.ReadMDCodeRuns.cancel(currentJob); return currentJob.done; }
+      if (ensuringRuntime || !owner || !state.tabs.includes(owner)) return;
+      if (/^(?:javascript|js|node)$/i.test(lang.trim().replace(/^\.+/, ''))) {
+        const generation = owner.inputGeneration || 0, editing = state.editing;
+        ensuringRuntime = true;
+        try { if (!await window.ReadMDCapabilities.ensure('node')) return; }
+        finally { ensuringRuntime = false; }
+        // Installing is a separate operation. Closing/switching/editing while
+        // its dialog is open must never start a stale code request afterwards.
+        if (currentJob || !card.isConnected || getActiveTab() !== owner || !state.tabs.includes(owner) ||
+            generation !== (owner.inputGeneration || 0) || state.editing !== editing) return;
+      }
+      const job = window.ReadMDCodeRuns.create(owner);
+      if (!job) { showToast(_t('review.busy')); return; }
+      currentJob = job;
+      const wasEditing = Boolean(state.editing && getActiveTab() === owner);
+      const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
       statusEl.className = 'code-chunk-status running';
       statusEl.textContent = _t('reader.codeRunning');
-      btn.disabled = true;
-      btn.textContent = _t('reader.codeRunning');
+      btn.disabled = false;
+      btn.textContent = _t('common.cancel');
+      if (copy) copy.disabled = true; if (clear) clear.disabled = true;
+      outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren();
       const t0 = Date.now();
       const interval = setInterval(() => {
         timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
       }, 100);
 
       try {
-        if (context.wasEditing && (!await window.ReadMDReview.flush(owner) || !state.editing || getActiveTab() !== owner ||
-            context.inputGeneration !== (owner.inputGeneration || 0) || window.ReadMDLifecycle?.busy())) throw Error('code_target_stale');
-        context.stamp = window.ReadMDLifecycle.mark(owner);
+        const context = await window.ReadMDReview.codeTarget(Number(card.dataset.sourceLine), code, owner, job.controller.signal);
+        if (job.cancelled || !state.tabs.includes(owner)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+        job.phase = 'running';
         let res;
-        if (hasPy && py.run_code_chunk) {
-          res = await py.run_code_chunk(lang, code, null, 10, true);
-        } else {
+        // Native and browser hosts share the authenticated cancellable route.
+        {
           const r = await apiFetch('/api/code/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lang: lang, code: code, confirm: true })
+            body: JSON.stringify({ lang, code: context.target.code, confirm: true, task_id: job.taskId })
           });
           res = await r.json();
         }
@@ -1990,6 +2105,7 @@ function renderAllCodeChunks(container) {
         clearInterval(interval);
         timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(2) + 's';
 
+        if (job.cancelled || !state.tabs.includes(owner)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
         if (res && res.ok) {
           const outputFormat = String(card.dataset.outputFormat || 'text').toLowerCase();
           const outputText = (res.stdout || '') + (res.stderr ? ('\n' + res.stderr) : '');
@@ -2019,13 +2135,11 @@ function renderAllCodeChunks(container) {
           // block only renders into the preview; ``output=true`` adds a
           // bounded marker block after the matching fence and persists it
           // through the editor's normal history/save path.
-          if (card.dataset.output === 'true' && outputFormat !== 'none' && context.wasEditing) {
-            statusEl.textContent = _t('convert.statusPending');
-            if (!await persistCodeChunkOutput(card, outputText, context)) {
-              statusEl.className = 'code-chunk-status error';
-              statusEl.textContent = _t('review.conflict');
-              return;
-            }
+          if (card.dataset.output === 'true' && outputFormat !== 'none' && wasEditing) {
+            job.phase = 'waiting-to-write'; statusEl.textContent = _t('convert.statusPending');
+            await window.ReadMDCodeRuns.beforeWrite(job);
+            job.phase = 'writing';
+            await persistCodeChunkOutput(card, outputText, context, job.controller.signal, job.insertTaskId);
           }
           statusEl.className = 'code-chunk-status success';
           statusEl.textContent = _t('convert.statusOk');
@@ -2040,23 +2154,28 @@ function renderAllCodeChunks(container) {
           // the document UI only renders a localized, stable message.  This
           // prevents backend paths, subprocess output or untranslated text
           // from leaking into a document preview.
-          stdoutEl.textContent = _t('toast.unknownError');
+          stdoutEl.textContent = _t(res?.error_code === 'execution_cancelled' ? 'task.cancelled' : 'toast.unknownError');
         }
       } catch (err) {
         clearInterval(interval);
         statusEl.className = 'code-chunk-status error';
-        statusEl.textContent = _t('reader.callFailed');
+        const cancelled = job.cancelled || err?.code === 'cancelled' || err?.code === 'execution_cancelled';
+        statusEl.textContent = _t(cancelled ? 'task.cancelled' : 'reader.callFailed');
         outWrap.classList.remove('hidden');
-        stdoutEl.textContent = _t('toast.unknownError');
+        plotEl.replaceChildren();
+        stdoutEl.textContent = _t(cancelled ? 'task.cancelled' : /stale|conflict/.test(err?.code || '') ? 'review.conflict' : 'toast.unknownError');
       } finally {
         clearInterval(interval);
-        running = false;
+        timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(2) + 's';
+        window.ReadMDCodeRuns.finish(job); currentJob = null;
         btn.disabled = false;
         btn.textContent = `▶ ${_t('reader.runAgain')}`;
+        if (copy) copy.disabled = false; if (clear) clear.disabled = false;
       }
     };
 
-    if (btn) btn.addEventListener('click', run);
+    card._readmdRunCode = run;
+    if (btn) btn.addEventListener('click', () => { void run(); });
 
     // 绑定输出区复制与清空交互
     const copyBtn = card.querySelector('.code-chunk-copy-btn');
@@ -2086,76 +2205,67 @@ function renderAllCodeChunks(container) {
 }
 window.renderAllCodeChunks = renderAllCodeChunks;
 
-async function persistCodeChunkOutput(card, outputText, context) {
-  // Stay outside the review FIFO while a close/save decision is pending.
-  // Its nested save must never wait for this result to release that decision.
-  await window.ReadMDLifecycle.whenIdle();
-  if (!context?.stamp || !context.wasEditing || !state.tabs.includes(context.tab) || getActiveTab() !== context.tab ||
-      !state.editing || context.inputGeneration !== (context.tab.inputGeneration || 0) ||
-      !window.ReadMDLifecycle.matches(context.stamp)) return false;
-  const sourceLine = context.sourceLine;
-  if (!Number.isInteger(sourceLine) || sourceLine < 1) return false;
-  // Editor offsets count normalized newlines; preserve file line endings
-  // only when obtaining the save snapshot, not when calculating positions.
-  const current = cmView ? cmView.state.doc.toString() : ($('edit-area')?.value || '');
-  const lines = String(current || '').split('\n');
-  if (sourceLine > lines.length) return false;
-  const fenceStart = sourceLine - 1;
-  if (!/^\s*```/.test(lines[fenceStart] || '')) return false;
-  let fenceEnd = fenceStart + 1;
-  while (fenceEnd < lines.length && !/^\s*```\s*$/.test(lines[fenceEnd])) fenceEnd += 1;
-  if (fenceEnd >= lines.length) return false;
-  if (lines.slice(fenceStart + 1, fenceEnd).join('\n') !== context.code.replace(/\r\n?/g, '\n').replace(/\n$/, '')) return false;
-
-  const markerStart = '<!-- code_chunk_output -->';
-  const markerEnd = '<!-- /code_chunk_output -->';
-  let outputStart = -1;
-  for (let index = fenceEnd + 1; index < Math.min(lines.length, fenceEnd + 7); index += 1) {
-    if (lines[index].trim() === markerStart) { outputStart = index; break; }
-    if (lines[index].trim()) break;
+async function persistCodeChunkOutput(card, outputText, context, signal, taskId) {
+  const tab = context?.tab || (typeof getActiveTab === 'function' ? getActiveTab() : null);
+  if (!tab || !state.tabs.includes(tab)) return false;
+  if (!context) {
+    const sourceLine = Number(card?.dataset?.sourceLine);
+    if (!Number.isInteger(sourceLine) || sourceLine < 1 || !state.editing || typeof card?.dataset?.code !== 'string') return false;
+    context = await window.ReadMDReview.codeTarget(sourceLine, decodeURIComponent(card.dataset.code), tab, signal);
   }
-  let replaceFrom;
-  let replaceTo;
-  if (outputStart >= 0) {
-    let outputEnd = outputStart + 1;
-    while (outputEnd < lines.length && lines[outputEnd].trim() !== markerEnd) outputEnd += 1;
-    if (outputEnd >= lines.length) return false;
-    replaceFrom = outputStart;
-    replaceTo = outputEnd + 1;
-  } else {
-    replaceFrom = fenceEnd + 1;
-    replaceTo = fenceEnd + 1;
+  const snapshot = await window.ReadMDReview.codeOutput(outputText, context, signal, taskId);
+  if (snapshot.code_output_unchanged) return false;
+  // Only the original visible editor can trigger its existing explicit save
+  // path. An inactive target remains a durable draft until its own save.
+  if (getActiveTab() === tab && state.editing && typeof saveEdit === 'function') {
+    if (await saveEdit() === false) throw Object.assign(new Error('review_persistence_failed'), { code: 'review_persistence_failed' });
   }
-  const safeText = String(outputText || '').replace(/\r\n?/g, '\n');
-  const block = [
-    '', markerStart, '', safeText, '', markerEnd, ''
-  ].join('\n');
-  const offsets = [0];
-  for (const line of lines) offsets.push(offsets[offsets.length - 1] + line.length + 1);
-  const from = offsets[replaceFrom];
-  const to = offsets[replaceTo];
-  const existing = lines.slice(replaceFrom, replaceTo).join('\n');
-  if (existing === block.replace(/^\n/, '').replace(/\n$/, '')) return typeof saveEdit === 'function' && await saveEdit() === true;
-  if (cmView) cmView.dispatch({ changes: { from, to, insert: block } });
-  else if ($('edit-area')) $('edit-area').setRangeText(block, from, to, 'end');
-  return typeof saveEdit === 'function' && await saveEdit() === true;
+  return true;
 }
 window.persistCodeChunkOutput = persistCodeChunkOutput;
 
 async function runAllCodeChunks() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const cards = (state.editing ? $('preview-pane') : $('content'))?.querySelectorAll('.code-chunk-card') || [];
-  if (!cards.length) {
-    showToast(_t('toast.noRunnableChunks'));
-    return;
-  }
-  showToast(_t('toast.batchRunStarted', { count: cards.length }), 1500);
-  for (const card of cards) {
-    const btn = card.querySelector('.code-chunk-run-btn');
-    if (btn) {
-      btn.click();
-      await new Promise(r => setTimeout(r, 150));
+  const tab = getActiveTab(); if (!tab || !state.tabs.includes(tab)) return false;
+  const running = window.ReadMDCodeRuns.batchFor(tab);
+  if (running) { window.ReadMDCodeRuns.cancel(running); await running.done; return false; }
+  const job = window.ReadMDCodeRuns.create(tab, true);
+  if (!job) { showToast(_t('review.busy')); return false; }
+  const wasEditing = Boolean(state.editing), button = $('btn-run-all-chunks');
+  const label = button?.querySelector('span') || button, oldLabel = label?.textContent;
+  let cards = [], results = [];
+  try {
+    if (label) label.textContent = _t('common.cancel');
+    const context = await window.ReadMDReview.codeBatchTarget(tab, job.controller.signal);
+    if (!context.batch.items.length) { showToast(_t('toast.noRunnableChunks')); return false; }
+    const pane = $(wasEditing ? 'preview-pane' : 'md-body');
+    const visible = [...(pane?.querySelectorAll('.code-chunk-card') || [])].filter(card => card._readmdCodeOwner === tab);
+    cards = context.batch.items.map(item => visible.find(card => Number(card.dataset.sourceLine) === item.target.source_line && decodeURIComponent(card.dataset.code || '') === item.target.code));
+    cards.forEach(card => card?._readmdBatchState?.(job, 'start'));
+    showToast(_t('toast.batchRunStarted', { count: context.batch.items.length }), 1500);
+    if (job.cancelled || !state.tabs.includes(tab)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+    job.phase = 'running';
+    const response = await window.ReadMDReview.codeBatchRun(context, job.controller.signal, job.taskId);
+    results = response.results || [];
+    if (response.ok !== true) throw Object.assign(new Error('batch failed'), { code: response.error_code || 'execution_failed' });
+    if (job.cancelled || !state.tabs.includes(tab)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+    if (results.length !== context.batch.items.length) throw Object.assign(new Error('invalid batch result'), { code: 'review_invalid_request' });
+    if (wasEditing && context.batch.items.some(item => item.output)) {
+      job.phase = 'waiting-to-write'; cards.forEach(card => card?._readmdBatchState?.(job, 'pending'));
+      await window.ReadMDCodeRuns.beforeWrite(job); job.phase = 'writing';
+      const outputs = results.map(result => (result.stdout || '') + (result.stderr ? '\n' + result.stderr : ''));
+      const snapshot = await window.ReadMDReview.codeBatchOutput(outputs, context, job.controller.signal, job.insertTaskId);
+      if (!snapshot.code_output_unchanged && getActiveTab() === tab && state.editing && await saveEdit() === false) throw Object.assign(new Error('review_persistence_failed'), { code: 'review_persistence_failed' });
     }
+    cards.forEach((card, index) => card?._readmdBatchState?.(job, 'success', results[index]));
+    return true;
+  } catch (error) {
+    cards.forEach((card, index) => card?._readmdBatchState?.(job, 'error', results[index], error));
+    showToast(_t(job.cancelled || /cancelled/.test(error?.code || '') ? 'task.cancelled' : error?.code === 'capability_pack_unavailable' ? 'error.capability_pack_unavailable' : /stale|conflict/.test(error?.code || '') ? 'review.conflict' : /budget/.test(error?.code || '') ? 'review.limit' : 'toast.unknownError'));
+    return false;
+  } finally {
+    window.ReadMDCodeRuns.finish(job);
+    if (label && label.textContent === _t('common.cancel')) label.textContent = oldLabel;
   }
 }
 window.runAllCodeChunks = runAllCodeChunks;
@@ -3023,7 +3133,7 @@ async function launchPresentationMode() {
         </div>
         <button type="button" class="presentation-btn" id="presentation-overview-btn" title="${_t('presentation.overviewTitle')}">${_t('presentation.overviewLabel')}</button>
         <button type="button" class="presentation-btn" id="presentation-fullscreen-btn" title="${_t('presentation.fullscreenTitle')}">${_t('presentation.fullscreenLabel')}</button>
-        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle" data-modal-close><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div id="presentation-loading"></div>
       <iframe class="presentation-iframe" title="${_t('menu.presentation') || '演讲演示'}" src="about:blank"></iframe>
@@ -3381,11 +3491,11 @@ async function renderVirtual(source, name, dir, content, fixes, extras, _session
   const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
     await window.ReadMDLifecycle?.whenIdle(lifecycleOwner);
-    if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return; }
+    if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return false; }
     return renderVirtual(source, name, dir, content, fixes, extras, true);
   }, _sessionQueued);
   if ((!_sessionQueued && !ownsLifecycle()) || blocked()) return defer();
-  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
   if (blocked()) return defer();
   // Import/AI results create another tab; keep the current editor draft intact.
   if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
@@ -3433,33 +3543,38 @@ async function renderVirtual(source, name, dir, content, fixes, extras, _session
   renderTabsBar();
   setProgress(100);
   afterRender();
+  return true;
 }
 
 
 async function convertFile(path, onExists) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!(await ensureModule('convert'))) return;
+  if (!(await ensureModule('convert'))) return false;
   busy(true);
   let d;
   try {
     const q = '/api/convert?p=' + encodeURIComponent(path) + '&on_exists=' + encodeURIComponent(onExists || 'skip') + '&language=' + encodeURIComponent(typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto') + (onExists ? '' : '&preview=1');
     const r = await apiFetch(q);
     d = await r.json().catch(() => ({}));
-    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return; }
+    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return false; }
     if (!r.ok) {
       const why = d.reason ? _t('convert.reason.' + d.reason) : '';
       showToast((why && why !== 'convert.reason.' + d.reason ? why : apiMessage(d, 'toast.convertFailed')) || '转换失败', 4200);
-      return;
+      return false;
     }
-    if (!d.content) { showToast(apiMessage(d, 'toast.convertNoContent') || '未提取到内容', 4200); return; }
+    if (!d.content) {
+      window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
+      showToast(apiMessage(d, 'toast.convertNoContent') || '未提取到内容', 4200); return false;
+    }
     showConvertWarns(d.warns);
-  } catch (e) { showToast((_t('toast.convertFailPrefix') || '转换失败：') + e.message); return; }
+  } catch (e) { showToast((_t('toast.convertFailPrefix') || '转换失败：') + e.message); return false; }
   finally { busy(false); }
 
   if (d.saved && d.out) {
     showToast((_t('toast.savedPrefix') || '已保存：') + d.out);
     await loadFile(d.out);
-    return;
+    window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
+    return true;
   }
   if (d.skipped && !onExists) {
     // 已存在同名 .md：让用户决定，而不是静默覆盖或静默丢弃。
@@ -3473,10 +3588,12 @@ async function convertFile(path, onExists) {
         { id: 'preview', label: _t('convert.existsPreview') || '仅预览' },
       ]
     );
-    if (choice === 'rename' || choice === 'overwrite') { await convertFile(path, choice); return; }
-    if (choice === 'cancel') return;
+    if (choice === 'rename' || choice === 'overwrite') return convertFile(path, choice);
+    if (choice === 'cancel') return false;
   }
-  renderVirtual('convert', d.name, d.dir, d.content, d.fixes, { assets: d.assets, originPath: path });
+  const opened = await renderVirtual('convert', d.name, d.dir, d.content, d.fixes, { assets: d.assets, originPath: path })===true;
+  if (opened) window.ReadMDConversionReport?.show(d.fidelity_report, d.name || path);
+  return opened;
 }
 
 function showConvertWarns(warns) {
@@ -3487,29 +3604,46 @@ function showConvertWarns(warns) {
 }
 
 
+// The ordinary Open/Drop/OS lane reads original PDFs. Conversion remains an
+// explicit action in the PDF workspace or the existing conversion workbench.
+async function openDocumentPath(path, options = {}) {
+  if (!path) return false;
+  if (window.ReadMDOffice?.isPath(path)) return window.ReadMDOffice.open(path, options);
+  if (/\.pdf$/i.test(path)) {
+    const action = async () => {
+      if (!options._sessionRestoring && window.ReadMDSession?.restoring?.()) await window.__readmdSessionReady;
+      await window.ReadMDLifecycle?.whenIdle(options._lifecycleOwner);
+      if (!await waitForSessionTransition()) return false;
+      if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
+      if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
+      // Keep the underlying editor and its draft. The PDF workspace has its
+      // own guarded save/close path and does not become a Markdown session tab.
+      if (!window.ReadMDPdf?.read) { showToast(window.i18n.t('pdf.readUnavailable')); return false; }
+      return window.ReadMDPdf.read(path);
+    };
+    return deferSessionOperation(action, options._sessionQueued);
+  }
+  if ((typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(path)) || (typeof IMG_RE !== 'undefined' && IMG_RE.test(path))) return convertOrOcr(path, 'convert');
+  return loadFile(path, options);
+}
+
 async function loadFileDialog() {
   if (hasPy) {
     try {
       const p = await py.choose_file();
-      if (p) {
-        if (typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(p)) {
-          await convertOrOcr(p, 'convert');
-        } else {
-          await loadFile(p);
-        }
-      }
+      if (p) await openDocumentPath(p);
     } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
     return;
   }
   const input = $('file-input');
   input.value = '';
+  input.multiple = false;
   input.onchange = async () => {
     const f = input.files && input.files[0];
     if (!f) return;
     try {
       const p = await uploadFile(f);
-      if (p && MD_RE.test(p)) await loadFile(p, { browserCopy: true });
-      else if (p) await convertOrOcr(p, 'convert');
+      if (p) await openDocumentPath(p, { browserCopy: true });
     } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
   };
   input.click();

@@ -272,6 +272,32 @@
       "note": "本地 OpenAI 兼容服务，离线可用"
     },
     {
+      "name": "oMLX",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "format": "openai",
+      "models": [],
+      "website": "https://github.com/jundot/omlx",
+      "category": "local",
+      "mode": "chat",
+      "capabilities": {
+        "chat": true,
+        "models": true
+      }
+    },
+    {
+      "name": "llama.cpp",
+      "base_url": "http://127.0.0.1:9931/v1",
+      "format": "openai",
+      "models": [],
+      "website": "https://github.com/ggml-org/llama.cpp",
+      "category": "local",
+      "mode": "chat",
+      "capabilities": {
+        "chat": true,
+        "models": true
+      }
+    },
+    {
       "name": "Azure OpenAI",
       "base_url": "https://{resource}.openai.azure.com/openai/deployments/{deployment}",
       "format": "openai",

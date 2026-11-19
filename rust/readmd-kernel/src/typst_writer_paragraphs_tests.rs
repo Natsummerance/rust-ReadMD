@@ -125,7 +125,7 @@ fn typst_math_inside_unmeasured_vertical_or_decoration_transform_is_explicitly_u
 
 fn context() -> GeometryContext {
     GeometryContext{marker:"readmd-p04-0123456789abcdef0123456789abcdef:".into(),
-        paragraphs:vec![paragraphs::ParagraphRequest{index:3,id:Some("p3".into()),requested:18.}],note_count:0}
+        paragraphs:vec![paragraphs::ParagraphRequest{index:3,id:Some("p3".into()),requested:18.}],note_count:0,table_count:0}
 }
 fn details() -> Value {json!({"coordinateSpace":"pdfParagraphLine","blockIndex":3,"blockId":"p3","line":1,"mode":"exact","requestedPt":18,"requiredPt":25.192,"availableWidthPt":493.22,"availableHeightPt":728.5})}
 fn diagnostic(context: &GeometryContext, source: &Path, value: Value) -> String {
@@ -173,7 +173,7 @@ fn typst_geometry_native_relative_stderr_is_bound_to_the_actual_worker_directory
     let dir=tempfile::tempdir().unwrap();let source=dir.path().join("document.typ");
     let actual=include_str!("../tests/fixtures/typst-paragraph-native-relative.stderr");
     let context=GeometryContext{marker:"readmd-p04-b3909ca834e240cba3334428f25cdfe6:".into(),
-        paragraphs:vec![paragraphs::ParagraphRequest{index:1,id:None,requested:18.}],note_count:0};
+        paragraphs:vec![paragraphs::ParagraphRequest{index:1,id:None,requested:18.}],note_count:0,table_count:0};
     let error=context.diagnostic(actual,&source,dir.path()).unwrap();
     let response=crate::latex_compile::error_body(&error);
     assert_eq!(response["error_code"],"publication_layout_geometry");

@@ -26,6 +26,9 @@ const MAX_DOCUMENT: usize = 8 * 1024 * 1024;
 const MAX_ROOMS: usize = 64;
 const COMPACT_AFTER: i64 = 128;
 
+#[path = "collaboration_reversal.rs"]
+mod reversal;
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -132,6 +135,55 @@ fn full(doc: &Doc) -> Vec<u8> {
 fn content(doc: &Doc) -> String {
     doc.get_or_insert_text("content")
         .get_string(&doc.transact())
+}
+fn review_range(doc: &Doc, anchor: &Value) -> Option<(usize, usize)> {
+    let text = doc.get_or_insert_text("content");
+    let txn = doc.transact();
+    let offset = |key: &str| {
+        let position: StickyIndex = serde_json::from_value(anchor[key].clone()).ok()?;
+        let offset = position.get_offset(&txn)?;
+        (yrs::TextRef::from(offset.branch) == text).then_some(offset.index as usize)
+    };
+    let (from, to) = (offset("from")?, offset("to")?);
+    (from <= to).then_some((from, to))
+}
+fn review_body_budget(db: &Connection, room: &str, previous: &str, body: &Value) -> ApiResult<()> {
+    let size: i64 = db.query_row(
+        "SELECT (SELECT COALESCE(SUM(length(CAST(body AS BLOB))),0) FROM reviews WHERE room=?1)+(SELECT COALESCE(SUM(length(CAST(body AS BLOB))),0) FROM review_reversals WHERE room=?1)", [room], |r| r.get(0),
+    ).map_err(database)?;
+    if (size as usize).saturating_sub(previous.len()).saturating_add(body.to_string().len()) > 8 * 1024 * 1024 {
+        return Err(err(413, "collaboration_budget"));
+    }
+    Ok(())
+}
+fn review_generation(db: &Connection, room: &str) -> ApiResult<i64> {
+    db.query_row("SELECT generation FROM review_clock WHERE room=?1", [room], |r| r.get(0)).map_err(database)
+}
+fn migrate_review_clock(db: &mut Connection) -> ApiResult<()> {
+    let tx = db.transaction().map_err(database)?;
+    let legacy: bool = tx.query_row("SELECT NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='review_clock')", [], |r| r.get(0)).map_err(database)?;
+    // A journal sequence may restart after compaction. This independent clock
+    // is never reset by compaction, text undo, or an older writer's inserts.
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS review_clock(room TEXT PRIMARY KEY REFERENCES rooms(id),generation INTEGER NOT NULL CHECK(typeof(generation)='integer' AND generation>=0));
+        INSERT OR IGNORE INTO review_clock(room,generation) SELECT r.id,COALESCE(MAX(u.seq),0) FROM rooms r LEFT JOIN updates u ON u.room=r.id GROUP BY r.id;
+        CREATE TRIGGER IF NOT EXISTS collaboration_review_clock_room AFTER INSERT ON rooms BEGIN INSERT INTO review_clock(room,generation) VALUES(NEW.id,0); END;
+        CREATE TRIGGER IF NOT EXISTS collaboration_review_clock_update AFTER INSERT ON updates BEGIN
+          INSERT INTO review_clock(room,generation) VALUES(NEW.room,1) ON CONFLICT(room) DO UPDATE SET generation=generation+1;
+        END;").map_err(database)?;
+    if legacy {
+        // Before this migration, arbitrary review JSON could contain a forged
+        // _generation. Remove it in the same transaction that creates the clock.
+        let rows = tx.prepare("SELECT id,body FROM reviews WHERE instr(body,'\"_generation\"')>0").map_err(database)?
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(database)?
+            .collect::<rusqlite::Result<Vec<_>>>().map_err(database)?;
+        for (id, raw) in rows {
+            if let Ok(Value::Object(mut body)) = serde_json::from_str::<Value>(&raw) {
+                body.remove("_generation");
+                tx.execute("UPDATE reviews SET body=?2 WHERE id=?1", params![id,Value::Object(body).to_string()]).map_err(database)?;
+            }
+        }
+    }
+    tx.commit().map_err(database)
 }
 fn restore(db: &Connection, room: &str) -> ApiResult<Doc> {
     let snapshot: Vec<u8> = db
@@ -242,7 +294,7 @@ impl Service {
         // No schema change, retention cleanup or cached room may be opened by
         // a second writer. Independent caches cannot safely compact one WAL.
         let (path, owner) = owner::acquire(path)?;
-        let db = Connection::open(&path).map_err(database)?;
+        let mut db = Connection::open(&path).map_err(database)?;
         db.busy_timeout(std::time::Duration::from_secs(3))
             .map_err(database)?;
         db.execute_batch("PRAGMA auto_vacuum=INCREMENTAL; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
@@ -252,6 +304,8 @@ impl Service {
             CREATE INDEX IF NOT EXISTS updates_room ON updates(room,seq);
             CREATE TABLE IF NOT EXISTS reviews(id TEXT PRIMARY KEY,room TEXT NOT NULL REFERENCES rooms(id),member TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'open');
             CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY,room TEXT NOT NULL REFERENCES rooms(id),name TEXT NOT NULL,mime TEXT NOT NULL,bytes BLOB NOT NULL);") .map_err(database)?;
+        migrate_review_clock(&mut db)?;
+        reversal::migrate(&db)?;
         // Ended sessions are recoverable for 30 days, with an explicit maximum
         // of 64 retained sessions. Never discard an active acknowledged room.
         db.execute_batch("CREATE TABLE IF NOT EXISTS retention(room TEXT PRIMARY KEY REFERENCES rooms(id),closed_at INTEGER NOT NULL);").map_err(database)?;
@@ -366,7 +420,7 @@ impl Service {
         }
         let changed = match role {
             Some(role) => s.db.execute(
-                "UPDATE members SET role=?3 WHERE room=?1 AND id=?2 AND role!='owner'",
+                "UPDATE members SET role=?3 WHERE room=?1 AND id=?2 AND role!='owner' AND revoked=0",
                 params![room, member, role.text()],
             ),
             None => s.db.execute(
@@ -403,7 +457,7 @@ impl Service {
         let auth = s.authenticate(room, secret)?;
         if let Some(bytes) = bytes.as_ref() {
             if !auth.role.edits() {
-                return Err(err(403, "collaboration_forbidden"));
+                return Err(err(403, "collaboration_read_only"));
             }
             s.apply(room, &auth.member, bytes)?;
         }
@@ -431,8 +485,9 @@ impl Service {
         let title: String =
             s.db.query_row("SELECT title FROM rooms WHERE id=?1", [room], |r| r.get(0))
                 .map_err(database)?;
+        let generation = review_generation(&s.db, room)?;
         Ok(
-            json!({"ok":true,"title":title,"content":text,"revision":document_transaction::revision(&text),"role":auth.role,"member":auth.member}),
+            json!({"ok":true,"title":title,"content":text,"revision":document_transaction::revision(&text),"generation":generation,"role":auth.role,"member":auth.member}),
         )
     }
     pub fn review(&self, room: &str, secret: &str, body: Value) -> ApiResult<String> {
@@ -447,7 +502,11 @@ impl Service {
             return Err(err(403, "collaboration_forbidden"));
         }
         let mut body = body;
-        body.as_object_mut().ok_or_else(invalid)?.remove("_anchors");
+        let object = body.as_object_mut().ok_or_else(invalid)?;
+        object.remove("_anchors");
+        object.remove("_decision");
+        object.remove("_generation");
+        body["_generation"] = json!(review_generation(&s.db, room)?);
         if !body["transaction"].is_null() {
             s.load(room)?;
             let doc = &s.rooms[room];
@@ -481,7 +540,7 @@ impl Service {
         }
         let size: i64 =
             s.db.query_row(
-                "SELECT COALESCE(SUM(length(body)),0) FROM reviews WHERE room=?1",
+                "SELECT (SELECT COALESCE(SUM(length(CAST(body AS BLOB))),0) FROM reviews WHERE room=?1)+(SELECT COALESCE(SUM(length(CAST(body AS BLOB))),0) FROM review_reversals WHERE room=?1)",
                 [room],
                 |r| r.get(0),
             )
@@ -499,14 +558,69 @@ impl Service {
     }
     pub fn reviews(&self, room: &str, secret: &str) -> ApiResult<Value> {
         let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        s.authenticate(room, secret)?;
-        let mut query=s.db.prepare("SELECT r.id,r.member,r.body,r.status,m.name FROM reviews r JOIN members m ON m.id=r.member WHERE r.room=?1 ORDER BY r.created,r.id").map_err(database)?;
-        let rows=query.query_map([room],|r|Ok(json!({"id":r.get::<_,String>(0)?,"member":r.get::<_,String>(1)?,"body":serde_json::from_str::<Value>(&r.get::<_,String>(2)?).unwrap_or(Value::Null),"status":r.get::<_,String>(3)?,"name":r.get::<_,String>(4)?}))).map_err(database)?;
+        let auth = s.authenticate(room, secret)?;
+        let generation = review_generation(&s.db, room)?;
+        let mut query=s.db.prepare("SELECT r.id,r.member,r.body,r.status,m.name,x.body FROM reviews r JOIN members m ON m.id=r.member LEFT JOIN review_reversals x ON x.review=r.id WHERE r.room=?1 ORDER BY r.created,r.id").map_err(database)?;
+        let rows=query.query_map([room],|r| {
+            let body = serde_json::from_str::<Value>(&r.get::<_,String>(2)?).unwrap_or(Value::Null);
+            let status: String = r.get(3)?;
+            let reversed: Option<String> = r.get(5)?;
+            let can_reverse = auth.role.edits() && status == "accepted" && reversed.is_none() && reversal::decision(&body).is_some_and(|d| d.generation == generation);
+            Ok(json!({"id":r.get::<_,String>(0)?,"member":r.get::<_,String>(1)?,"body":body,"status":status,"name":r.get::<_,String>(4)?,"can_reverse":can_reverse,"reversal":reversed.and_then(|raw|serde_json::from_str::<Value>(&raw).ok())}))
+        }).map_err(database)?;
         Ok(
             json!({"ok":true,"reviews":rows.collect::<rusqlite::Result<Vec<_>>>().map_err(database)?}),
         )
     }
+    /// A read-only, revision-fenced comparison. Failed acceptance never changes
+    /// the original proposal; the client can keep a separate local merge draft.
+    pub fn review_preview(&self, room: &str, secret: &str, review: &str) -> ApiResult<Value> {
+        let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        s.authenticate(room, secret)?;
+        let (body, status): (String, String) = s.db.query_row(
+            "SELECT body,status FROM reviews WHERE id=?1 AND room=?2",
+            params![review, room], |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional().map_err(database)?.ok_or_else(|| err(404, "collaboration_not_found"))?;
+        let body: Value = serde_json::from_str(&body).map_err(|_| invalid())?;
+        let tx: ContentTransaction = serde_json::from_value(body["transaction"].clone()).map_err(|_| invalid())?;
+        s.load(room)?;
+        let doc = &s.rooms[room];
+        let source = content(doc);
+        let revision = document_transaction::revision(&source);
+        let generation = review_generation(&s.db, room)?;
+        let original_generation = body["_generation"].as_i64();
+        let mut edits = Vec::new();
+        let mut relocated = tx.clone();
+        let mut conflict = false;
+        for (index, edit) in tx.edits.iter().enumerate() {
+            let anchor = &body["_anchors"][index];
+            let range = if tx.base_revision == revision && original_generation == Some(generation) {
+                Some((edit.from, edit.to))
+            } else { review_range(doc, anchor) };
+            let slice = range.and_then(|(from, to)| {
+                let from = document_transaction::byte_offset(&source, from).ok()?;
+                let to = document_transaction::byte_offset(&source, to).ok()?;
+                source.get(from..to)
+            });
+            let original = anchor["original"].as_str().or_else(|| (tx.base_revision == revision && original_generation == Some(generation)).then_some(slice).flatten());
+            let changed = slice.is_none() || slice != original;
+            conflict |= changed;
+            if let Some((from, to)) = range {
+                relocated.edits[index].from = from;
+                relocated.edits[index].to = to;
+            }
+            edits.push(json!({"from":range.map(|r|r.0),"to":range.map(|r|r.1),"original":original,"current":slice,"insert":edit.insert,"conflict":changed}));
+        }
+        relocated.base_revision = revision.clone();
+        conflict |= document_transaction::apply(&source, &relocated).is_err();
+        Ok(json!({"ok":true,"id":review,"status":status,"revision":revision,"generation":generation,"content":source,"edits":edits,"conflict":conflict}))
+    }
     pub fn resolve(&self, room: &str, secret: &str, review: &str, accept: bool) -> ApiResult<()> {
+        self.resolve_with_transaction(room, secret, review, accept, None, None)
+    }
+    /// A manual merge is an explicit current-revision transaction, never an
+    /// override flag bypassing the proposal's stale-range check.
+    pub fn resolve_with_transaction(&self, room: &str, secret: &str, review: &str, accept: bool, replacement: Option<ContentTransaction>, expected_generation: Option<i64>) -> ApiResult<()> {
         let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let auth = s.authenticate(room, secret)?;
         if !auth.role.edits() {
@@ -521,13 +635,27 @@ impl Service {
             .optional()
             .map_err(database)?
             .ok_or_else(|| err(409, "collaboration_conflict"))?;
-        let v: Value = serde_json::from_str(&body).map_err(|_| invalid())?;
+        let mut v: Value = serde_json::from_str(&body).map_err(|_| invalid())?;
+        if replacement.is_some() && (!accept || v["transaction"].is_null()) {
+            return Err(invalid());
+        }
+        if expected_generation.is_some_and(|g| g < 0) || (replacement.is_none() && expected_generation.is_some()) { return Err(invalid()); }
+        let manual = replacement.is_some();
+        s.load(room)?;
+        let source = content(&s.rooms[room]);
+        let base_revision = document_transaction::revision(&source);
+        let generation = review_generation(&s.db, room)?;
+        if manual && expected_generation != Some(generation) { return Err(err(409, "collaboration_conflict")); }
+        let mut decision = json!({"member":auth.member,"name":auth.name,"created":now(),"method":if manual{"manual"}else if accept{"accept"}else{"reject"},"base_revision":base_revision,"base_generation":generation});
         if accept && !v["transaction"].is_null() {
-            s.load(room)?;
-            let source = content(&s.rooms[room]);
-            let mut tx: ContentTransaction =
-                serde_json::from_value(v["transaction"].clone()).map_err(|_| invalid())?;
-            if tx.base_revision != document_transaction::revision(&source) {
+            let mut tx: ContentTransaction = match replacement {
+                Some(tx) => tx,
+                None => serde_json::from_value(v["transaction"].clone()).map_err(|_| invalid())?,
+            };
+            if tx.origin != "review" || (manual && tx.edits.is_empty()) { return Err(invalid()); }
+            if serde_json::to_vec(&tx).map_err(|_| invalid())?.len() > 128 * 1024 { return Err(err(413, "collaboration_budget")); }
+            if tx.base_revision != base_revision || (!manual && v["_generation"].as_i64() != Some(generation)) {
+                if manual { return Err(err(409, "collaboration_conflict")); }
                 // Resolve server-created relative positions, then compare the exact
                 // reviewed slice. Unrelated edits may move a suggestion; edits
                 // within its range must remain an explicit conflict.
@@ -536,22 +664,10 @@ impl Service {
                     .filter(|a| a.len() == tx.edits.len())
                     .ok_or_else(|| err(409, "collaboration_conflict"))?;
                 let doc = &s.rooms[room];
-                let text = doc.get_or_insert_text("content");
-                let txn = doc.transact();
                 for (edit, anchor) in tx.edits.iter_mut().zip(anchors) {
-                    let resolve = |key: &str| -> ApiResult<usize> {
-                        let position: StickyIndex =
-                            serde_json::from_value(anchor[key].clone()).map_err(|_| invalid())?;
-                        let offset = position
-                            .get_offset(&txn)
-                            .ok_or_else(|| err(409, "collaboration_conflict"))?;
-                        if yrs::TextRef::from(offset.branch) != text {
-                            return Err(invalid());
-                        }
-                        Ok(offset.index as usize)
-                    };
-                    edit.from = resolve("from")?;
-                    edit.to = resolve("to")?;
+                    let (from, to) = review_range(doc, anchor).ok_or_else(|| err(409, "collaboration_conflict"))?;
+                    edit.from = from;
+                    edit.to = to;
                     let from = document_transaction::byte_offset(&source, edit.from)
                         .map_err(|_| invalid())?;
                     let to = document_transaction::byte_offset(&source, edit.to)
@@ -567,6 +683,10 @@ impl Service {
             if result.content.len() > MAX_DOCUMENT {
                 return Err(err(413, "collaboration_budget"));
             }
+            decision["transaction"] = json!(tx);
+            decision["inverse"] = json!(result.inverse);
+            decision["result_revision"] = json!(result.revision);
+            v["_decision"] = decision;
             // Work on a fork so rejection/storage failure cannot leak a partial edit.
             let doc = fresh();
             doc.transact_mut()
@@ -599,14 +719,20 @@ impl Service {
                 params![room, auth.member, bytes, now()],
             )
             .map_err(database)?;
-            dbtx.execute("UPDATE reviews SET status='accepted' WHERE id=?1", [review])
+            v["_decision"]["result_generation"] = json!(review_generation(&dbtx, room)?);
+            review_body_budget(&dbtx, room, &body, &v)?;
+            dbtx.execute("UPDATE reviews SET status='accepted',body=?2 WHERE id=?1", params![review,v.to_string()])
                 .map_err(database)?;
             dbtx.commit().map_err(database)?;
             s.rooms.insert(room.into(), doc);
         } else {
+            decision["result_revision"] = json!(base_revision);
+            decision["result_generation"] = json!(generation);
+            v["_decision"] = decision;
+            review_body_budget(&s.db, room, &body, &v)?;
             s.db.execute(
-                "UPDATE reviews SET status=?2 WHERE id=?1",
-                params![review, if accept { "accepted" } else { "rejected" }],
+                "UPDATE reviews SET status=?2,body=?3 WHERE id=?1",
+                params![review, if accept { "accepted" } else { "rejected" },v.to_string()],
             )
             .map_err(database)?;
         }
@@ -873,7 +999,7 @@ fn prune(state: &mut State) -> ApiResult<()> {
     }
     let tx = state.db.transaction().map_err(database)?;
     for room in ids {
-        for table in ["updates", "reviews", "attachments", "members", "retention"] {
+        for table in ["updates", "review_reversals", "reviews", "attachments", "members", "retention", "review_clock"] {
             tx.execute(&format!("DELETE FROM {table} WHERE room=?1"), [&room])
                 .map_err(database)?;
         }
@@ -889,6 +1015,10 @@ fn prune(state: &mut State) -> ApiResult<()> {
         .map_err(database)?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "collaboration_resolution_tests.rs"]
+mod resolution_tests;
 
 #[cfg(test)]
 mod tests {

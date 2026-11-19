@@ -81,7 +81,7 @@ pub fn prepare(format:&str,content:&str,base:&str,options:&Value,name:&str,asset
 /// Snapshot provenance is internal state, not completed client defaults. The
 /// artifact handed to preview is generated with the same typed options as save.
 pub(crate) fn snapshot_key(frozen:&crate::export_snapshot::Frozen)->String{
-    let packet=json!([frozen.content,frozen.options,frozen.resolved_options,frozen.engine_identity,frozen.font_identity,frozen.asset_identity]);
+    let packet=json!([frozen.format,frozen.content,frozen.options,frozen.resolved_options,frozen.engine_identity,frozen.font_identity,frozen.asset_identity]);
     format!("snapshot:{}:{:x}",frozen.snapshot_id,Sha256::digest(packet.to_string().as_bytes()))
 }
 pub(crate) fn prepare_snapshot(frozen:&crate::export_snapshot::Frozen,data:&Path)->Result<Arc<Artifact>,String>{
@@ -178,37 +178,15 @@ fn prepare_inner(format:&str,content:&str,base:&str,options:&Value,name:&str,ass
     if let Some(existing)=items.iter().find(|a|a.key==artifact.key) {return Ok(existing.clone());}
     while items.len()>=6 {items.pop_front();}items.push_back(artifact.clone());Ok(artifact)
 }
-pub fn payload(artifact:&Artifact)->Result<Value,String> {
-    use base64::Engine;
-    let budget=crate::publication_budget::capture();budget.check()?;
-    let pdf=std::fs::read(&artifact.pdf).map_err(|e|e.to_string())?;
-    budget.check()?;
-    if pdf.len()>32*1024*1024 {return Err("preview_too_large".into());}
-    let document=lopdf::Document::load_mem(&pdf).map_err(|e|e.to_string())?;
-    budget.check()?;
-    let pages=document.get_pages().len();
-    let dimensions=document.get_pages().values().next().and_then(|id|document.get_object(*id).ok()).and_then(|p|p.as_dict().ok())
-        .and_then(|p|p.get(b"MediaBox").ok()).and_then(|p|p.as_array().ok())
-        .map(|a|a.iter().filter_map(|v|v.as_float().ok().map(|v|v as f64).or_else(||v.as_i64().ok().map(|v|v as f64))).collect::<Vec<_>>()).unwrap_or_default();
-    let text=crate::pdf_text::extract(&pdf).unwrap_or_default();
-    budget.check()?;
-    let rendered=crate::ocr_winrt::render_pdf_page_png(&pdf,0);budget.check()?;
-    let png=match rendered{Ok(bytes)=>Some(base64::engine::general_purpose::STANDARD.encode(bytes)),Err(error)if budget.interrupted(&error)=>return Err(error),Err(_)=>None};
-    let value=json!({"ok":true,"key":artifact.key,"format":artifact.format,"pdf":base64::engine::general_purpose::STANDARD.encode(pdf),"firstPage":png,"pages":pages,"dimensions":dimensions,"text":text,"mode":if artifact.format=="pdf"{"artifact"}else{"shared-layout"},"previewEngine":artifact.projection_engine,"sourceMap":artifact.source_map,"warnings":artifact.warnings});
-    budget.check()?;Ok(value)
+mod pages;
+pub(crate) use pages::{page_for_request, preview_for_request};
+#[cfg(test)]
+fn payload(artifact:&Artifact)->Result<Value,String> {
+    pages::payload(artifact, false, &crate::paths::data_dir(), &crate::paths::assets_dir())
 }
-pub fn page_payload(artifact:&Artifact,page:usize)->Result<Value,String> {
-    crate::publication_budget::run("pdf",&json!({"pdf":{"engine":artifact.projection_engine.as_str()}}),||page_payload_inner(artifact,page))
-}
-fn page_payload_inner(artifact:&Artifact,page:usize)->Result<Value,String>{
-    use base64::Engine;
-    let budget=crate::publication_budget::capture();budget.check()?;
-    if page==0 {return Err("invalid_page_range".into());}
-    let bytes=std::fs::read(&artifact.pdf).map_err(|e|e.to_string())?;
-    budget.check()?;
-    let png=crate::ocr_winrt::render_pdf_page_png(&bytes,page-1)?;
-    budget.check()?;
-    let value=json!({"ok":true,"key":artifact.key,"page":page,"png":base64::engine::general_purpose::STANDARD.encode(png)});budget.check()?;Ok(value)
+#[cfg(test)]
+fn page_payload(artifact:&Artifact,page:usize)->Result<Value,String> {
+    pages::page(artifact, page, &crate::paths::data_dir(), &crate::paths::assets_dir())
 }
 #[cfg(test)]
 mod tests {
@@ -226,6 +204,11 @@ mod tests {
         let assets=tempfile::tempdir().unwrap();
         let artifact=prepare("pdf","# Preview on Mac\n\nActual page pixels.","",&json!({}),"preview",assets.path()).unwrap();
         let result=payload(&artifact).unwrap();
+        assert!(result["pdf"].is_string());
+        let paged=pages::payload(&artifact,true,assets.path(),assets.path()).unwrap();
+        assert!(paged.get("pdf").is_none());
+        assert_eq!(paged["firstPage"],result["firstPage"]);
+        assert_eq!(page_payload(&artifact,1).unwrap()["png"],paged["firstPage"]);
         assert!(result["firstPage"].as_str().is_some_and(|png|png.len()>100),"Mac preview must render the actual PDF, not a text placeholder");
     }
     use super::*;

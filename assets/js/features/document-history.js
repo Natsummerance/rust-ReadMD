@@ -114,7 +114,7 @@
     return true;
   }
   async function createCopy() {
-    const origin = getActiveTab(); if (!origin || origin._restoreUnavailable) return;
+    const origin = getActiveTab(); if (!origin || origin._restoreUnavailable || origin.mode === 'office-preview') return;
     const snap = capture(origin);
     const base = snap.name.replace(/\.[^.]+$/, '');
     let name = base + '-' + t('storage.copySuffix') + '.md', n = 2;
@@ -172,6 +172,7 @@
       await flush();
       const data = await request();
       if (epoch !== listEpoch) return;
+      updateHistoryButton(data.entries);
       const list = $('document-history-list'); list.replaceChildren();
       for (const entry of data.entries) {
         const row = document.createElement('article'); row.className = 'document-history-row';
@@ -208,6 +209,15 @@
     $('document-history-refresh').textContent = t('storage.refresh');
     $('document-history-modal').classList.remove('hidden'); await refresh();
   }
+  function updateHistoryButton(entries) {
+    if (entries) recoveryCount = entries.filter(entry => ['draft','discarded','math_draft','math_recovery'].includes(entry.kind)).length;
+    const button = $('btn-document-history');
+    if (!button) return;
+    const label = t('storage.history');
+    const hint = recoveryCount ? label + ' · ' + t('storage.recoveryAvailable', { count: recoveryCount }) : label;
+    button.title = hint;
+    button.setAttribute('aria-label', hint);
+  }
   function init() {
     if (initialized) return; initialized = true;
     $('btn-document-history').addEventListener('click', open);
@@ -215,8 +225,7 @@
     if (!window.__STARTUP_PROBE__) setTimeout(async () => {
       try {
         const data = await request();
-        recoveryCount = data.entries.filter(entry => ['draft','discarded','math_draft','math_recovery'].includes(entry.kind)).length;
-        if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
+        updateHistoryButton(data.entries);
       } catch (_) { /* Opening recovery provides an explicit retry with feedback. */ }
     }, 3000);
     document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
@@ -227,32 +236,40 @@
   async function prepareClose() {
     if (closing) return false;
     closing = true;
+    const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
     try {
       if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
       if (state.editing) syncActiveTabDirty();
-      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return false;
       if (await flush() === false) return false;
       if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
+      if (window.ReadMDMediaTranscribe && !await window.ReadMDMediaTranscribe.prepareClose()) return false;
       if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
       if (!await confirmExitChanges()) return false;
+      if (window.ReadMDCodeRuns && !await window.ReadMDCodeRuns.cancelAll()) { showToast(t('task.cancelRetry')); return false; }
       if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
       const unchanged=closeStamp();
-      if (await window.ReadMDSession?.flush() === false) return false;
+      if (await window.ReadMDSession?.flush(false, true) === false) return false;
       await queue;
-      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return false;
       if (!unchanged()) return false;
+      if (window.ReadMDOffice && !await window.ReadMDOffice.prepareClose()) return false;
       window.ipc?.postMessage('readmd:quit');
       return true;
-    } finally { closing = false; }
+    } finally { releaseCode?.(); closing = false; }
   }
   async function prepareInstall() {
+    const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
+    try {
     if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
     if (state.editing) syncActiveTabDirty();
     if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
     if (await flush() === false) return false;
     if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
+    if (window.ReadMDMediaTranscribe && !await window.ReadMDMediaTranscribe.prepareClose()) return false;
     if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
     if (!await confirmExitChanges()) return false;
+    if (window.ReadMDCodeRuns && !await window.ReadMDCodeRuns.cancelAll()) { showToast(t('task.cancelRetry')); return false; }
     if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
     const unchanged=closeStamp();
     if (await window.ReadMDSession?.flush() === false) return false;
@@ -260,6 +277,7 @@
     if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
     if (!unchanged()) return false;
     return true;
+    } finally { releaseCode?.(); }
   }
   function closeStamp() {
     const tabs=[...state.tabs], expected=tabs.map(tab=>({tab,path:tab.path,content:capture(tab).content}));
@@ -338,7 +356,7 @@
     mathDrafts, saveMathDraft, removeMathDraft, mathKept:()=>feedback('storage.draftKept') };
   window.addEventListener('readmd:language-changed', () => {
     if (lastFeedback) feedback(lastFeedback.key, lastFeedback.params, lastFeedback.failed);
-    if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
+    updateHistoryButton();
     if ($('document-history-modal') && !$('document-history-modal').classList.contains('hidden')) open();
   });
 })();

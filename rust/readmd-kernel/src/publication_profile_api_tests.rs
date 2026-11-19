@@ -42,6 +42,40 @@ fn publication_profile_get_default_and_source_patch_share_http_and_mcp(){
 }
 
 #[test]
+fn table_geometry_preflight_uses_the_selected_pdf_consumer_for_exports_and_images() {
+    const SOURCE: &str = "| A | B |\n|---|---|\n| Value {colspan=2 align=right valign=bottom} | Detail |\n";
+    let unsupported = crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED;
+    let malformed = SOURCE.replace("colspan=2", "colspan=3");
+    for format in ["pdf", "png", "png-pages"] {
+        for options in [json!({}), json!({"pdf":{"engine":null}}), json!({"pdf":{"engine":"rust"}}), json!({"pdf":{"engine":"typst"}})] {
+            assert!(crate::publication_profile::preflight(format, SOURCE, &options).is_ok(), "{format} {options}");
+            let error = crate::publication_profile::preflight(format, &malformed, &options).unwrap_err();
+            assert_eq!((error.code.as_str(), error.path.as_str()), (unsupported, "source.table"));
+        }
+        for engine in ["xelatex", "pdflatex"] {
+            let error = crate::publication_profile::preflight(format, SOURCE, &json!({"pdf":{"engine":engine}})).unwrap_err();
+            assert_eq!((error.code.as_str(), error.path.as_str()), (unsupported, "source.table"));
+        }
+    }
+    let quote = SOURCE.lines().map(|line| format!("> {line}\n")).collect::<String>();
+    assert!(crate::publication_profile::preflight("pdf", &quote, &json!({"pdf":{"engine":"typst"}})).is_ok());
+    let error = crate::publication_profile::preflight("pdf", &quote, &json!({})).unwrap_err();
+    assert_eq!((error.code.as_str(), error.path.as_str()), (unsupported, "source.table"));
+
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("protected.pdf");
+    let data = root.path().join("profile");
+    let assets = root.path().join("assets");
+    std::fs::write(&target, b"OWNED PDF").unwrap();
+    let error = crate::latex_compile::export_pdf_with_data(
+        SOURCE, "", target.to_str().unwrap(), &json!({}), "Owned", &data, &assets,
+    ).unwrap_err();
+    assert_eq!(error, unsupported);
+    assert_eq!(std::fs::read(&target).unwrap(), b"OWNED PDF");
+    assert!(!data.exists() && !assets.exists());
+}
+
+#[test]
 fn section_only_notes_reach_preflight_before_resources_or_output_are_committed(){
     let temporary=tempfile::tempdir().unwrap();let app=app(temporary.path());
     let source="<!-- readmd-section:v1 {\"id\":\"first\",\"footnotes\":{\"kinds\":{\"footnote\":{\"placement\":\"beneathText\"}}}} -->\n\n# First\n\nText[^n].\n\n<!-- readmd-section:v1 {\"id\":\"second\",\"footnotes\":{\"kinds\":{\"footnote\":{\"placement\":\"pageBottom\"}}}} -->\n\n# Second\n\nRepeated[^n].\n\n[^n]: Authored note.\n";

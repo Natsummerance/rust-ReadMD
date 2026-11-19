@@ -347,6 +347,36 @@ async function auditPanel(page, selector) {
   expect(issues, selector).toEqual([]);
 }
 
+test('long RTL confirmation keeps its actions visible and Escape restores the underlying dialog', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 360 });
+  await openDoc(page);
+  await page.evaluate(async () => {
+    await i18n.setLanguage('ar', false);
+    openAiModal('ai-settings-modal');
+  });
+  const opener = page.locator('#ai-settings-close');
+  await opener.focus();
+  await page.evaluate(() => {
+    window.confirmationResult = confirmAction({
+      title: i18n.t('dialog.unsavedTitle'),
+      message: 'وثيقة-'.repeat(400) + '.md',
+      danger: true,
+    });
+  });
+  const box = page.locator('#confirm-modal .close-confirm-box');
+  await expect(page.locator('#confirm-cancel')).toBeFocused();
+  await auditPanel(page, '#confirm-modal .close-confirm-box');
+  expect(await box.evaluate(el => {
+    const bounds = el.getBoundingClientRect();
+    const content = el.querySelector('.close-confirm-head');
+    return bounds.top >= 0 && bounds.bottom <= innerHeight && content.scrollHeight > content.clientHeight;
+  })).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(box).toBeHidden();
+  expect(await page.evaluate(() => window.confirmationResult)).toBe(false);
+  await expect(opener).toBeFocused();
+});
+
 for (const locale of ['en', 'zh-CN', 'zh-TW']) {
   for (const size of [{ width: 1160, height: 820 }, { width: 1024, height: 680 }]) {
     test(`panels have no covered text and 44px controls at ${size.width}x${size.height} in ${locale}`, async ({ browser }, testInfo) => {
@@ -383,8 +413,8 @@ for (const locale of ['en', 'zh-CN', 'zh-TW']) {
         await page.evaluate(() => openPluginModal());
         await page.locator('.plugin-runtime-details > summary').click();
         await auditPanel(page, '#plugin-box');
-        const lineClamp = await page.locator('.plugin-card-desc').first().evaluate(el => ({ height: el.clientHeight, line: parseFloat(getComputedStyle(el).lineHeight) }));
-        expect(lineClamp.height).toBeLessThanOrEqual(lineClamp.line * 2 + 1);
+        const description = await page.locator('.plugin-card-desc').first().evaluate(el => ({ height: el.clientHeight, content: el.scrollHeight }));
+        expect(description.content).toBeLessThanOrEqual(description.height + 1);
         if (process.env.READMD_PANEL_SCREENSHOTS) {
           for (const panel of ['ai-settings', 'export', 'plugin']) {
             await page.evaluate(id => document.querySelectorAll('#ai-settings-modal, #export-modal, #plugin-modal').forEach(el => el.classList.toggle('hidden', el.id !== id + '-modal')), panel);

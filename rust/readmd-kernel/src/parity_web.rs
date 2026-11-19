@@ -1812,7 +1812,7 @@ fn h_ocr_with_engine(app: &App, req: &Request, before_publish: impl FnOnce()->bo
 mod ocr_commit_tests;
 
 /// `Handler._api_transcribe` (`readmd.py:2052`).
-pub fn h_transcribe(_app: &App, req: &Request) -> Response {
+pub fn h_transcribe(app: &App, req: &Request) -> Response {
     if req.method != "POST" {
         return Response::json_status(405, &json!({"ok": false, "error_code": "method_not_allowed"}));
     }
@@ -1827,6 +1827,12 @@ pub fn h_transcribe(_app: &App, req: &Request) -> Response {
     // which the trailing `except Exception` reports as `transcribe_failed`.
     if !body.is_object() {
         return Response::json_status(500, &json!({"ok": false, "error_code": "transcribe_failed"}));
+    }
+    if body.get("operation").is_some() && !crate::server::app_token_authorized(app, req) {
+        return Response::json_status(403, &json!({"ok": false, "error_code": "forbidden"}));
+    }
+    if let Some(operation @ ("draft_load" | "draft_save")) = body["operation"].as_str() {
+        return transcribe::draft::endpoint(&app.paths.data_dir, operation, &body);
     }
     let file_path = str_field(&body, "path").trim().to_string();
     let language = {
@@ -1854,7 +1860,31 @@ pub fn h_transcribe(_app: &App, req: &Request) -> Response {
             &json!({"ok": false, "error_code": "unsupported_media_format"}),
         );
     }
-    let (text, err) = transcribe::transcribe_to_md(&file_path, language.as_deref(), &model);
+    let task = match body.get("task_id") {
+        None => None,
+        Some(Value::String(id)) => crate::cancel::register(id),
+        _ => None,
+    };
+    if body.get("task_id").is_some() && task.is_none() {
+        return Response::json_status(400, &json!({"ok": false, "error_code": "invalid_task_id"}));
+    }
+    let work = || {
+        if body.get("operation").is_some() {
+            transcribe::selection::endpoint(&app.paths.data_dir, &app.paths.assets_dir, &body, &file_path, language.as_deref())
+        } else {
+            transcribe_legacy(&file_path, language.as_deref(), &model)
+        }
+    };
+    let Some(task) = task else { return work(); };
+    let response = crate::speech::with_cancel(task.checker(), work);
+    if task.is_cancelled() || (response.status == 200 && !task.try_commit()) {
+        return Response::json_status(499, &json!({"ok": false, "error_code": "cancelled"}));
+    }
+    response
+}
+
+fn transcribe_legacy(file_path: &str, language: Option<&str>, model: &str) -> Response {
+    let (text, err) = transcribe::transcribe_to_md(file_path, language, model);
     // `if text:` / `err if err else None`: Python tests truthiness, so an empty
     // string is neither a result nor a warning.
     let text = text.filter(|value| !value.is_empty());

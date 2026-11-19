@@ -61,10 +61,10 @@ test('all document AI entry points reuse the provider and opaque credential save
   }
 });
 
-test('Save As in the More menu is localized by the active dictionary', async ({ page }) => {
+test('Save As in the conversion panel is localized by the active dictionary', async ({ page }) => {
   await page.goto('/');
   await waitForPage(page, () => window.i18n && window.i18n.currentLang === 'zh-CN');
-  await page.locator('#btn-more').click();
+  await page.locator('#tab-conversion').click();
   await expect(page.locator('#btn-saveas > span')).toHaveText('另存为');
-  await expect(page.locator('#btn-saveas > em')).toHaveText('.md 文件');
+  await expect(page.locator('#btn-saveas')).toHaveAccessibleName('另存为');
 });

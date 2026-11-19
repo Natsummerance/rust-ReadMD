@@ -1975,3 +1975,189 @@ mod exact_anchor_compensation_regressions {
         }
     }
 }
+
+// Append-only preparation for review_tests.rs; actual Service/SQLite paths.
+// Not compiled or executed by the delegate. No helper-only success oracle.
+#[cfg(test)]
+mod adjacent_withdraw_provenance_regressions {
+    use super::*;
+    const ORIGINAL: &str = "😀|ab|![保留](owned.svg)\n";
+    fn item<'a>(head: &'a Value, id: &Value) -> &'a Value {
+        head["changes"].as_array().unwrap().iter().find(|change| change["id"] == *id).unwrap()
+    }
+    fn semantic(head: &Value, ids: &[Value]) -> Value {
+        json!(ids.iter().map(|id| {
+            let current = item(head, id);
+            ["id", "from", "to", "original", "replacement", "decision", "application", "taken_over",
+                "origin", "task_id", "candidate_versions", "dependencies", "restore_original"]
+                .iter().map(|key| ((*key).to_string(), current[*key].clone()))
+                .collect::<serde_json::Map<String, Value>>()
+        }).collect::<Vec<_>>())
+    }
+    fn save_visible(service: &Service, head: &Value, label: &str) -> Value {
+        let body = head["content"].as_str().unwrap();
+        let revision = document_transaction::revision(body);
+        let prepared = change(service, head, "prepare_save", &format!("{label}-prepare"), json!({
+            "content":body, "disk_revision":head["disk_revision"], "expected_disk_revision":revision,
+            "saved_content":body, "edit_steps":[]
+        }));
+        service.handle(&json!({"action":"commit_save", "document_id":head["document_id"],
+            "intent_id":prepared["intent_id"], "call_id":format!("{label}-commit"),
+            "disk_revision":revision, "content":body})).unwrap()
+    }
+    fn cycle(mixed: bool, reverse_ids: bool) {
+        let directory = TempDir::new().unwrap();
+        let service = Service::new(directory.path());
+        let opened = open_document(&service, "draft:adjacent-withdraw-provenance", ORIGINAL);
+        let replacement = if mixed { "β😀" } else { "" };
+        let pending_body = if mixed { "😀|β😀|![保留](owned.svg)\n" } else { "😀||![保留](owned.svg)\n" };
+        let proposed = change(&service, &opened, "propose", "adjacent-propose", json!({
+            "origin":"ai", "task_id":"adjacent-owned", "edits":[
+                {"from":3,"to":4,"insert":""}, {"from":4,"to":5,"insert":replacement}]
+        }));
+        assert_eq!(proposed["content"], pending_body);
+        let ids: Vec<Value> = ["a", "b"].iter().map(|original| {
+            let found = proposed["changes"].as_array().unwrap().iter()
+                .filter(|change| change["original"] == *original).collect::<Vec<_>>();
+            assert_eq!(found.len(), 1);
+            found[0]["id"].clone()
+        }).collect();
+        assert_eq!(proposed["changes"].as_array().unwrap().len(), 2);
+        assert_eq!(item(&proposed, &ids[0])["from"], 3);
+        assert_eq!(item(&proposed, &ids[0])["to"], 3);
+        assert_eq!(item(&proposed, &ids[1])["from"], 3);
+        assert_eq!(item(&proposed, &ids[1])["to"], if mixed { 6 } else { 3 });
+        let mut requested = ids.clone();
+        if reverse_ids { requested.reverse(); }
+        let operation = request(&proposed, "resolve", "adjacent-withdraw", json!({
+            "decision":"withdraw", "ids":requested
+        }));
+        let before_events = events(&directory);
+        let withdrawn = service.handle(&operation).unwrap();
+        assert_eq!(withdrawn["content"], ORIGINAL);
+        assert_eq!(withdrawn["review_revision"].as_u64().unwrap(), proposed["review_revision"].as_u64().unwrap() + 1);
+        assert_eq!(withdrawn["generation"].as_u64().unwrap(), proposed["generation"].as_u64().unwrap() + 1);
+        assert_eq!(events(&directory), before_events + 1);
+        let mut expected = semantic(&proposed, &ids);
+        for (index, (from, to)) in [(3, 4), (4, 5)].into_iter().enumerate() {
+            expected[index]["from"] = json!(from);
+            expected[index]["to"] = json!(to);
+            expected[index]["decision"] = json!("withdrawn");
+            expected[index]["application"] = json!("proposed");
+            expected[index]["taken_over"] = json!(false);
+        }
+        assert_eq!(semantic(&withdrawn, &ids), expected);
+        for id in &ids {
+            assert!(item(&withdrawn, id)["version"].as_u64().unwrap() > item(&proposed, id)["version"].as_u64().unwrap());
+        }
+        drop(service);
+        let service = Service::new(directory.path());
+        let reopened = read(&service, &withdrawn);
+        assert_eq!(reopened["content"], ORIGINAL);
+        assert_eq!(semantic(&reopened, &ids), expected);
+        let undone = change(&service, &reopened, "undo", "adjacent-undo", json!({}));
+        assert_eq!(undone["content"], pending_body);
+        assert_eq!(semantic(&undone, &ids), semantic(&proposed, &ids));
+        assert_eq!(undone["review_revision"].as_u64().unwrap(), reopened["review_revision"].as_u64().unwrap() + 1);
+        assert_eq!(undone["can_redo"], true);
+        // Trusted save protocol only: no physical I/O claim from a Service unit.
+        let saved_pending = save_visible(&service, &undone, "pending-save");
+        assert_eq!(saved_pending["content"], pending_body);
+        assert_eq!(semantic(&saved_pending, &ids), semantic(&proposed, &ids));
+        assert_eq!(saved_pending["can_redo"], true);
+        drop(service);
+        let service = Service::new(directory.path());
+        let pending_reopened = read(&service, &saved_pending);
+        assert_eq!(pending_reopened["content"], pending_body);
+        assert_eq!(semantic(&pending_reopened, &ids), semantic(&proposed, &ids));
+        let redone = change(&service, &pending_reopened, "redo", "adjacent-redo", json!({}));
+        assert_eq!(redone["content"], ORIGINAL);
+        assert_eq!(semantic(&redone, &ids), expected);
+        assert_eq!(redone["review_revision"].as_u64().unwrap(), pending_reopened["review_revision"].as_u64().unwrap() + 1);
+        let saved_withdrawn = save_visible(&service, &redone, "withdrawn-save");
+        assert_eq!(semantic(&saved_withdrawn, &ids), expected);
+        drop(service);
+        let service = Service::new(directory.path());
+        let final_head = read(&service, &saved_withdrawn);
+        assert_eq!(final_head["content"], ORIGINAL);
+        assert_eq!(semantic(&final_head, &ids), expected);
+        // Exact same mutation request must replay its historical receipt.
+        assert_eq!(service.handle(&operation).unwrap(), withdrawn);
+    }
+    #[test]
+    fn withdraw_all_adjacent_deletes_normal_ids_is_one_durable_history_unit() { cycle(false, false); }
+    #[test]
+    fn withdraw_all_adjacent_deletes_reverse_ids_is_one_durable_history_unit() { cycle(false, true); }
+    #[test]
+    fn withdraw_all_adjacent_delete_replace_normal_ids_survives_undo_save_restart_redo() { cycle(true, false); }
+    #[test]
+    fn withdraw_all_adjacent_delete_replace_reverse_ids_survives_undo_save_restart_redo() { cycle(true, true); }
+
+    #[test]
+    fn creation_proof_survives_proposal_redo_and_an_unrelated_shift() {
+        let directory = TempDir::new().unwrap();
+        let service = Service::new(directory.path());
+        let opened = open_document(&service, "draft:shifted-withdraw", ORIGINAL);
+        let proposed = service.propose_task(&request(&opened, "propose", "trusted-proposal", json!({
+            "origin":"ai", "task_id":"owned-adjacent", "edits":[
+                {"from":3,"to":4,"insert":""}, {"from":4,"to":5,"insert":"β😀"}]
+        }))).unwrap();
+        let ids: Vec<_> = ["a", "b"].iter().map(|original| proposed["changes"].as_array().unwrap()
+            .iter().find(|change| change["original"] == *original).unwrap()["id"].clone()).collect();
+        let undone = change(&service, &proposed, "undo", "undo-proposal", json!({}));
+        let redone = change(&service, &undone, "redo", "redo-proposal", json!({}));
+        assert_eq!(semantic(&redone, &ids), semantic(&proposed, &ids));
+        let shifted = change(&service, &redone, "edit", "unrelated-prefix", json!({
+            "edits":[{"from":0,"to":0,"insert":"新😀"}]
+        }));
+        let saved = save_visible(&service, &shifted, "save-prefixed");
+        drop(service);
+        let service = Service::new(directory.path());
+        let reopened = read(&service, &saved);
+        let withdrawn = change(&service, &reopened, "resolve", "withdraw-shifted", json!({
+            "decision":"withdraw", "ids":[ids[1],ids[0]]
+        }));
+        assert_eq!(withdrawn["content"], format!("新😀{ORIGINAL}"));
+        assert_eq!(withdrawn["transaction_edits"], json!([{"from":6,"to":9,"insert":"ab"}]));
+        assert_eq!(item(&withdrawn, &ids[0])["current"], "a");
+        assert_eq!(item(&withdrawn, &ids[1])["current"], "b");
+        let undone = change(&service, &withdrawn, "undo", "undo-shifted-withdrawal", json!({}));
+        assert_eq!(undone["content"], reopened["content"]);
+        assert_eq!(semantic(&undone, &ids), semantic(&reopened, &ids));
+    }
+
+    fn stamp(directory: &TempDir, document_id: &str) -> (String, i64, i64, i64) {
+        let db = Connection::open_with_flags(directory.path().join("review.sqlite3"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        (db.query_row("SELECT payload FROM review_documents WHERE id=?1", [document_id], |row| row.get(0)).unwrap(),
+         db.query_row("SELECT COUNT(*) FROM review_events WHERE document_id=?1", [document_id], |row| row.get(0)).unwrap(),
+         db.query_row("SELECT COUNT(*) FROM review_receipts WHERE document_id=?1", [document_id], |row| row.get(0)).unwrap(),
+         db.query_row("SELECT COUNT(*) FROM review_texts", [], |row| row.get(0)).unwrap())
+    }
+    #[test]
+    fn unproven_collapsed_sources_do_not_guess_id_order_or_cross_action_frames() {
+        for mode in ["equal-text", "separate-actions"] {
+            let directory = TempDir::new().unwrap();
+            let service = Service::new(directory.path());
+            let initial = if mode == "equal-text" { "😀|aa|![保留](owned.svg)\n" } else { ORIGINAL };
+            let opened = open_document(&service, "draft:unproven-withdraw", initial);
+            let proposed = if mode == "equal-text" {
+                change(&service, &opened, "propose", "seed", json!({"origin":"ai", "edits":[
+                    {"from":3,"to":4,"insert":""}, {"from":4,"to":5,"insert":""}]}))
+            } else {
+                let a = change(&service, &opened, "propose", "seed-a", json!({"origin":"ai", "edits":[{"from":3,"to":4,"insert":""}]}));
+                change(&service, &a, "propose", "seed-b", json!({"origin":"ai", "edits":[{"from":3,"to":4,"insert":""}]}))
+            };
+            assert_eq!(proposed["content"], "😀||![保留](owned.svg)\n");
+            let ids = proposed["changes"].as_array().unwrap().iter().map(|change| change["id"].clone()).collect::<Vec<_>>();
+            assert_eq!(ids.len(), 2);
+            let before = read(&service, &proposed);
+            let document_id = before["document_id"].as_str().unwrap();
+            let before_db = stamp(&directory, document_id);
+            let call = "unproven-withdraw";
+            assert_eq!(service.handle(&request(&before, "resolve", call, json!({"decision":"withdraw", "ids":ids}))).unwrap_err(), "transaction_overlapping_edits");
+            assert_eq!(read(&service, &proposed), before);
+            assert_eq!(stamp(&directory, document_id), before_db);
+            assert_eq!(service.handle(&json!({"action":"receipt", "document_id":document_id, "call_id":call})).unwrap()["found"], false);
+        }
+    }
+}

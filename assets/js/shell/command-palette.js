@@ -3,8 +3,8 @@
 (function () {
   const VERSION = (document.documentElement && document.documentElement.dataset.version) || '';
   const q = VERSION ? '?v=' + encodeURIComponent(VERSION) : '';
-  const JS = '/assets/js/shell/shell-deferred.js' + q;
-  const CSS = '/assets/css/shell-deferred.css' + q;
+  const JS = '/assets/js/shell/shell-deferred.js' + q + (q ? '&' : '?') + 'rev=af991352560b';
+  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=6f8b634c4fee';
   let cssPending = null;
   let pending = null;
 
@@ -57,7 +57,7 @@
   window.ReadMDShortcuts = stub('Shortcuts', ['open', 'close', 'toggle', 'isOpen']);
   window.openMdCommandPalette = () => window.ReadMDPalette.open();
 
-  const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+  const IS_MAC = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
   const KEY_LABEL = {
     Mod: IS_MAC ? '⌘' : 'Ctrl', Ctrl: IS_MAC ? '⌃' : 'Ctrl', Shift: IS_MAC ? '⇧' : 'Shift',
     Alt: IS_MAC ? '⌥' : 'Alt', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',

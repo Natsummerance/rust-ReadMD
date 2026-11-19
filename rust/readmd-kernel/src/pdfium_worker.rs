@@ -3,6 +3,10 @@ use pdfium_render::prelude::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};
+#[path = "pdf_ink.rs"]
+mod ink_placement;
+#[path = "pdf_choice.rs"]
+mod combo_choice;
 
 fn fail<T>(_: T) -> &'static str {
     "pdf_operation_failed"
@@ -42,7 +46,44 @@ fn supported_font(font: &PdfFont<'_>, source: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn apply(doc: &mut PdfDocument<'_>, ops: &[Value], request: &Value) -> Result<(), &'static str> {
+// Passwords and file selections must never enter the persistent edit journal.
+// Replacing rich text with a plain widget value would discard its formatting.
+fn plain_text_field(bindings: &dyn PdfiumLibraryBindings, page: &PdfPage<'_>, index: usize) -> bool {
+    let Ok(index) = i32::try_from(index) else { return false; };
+    // ISO 32000 text field flag positions are one-based (14, 21 and 26).
+    // The wrapper's 0.9.4 constants for FileSelect and RichText use 21
+    // and 26 as shift counts. Read the widget's actual inherited /Ff.
+    const SPECIAL: u32 = (1 << 13) | (1 << 20) | (1 << 25);
+    unsafe {
+        let mut node = bindings.FPDFPage_GetAnnot(bindings.get_handle_from_page(page), index);
+        for _ in 0..64 {
+            if node.is_null() { return false; }
+            if bindings.FPDFAnnot_HasKey(node, "Ff") != 0 {
+                let mut flags = 0.;
+                let valid = bindings.FPDFAnnot_GetNumberValue(node, "Ff", &mut flags) != 0;
+                bindings.FPDFPage_CloseAnnot(node);
+                return valid && flags.is_finite() && flags >= 0. && flags.fract() == 0.
+                    && (flags as u32) & SPECIAL == 0;
+            }
+            if bindings.FPDFAnnot_HasKey(node, "Parent") == 0 {
+                bindings.FPDFPage_CloseAnnot(node);
+                return true; // PDF default is zero.
+            }
+            let parent = bindings.FPDFAnnot_GetLinkedAnnot(node, "Parent");
+            bindings.FPDFPage_CloseAnnot(node);
+            node = parent;
+        }
+        if !node.is_null() { bindings.FPDFPage_CloseAnnot(node); }
+    }
+    false
+}
+
+fn apply(
+    doc: &mut PdfDocument<'_>,
+    ops: &[Value],
+    request: &Value,
+    bindings: &dyn PdfiumLibraryBindings,
+) -> Result<(), &'static str> {
     if ops.len() > 4096 {
         return Err("pdf_limit");
     }
@@ -187,6 +228,30 @@ fn apply(doc: &mut PdfDocument<'_>, ops: &[Value], request: &Value) -> Result<()
                     .map_err(fail)?;
                 page.regenerate_content().map_err(fail)?;
             }
+            "insert_page" => {
+                let (w, h) = (page.width(), page.height());
+                if !w.value.is_finite() || !h.value.is_finite() || w.value <= 0.0 || h.value <= 0.0 {
+                    return Err("pdf_invalid_page");
+                }
+                drop(page);
+                let position = page_index.checked_add(1).ok_or("pdf_limit")?;
+                doc.pages_mut()
+                    .create_page_at_index(PdfPagePaperSize::Custom(w, h), position)
+                    .map_err(fail)?;
+            }
+            "move_page" => {
+                let to = i32::try_from(index(op, "to")?).map_err(|_| "pdf_invalid_page")?;
+                if to >= doc.pages().len() || to == page_index {
+                    return Err("pdf_invalid_page");
+                }
+                // FPDF_MovePages operates on the existing indirect objects. Close
+                // the borrowed page first. A failed call only affects this draft worker.
+                drop(page);
+                let handle = bindings.get_handle_from_document(doc);
+                if unsafe { bindings.FPDF_MovePages(handle, &page_index, 1, to) } == 0 {
+                    return Err("pdf_operation_failed");
+                }
+            }
             "rotate" => {
                 let turns = index(op, "turns")?;
                 page.set_rotation(match turns % 4 {
@@ -212,9 +277,53 @@ fn apply(doc: &mut PdfDocument<'_>, ops: &[Value], request: &Value) -> Result<()
                 note.set_bounds(PdfRect::new_from_values(y, x, y + 20.0, x + 20.0))
                     .map_err(fail)?;
             }
+            "ink" => {
+                let ink=ink_placement::placement(op)?;
+                let [left,bottom,right,top]=ink.bounds;
+                let crop=page.boundaries().crop().or_else(|_|page.boundaries().media()).map_err(fail)?.bounds;
+                if left<crop.left().value || right>crop.right().value || bottom<crop.bottom().value || top>crop.top().value {return Err("pdf_invalid_operation");}
+                let annot_index=page.annotations().len();
+                let mut annotation=page.annotations_mut().create_ink_annotation().map_err(fail)?;
+                annotation.set_bounds(PdfRect::new_from_values(bottom,left,top,right)).map_err(fail)?;
+                annotation.set_contents(ink_placement::MARKER).map_err(fail)?;
+                annotation.set_is_printed(true).map_err(fail)?;
+                drop(annotation);
+                let svg=op["svg"].as_str().filter(|s|s.len()<=768*1024&&!s.contains('\0')).ok_or("pdf_invalid_operation")?;
+                // Use the native InkList/width API; no substitute image or
+                // hand-built pressure outline enters the PDF appearance.
+                unsafe {
+                    let handle=bindings.FPDFPage_GetAnnot(bindings.get_handle_from_page(&page),annot_index as i32);
+                    if handle.is_null(){return Err("pdf_operation_failed");}
+                    let mut ok=bindings.FPDFAnnot_SetBorder(handle,0.,0.,ink.width)!=0
+                        && bindings.FPDFAnnot_SetColor(handle,0,ink.color[0].into(),ink.color[1].into(),ink.color[2].into(),255)!=0
+                        && bindings.FPDFAnnot_SetStringValue_str(handle,"ReadMDInk",svg)!=0;
+                    for (index,path) in ink.strokes.iter().enumerate(){
+                        if !ok{break;}
+                        let points:Vec<FS_POINTF>=path.iter().map(|p|FS_POINTF{x:p[0],y:p[1]}).collect();
+                        ok=bindings.FPDFAnnot_AddInkStroke(handle,points.as_ptr(),points.len() as _)==index as i32;
+                    }
+                    bindings.FPDFPage_CloseAnnot(handle);
+                    if !ok{return Err("pdf_operation_failed");}
+                }
+                // PDFium's synthesized InkList appearance uses butt caps and
+                // miter joins. The shared uniform brush uses round dabs/joins;
+                // use native path stroke controls to retain that exact subset.
+                let mut annotation=page.annotations_mut().get(annot_index).map_err(fail)?;
+                let objects=annotation.as_ink_annotation_mut().ok_or("pdf_invalid_operation")?.objects_mut();
+                if !objects.is_empty(){return Err("pdf_unsupported_object");}
+                for points in &ink.strokes{
+                    let mut path=PdfPagePathObject::new(doc,PdfPoints::new(points[0][0]),PdfPoints::new(points[0][1]),Some(PdfColor::new(ink.color[0],ink.color[1],ink.color[2],255)),Some(PdfPoints::new(ink.width)),None).map_err(fail)?;
+                    for p in points.iter().skip(1){path.line_to(PdfPoints::new(p[0]),PdfPoints::new(p[1])).map_err(fail)?;}
+                    path.set_line_cap(PdfPageObjectLineCap::Round).map_err(fail)?;
+                    path.set_line_join(PdfPageObjectLineJoin::Round).map_err(fail)?;
+                    objects.add_path_object(path).map_err(fail)?;
+                }
+            }
             "field" => {
+                let id = index(op, "annotation")?;
+                let plain = plain_text_field(bindings, &page, id);
                 let annotations = page.annotations_mut();
-                let mut annotation = annotations.get(index(op, "annotation")?).map_err(fail)?;
+                let mut annotation = annotations.get(id).map_err(fail)?;
                 let field = annotation
                     .as_form_field_mut()
                     .ok_or("pdf_invalid_operation")?;
@@ -222,11 +331,17 @@ fn apply(doc: &mut PdfDocument<'_>, ops: &[Value], request: &Value) -> Result<()
                     return Err("pdf_read_only");
                 }
                 if let Some(target) = field.as_text_field_mut() {
+                    if !plain {
+                        return Err("pdf_unsupported_object");
+                    }
                     target.set_value(text(op, "text")?).map_err(fail)?;
                 } else if let Some(target) = field.as_checkbox_field_mut() {
                     target
                         .set_checked(op["checked"].as_bool().ok_or("pdf_invalid_operation")?)
                         .map_err(fail)?;
+                } else if field.as_combo_box_field().is_some() {
+                    drop(annotation);
+                    combo_choice::select(doc, &page, page_index, id, index(op, "option")?, bindings)?;
                 } else {
                     return Err("pdf_unsupported_object");
                 }
@@ -234,7 +349,8 @@ fn apply(doc: &mut PdfDocument<'_>, ops: &[Value], request: &Value) -> Result<()
             "annotation" | "remove_annotation" => {
                 let annotations = page.annotations_mut();
                 let mut annotation = annotations.get(index(op, "annotation")?).map_err(fail)?;
-                if annotation.annotation_type() != PdfPageAnnotationType::Text {
+                let own_ink=annotation.annotation_type()==PdfPageAnnotationType::Ink&&annotation.contents().as_deref()==Some(ink_placement::MARKER);
+                if annotation.annotation_type() != PdfPageAnnotationType::Text && !(kind=="remove_annotation"&&own_ink) {
                     return Err("pdf_unsupported_object");
                 }
                 if kind == "annotation" {
@@ -431,19 +547,10 @@ fn execute(request: &Value) -> Result<Value, &'static str> {
             request["password"].as_str().filter(|s| !s.is_empty()),
         )
         .map_err(|_| "pdf_open_failed")?;
+    let bindings = unsafe { &*native };
+    let handle = bindings.get_handle_from_document(&doc);
     let (permissions, security_revision) = unsafe {
-        let bindings = &*native;
-        let document = bindings.FPDF_LoadDocument(
-            text(request, "pdf")?,
-            request["password"].as_str().filter(|s| !s.is_empty()),
-        );
-        if document.is_null() {
-            return Err("pdf_open_failed");
-        }
-        let permissions = bindings.FPDF_GetDocPermissions(document);
-        let revision = bindings.FPDF_GetSecurityHandlerRevision(document);
-        bindings.FPDF_CloseDocument(document);
-        (permissions, revision)
+        (bindings.FPDF_GetDocPermissions(handle), bindings.FPDF_GetSecurityHandlerRevision(handle))
     };
     let can_edit = permissions & 8 != 0;
     let can_annotate = permissions & 32 != 0;
@@ -457,9 +564,9 @@ fn execute(request: &Value) -> Result<Value, &'static str> {
         if ops
             .iter()
             .any(|op| !match op["kind"].as_str().unwrap_or("") {
-                "note" | "annotation" | "remove_annotation" => can_annotate,
+                "note" | "ink" | "annotation" | "remove_annotation" => can_annotate,
                 "field" => can_fill,
-                "rotate" | "delete_page" => can_assemble,
+                "rotate" | "delete_page" | "insert_page" | "move_page" => can_assemble,
                 _ => can_edit,
             })
         {
@@ -468,7 +575,7 @@ fn execute(request: &Value) -> Result<Value, &'static str> {
         if signatures > 0 && !request["allow_signatures"].as_bool().unwrap_or(false) {
             return Err("pdf_signed");
         }
-        apply(&mut doc, ops, request)?;
+        apply(&mut doc, ops, request, bindings)?;
     }
     if request["action"] == "save" {
         let output = Path::new(text(request, "output")?);
@@ -486,6 +593,19 @@ fn execute(request: &Value) -> Result<Value, &'static str> {
         .set_maximum_height(3200)
         .render_annotations(true);
     let bitmap = page.render_with_config(&config).map_err(fail)?;
+    if request["action"] == "raster" {
+        use image::ImageEncoder;
+        let width = u32::try_from(bitmap.width()).map_err(fail)?;
+        let height = u32::try_from(bitmap.height()).map_err(fail)?;
+        if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 8_000_000 {
+            return Err("pdf_limit");
+        }
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&bitmap.as_rgba_bytes(), width, height, image::ExtendedColorType::Rgba8)
+            .map_err(fail)?;
+        return Ok(json!({"ok":true,"pages":doc.pages().len(),"image":STANDARD.encode(png)}));
+    }
     let mut objects = Vec::new();
     if page.objects().len() > 20000 {
         return Err("pdf_limit");
@@ -527,16 +647,31 @@ fn execute(request: &Value) -> Result<Value, &'static str> {
     let mut annotations = Vec::new();
     for (id, annotation) in page.annotations().iter().enumerate() {
         let bounds = annotation.bounds().map_err(fail)?;
-        let mut item = json!({"id":id,"kind":if annotation.annotation_type()==PdfPageAnnotationType::Text{"note"}else{"unsupported_annotation"},"text":annotation.contents().unwrap_or_default(),"bounds":device_bounds(&page,bounds,&config)?});
+        let kind=if annotation.annotation_type()==PdfPageAnnotationType::Text{"note"}else if annotation.annotation_type()==PdfPageAnnotationType::Ink&&annotation.contents().as_deref()==Some(ink_placement::MARKER){"ink"}else{"unsupported_annotation"};
+        let mut item = json!({"id":id,"kind":kind,"text":if kind=="ink"{String::new()}else{annotation.contents().unwrap_or_default()},"bounds":device_bounds(&page,bounds,&config)?});
         if let Some(field) = annotation.as_form_field() {
             item["name"] = json!(field.name().unwrap_or_default());
             item["readonly"] = json!(field.is_read_only());
             if let Some(t) = field.as_text_field() {
-                item["kind"] = json!("field");
-                item["text"] = json!(t.value().unwrap_or_default());
+                if plain_text_field(bindings, &page, id) {
+                    item["kind"] = json!("field");
+                    item["text"] = json!(t.value().unwrap_or_default());
+                } else {
+                    item["kind"] = json!("unsupported_field");
+                    item["readonly"] = json!(true);
+                    item.as_object_mut().unwrap().remove("text");
+                }
             } else if let Some(t) = field.as_checkbox_field() {
                 item["kind"] = json!("checkbox");
                 item["checked"] = json!(t.is_checked().map_err(fail)?);
+            } else if let Some(options) = field.as_combo_box_field().and_then(combo_choice::options) {
+                item["kind"] = json!("choice");
+                item["text"] = json!(options.iter().find(|option| option["selected"] == true).and_then(|option| option["label"].as_str()).unwrap_or(""));
+                item["options"] = json!(options);
+                if doc.pages().len() > 512 || field.name().is_none_or(|s| s.is_empty())
+                    || doc.form().is_none_or(|f| f.form_type() != PdfFormType::Acrobat) {
+                    item["readonly"] = json!(true);
+                }
             } else {
                 item["kind"] = json!("unsupported_field");
             }

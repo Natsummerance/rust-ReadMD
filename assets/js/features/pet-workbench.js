@@ -13,9 +13,6 @@
     'ux.petActions': '快捷互动',
     'ux.petHello': '打个招呼',
     'ux.petGreeting': '我在这里，陪你读完这一页。',
-    'ux.petPreviewHint': '角色外观预览 · 拖放文件到桌宠即可转换',
-    'ux.petLive2d': 'Live2D · 独立桌面',
-    'ux.petSprite': '精灵动画',
     'ai.title': 'AI 助手',
     'pet.gallery.hermes': '伴读使者'
   };
@@ -24,8 +21,8 @@
     if (val && val !== key) return val;
     return FALLBACKS[key] || key;
   };
-  let gallery = { pets: [], active: '', catalog: [] }, status = null, activeTab = 'characters', initialized = false;
-  let choosing = false, lastTap = 0, query = '', catalogPets = [];
+  let gallery = { pets: [], catalog: [] }, activeTab = 'characters', initialized = false;
+  let choosing = false, lastTap = 0, query = '', catalogPets = [], greetingTimer, previewObserver;
   try { window.petQuietMode = localStorage.getItem('readmd.pet.quiet') === 'true'; } catch (_) { window.petQuietMode = false; }
 
   function getFavorites() {
@@ -65,34 +62,28 @@
     } catch (_) {}
   }
 
-  function translateWorkbench() {
-    const box = document.getElementById('pet-settings-box');
-    if (!box) return;
-    const tabs = box.querySelector('.pet-workbench-tabs');
-    if (tabs) {
-      tabs.setAttribute('aria-label', t('ux.petSections'));
-      tabs.querySelectorAll('button[data-pet-section]').forEach(btn => {
-        const key = btn.getAttribute('data-i18n');
-        if (key) btn.textContent = t(key);
-      });
+  function previewGreeting(speech) {
+    const roleLine = typeof getRoleSpecificQuote === 'function' && getRoleSpecificQuote('pokesNormal');
+    const contextualLine = typeof getContextualGreeting === 'function' && getContextualGreeting();
+    const line = roleLine || contextualLine || t('ux.petGreeting');
+    speech.textContent = line;
+    const widget = document.getElementById('readmd-pet-widget');
+    if (widget && !widget.classList.contains('hidden')) window.showPetBubble?.(line, 4500, 2);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const art = document.getElementById('pet-preview-character');
+    const slug = window.getActivePetSlug?.();
+    if (!art || art.classList.contains('is-live2d') || slug === 'bongocat') {
+      document.getElementById('pet-preview-aura')?.animate?.([
+        { transform: 'translateY(0)' }, { transform: 'translateY(-4px)' }, { transform: 'translateY(0)' }
+      ], { duration: 350, easing: 'ease-out' });
+      return;
     }
-    const companion = box.querySelector('.pet-companion-controls');
-    if (companion) {
-      companion.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
-        if (key) el.textContent = t(key);
-      });
-    }
-    const hint = box.querySelector('.pet-workbench-preview-hint');
-    if (hint) {
-      hint.textContent = t('ux.petPreviewHint');
-    }
-    const search = document.getElementById('pet-roster-search');
-    if (search) search.placeholder = t('toolbar.search');
-    for (const [id, key] of [['pet-quick-chat', 'ai.title'], ['pet-quick-quiet', 'ux.petQuiet']]) {
-      const button = document.getElementById(id);
-      if (button) { button.title = t(key); button.setAttribute('aria-label', t(key)); }
-    }
+    clearTimeout(greetingTimer);
+    window.paintPetPreview?.(art, slug, 'waving', 1);
+    greetingTimer = setTimeout(() => {
+      if (window.getActivePetSlug?.() === slug && !art.classList.contains('is-live2d')) window.paintPetPreview?.(art, slug);
+    }, 850);
   }
 
   function init() {
@@ -109,57 +100,42 @@
       button.dataset.petSection = id;
       button.setAttribute('data-i18n', key);
       button.textContent = t(key);
-      button.onclick = () => { activeTab = id; renderTabs(); };
+      button.onclick = () => { activeTab = id; renderTabs(); renderRoster(); };
       tabs.appendChild(button);
     }
     box.querySelector('.pet-sheet-body').before(tabs);
     const list = box.querySelector('.apple-grouped-list');
     list.querySelectorAll('.apple-list-row').forEach(row => {
-      row.dataset.petSectionContent ||= row.querySelector('#pet-gallery') ? 'characters' : row.querySelector('#pet-bubble-toggle') ? 'companion' : 'settings';
+      row.dataset.petSectionContent ||= row.querySelector('#pet-bubble-toggle') ? 'companion' : 'settings';
     });
+    const tools = box.querySelector('.pet-library-tools');
+    const search = document.getElementById('pet-roster-search');
+    search.oninput = () => { query = search.value.trim().toLocaleLowerCase(); renderRoster(); };
+    const feedback = document.createElement('p');
+    feedback.id = 'pet-choice-feedback';
+    feedback.dataset.petSectionContent = 'characters';
+    feedback.setAttribute('role', 'status');
+    tools.after(feedback);
+
     const roster = document.createElement('section');
     roster.id = 'pet-roster';
     roster.dataset.petSectionContent = 'characters';
-    list.prepend(roster);
-    const search = document.createElement('input');
-    search.id = 'pet-roster-search'; search.type = 'search';
-    search.dataset.petSectionContent = 'characters';
-    search.placeholder = t('toolbar.search'); search.setAttribute('aria-label', t('toolbar.search'));
-    search.oninput = () => { query = search.value.trim().toLocaleLowerCase(); if (list) list.scrollTop = 0; renderRoster(); };
-    roster.before(search);
-
-    const rendererRow = document.getElementById('pet-renderer-row') || document.getElementById('pet-renderer')?.closest('.apple-list-row');
-    if (rendererRow) {
-      rendererRow.dataset.petSectionContent = 'characters';
-      search.before(rendererRow);
-    }
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect) {
-      rendererSelect.addEventListener('change', () => {
-        rendererSelect.dataset.userChanged = 'true';
-        if (list) list.scrollTop = 0;
-        renderRoster();
-      });
-    }
-
-    const galleryRow = document.getElementById('pet-gallery-row') || document.getElementById('pet-gallery')?.closest('.apple-list-row');
-    if (galleryRow) {
-      galleryRow.dataset.petSectionContent = 'characters';
-      search.after(galleryRow);
-    }
-
-    const feedback = document.createElement('p');
-    feedback.id = 'pet-choice-feedback'; feedback.setAttribute('role', 'status');
-    roster.after(feedback);
+    feedback.after(roster);
+    previewObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        previewObserver.unobserve(entry.target);
+        paintPetPreview(entry.target, entry.target.dataset.previewSlug);
+      }
+    });
 
     const companion = document.createElement('section');
     companion.dataset.petSectionContent = 'companion';
     companion.className = 'pet-companion-controls';
-    companion.innerHTML = `<h4 data-i18n="ux.petStyle">${t('ux.petStyle')}</h4><div class="pet-mode-buttons"><button id="pet-mode-social" type="button" data-i18n="ux.petSocial">${t('ux.petSocial')}</button><button id="pet-mode-quiet" type="button" data-i18n="ux.petQuiet">${t('ux.petQuiet')}</button></div><p data-i18n="ux.petQuietHint">${t('ux.petQuietHint')}</p><h4 data-i18n="ux.petActions">${t('ux.petActions')}</h4><div class="pet-action-buttons"><button id="pet-say-hello" type="button" data-i18n="ux.petHello">${t('ux.petHello')}</button><button id="pet-chat-open" type="button"><span data-i18n="ai.title">${t('ai.title')}</span> ↗</button></div>`;
+    companion.innerHTML = `<h4 data-i18n="ux.petStyle">${t('ux.petStyle')}</h4><div class="pet-mode-buttons"><button id="pet-mode-social" type="button" data-i18n="ux.petSocial">${t('ux.petSocial')}</button><button id="pet-mode-quiet" type="button" data-i18n="ux.petQuiet">${t('ux.petQuiet')}</button></div><p data-i18n="ux.petQuietHint">${t('ux.petQuietHint')}</p><h4 data-i18n="ux.petActions">${t('ux.petActions')}</h4><div class="pet-action-buttons"><button id="pet-chat-open" type="button"><span data-i18n="ai.title">${t('ai.title')}</span> ↗</button></div>`;
     list.appendChild(companion);
     companion.querySelector('#pet-mode-social').onclick = () => quiet(false);
     companion.querySelector('#pet-mode-quiet').onclick = () => quiet(true);
-    companion.querySelector('#pet-say-hello').onclick = () => { if (typeof handlePetInteractiveClick === 'function') handlePetInteractiveClick(); else window.showPetBubble?.(t('ux.petGreeting'), 3500, 2); };
     const chat = () => { window.closePetSettings?.(); window.openAiPanelWithPrompt?.(null, '', null); };
     companion.querySelector('#pet-chat-open').onclick = chat;
     const quickbar = document.querySelector('.pet-widget-quick-bar');
@@ -171,22 +147,27 @@
       const button = document.createElement('button');
       button.id = id; button.type = 'button'; button.className = 'pet-quick-btn';
       button.title = t(key); button.setAttribute('aria-label', t(key));
+      button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
       button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${icon}</svg>`;
       button.onclick = action; quickbar.prepend(button);
     }
     const preview = box.querySelector('.pet-preview-stage');
-    const enabledRow = document.getElementById('pet-enabled')?.closest('.apple-list-row');
-    if (enabledRow) { delete enabledRow.dataset.petSectionContent; preview.appendChild(enabledRow); }
+    const greeting = document.createElement('button');
+    greeting.id = 'pet-say-hello';
+    greeting.type = 'button';
+    greeting.className = 'tb-btn secondary';
+    greeting.dataset.i18n = 'ux.petHello';
+    greeting.textContent = t('ux.petHello');
+    greeting.setAttribute('aria-controls', 'pet-interaction-preview');
+    preview.appendChild(greeting);
     const speech = document.createElement('p');
     speech.id = 'pet-interaction-preview'; speech.setAttribute('role', 'status'); preview.appendChild(speech);
+    greeting.onclick = () => previewGreeting(speech);
+    const enabledRow = document.getElementById('pet-enabled')?.closest('.apple-list-row');
+    if (enabledRow) { delete enabledRow.dataset.petSectionContent; preview.appendChild(enabledRow); }
     window.addEventListener('readmd:pet-message', e => {
-      if (!document.getElementById('pet-settings-modal')?.classList.contains('hidden')) speech.textContent = e.detail.text;
+      if (!document.getElementById('pet-settings-modal')?.classList.contains('hidden') && speech.textContent !== e.detail.text) speech.textContent = e.detail.text;
     });
-    const hint = document.createElement('p');
-    hint.className = 'pet-workbench-preview-hint';
-    hint.setAttribute('data-i18n', 'ux.petPreviewHint');
-    hint.textContent = t('ux.petPreviewHint');
-    preview.appendChild(hint);
     quiet(window.petQuietMode, false);
     void loadCatalog();
     renderTabs();
@@ -218,212 +199,143 @@
     document.querySelectorAll('[data-pet-section-content]').forEach(el => el.classList.toggle('pet-section-inactive', el.dataset.petSectionContent !== activeTab));
   }
   async function choose(renderer, slug) {
-    if (choosing) return; choosing = true;
-    const previousSlug = gallery.active;
-    gallery.active = slug;
-    if (typeof currentActivePetSlug !== 'undefined') currentActivePetSlug = slug;
-    renderRoster();
+    const current = petSelection();
+    if (choosing || current.renderer === renderer && current.slug === slug) return;
+    const previousSlug = currentActivePetSlug;
     const feedback = document.getElementById('pet-choice-feedback');
+    choosing = true;
     feedback.textContent = '';
+    renderRoster();
     let changedGallery = false;
     try {
       if (renderer === 'hermes-sprite') {
-        const result = await petGalleryRequest('/api/pets/active', { slug, confirm: true });
-        if (!result.ok) throw new Error(result.error_code || result.code);
+        const active = await petGalleryRequest('/api/pets/active', { slug, confirm: true });
+        if (!active.ok) throw new Error(active.error_code || active.code || 'pet_active_failed');
         changedGallery = true;
-        await refreshPetGallery();
       }
-      const rendererSelect = document.getElementById('pet-renderer');
-      if (rendererSelect) {
-        rendererSelect.value = renderer;
-        delete rendererSelect.dataset.userChanged;
-      }
-      if (renderer === 'live2d' || slug === 'bongocat') document.getElementById('pet-runtime').value = 'desktop';
-      const result = await savePetSettings();
-      if (!result?.ok) throw new Error(result?.code || 'pet_config_failed');
+      const result = await savePetSettings({ renderer, slug });
+      if (!result?.ok || result.superseded) throw new Error(result?.code || 'pet_config_failed');
     } catch (error) {
-      if (changedGallery) {
-        gallery.active = previousSlug;
-        if (typeof currentActivePetSlug !== 'undefined') currentActivePetSlug = previousSlug;
-        await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true }).catch(() => null);
-        await refreshPetGallery().catch(() => null);
-      }
+      if (changedGallery) await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true });
       feedback.textContent = petT('pet.configFailed', { code: error.message });
-    }
-    finally {
-      choosing = false; renderRoster();
-      Array.from(document.querySelectorAll('#pet-roster button')).find(button => button.dataset.slug === slug && button.dataset.renderer === renderer)?.focus({ preventScroll: true });
+    } finally {
+      await refreshPetGallery();
+      choosing = false;
+      renderRoster();
+      focusRosterButton(slug);
     }
   }
+
+  function focusRosterButton(slug, favorite = false) {
+    const selector = favorite ? '.pet-fav-btn' : '.pet-character-card';
+    [...document.querySelectorAll('#pet-roster ' + selector)]
+      .find(button => (favorite ? button.dataset.favoriteSlug : button.dataset.slug) === slug)?.focus({ preventScroll: true });
+  }
+
+  function rosterItems() {
+    const featured = [
+      { slug: 'mochi', display_name: '糯米 / Mochi' },
+      { slug: 'moss', display_name: '苔苔 / Moss' },
+      { slug: 'amber', display_name: '琥珀 / Amber' },
+      { slug: '' }, { slug: 'bongocat' }, { slug: 'arch-chan', renderer: 'live2d' },
+    ];
+    const items = new Map(featured.map(pet => [pet.slug, pet]));
+    for (const pet of [...(gallery.pets || []), ...(catalogPets.length ? catalogPets : (gallery.catalog || []))]) {
+      if (!items.has(pet.slug)) items.set(pet.slug, pet);
+    }
+    return [...items.values()];
+  }
+
   function renderRoster() {
-    // Cache catalog/state at startup; build previews when settings is visible.
-    // Creating Image objects inside a hidden gallery downloads every sprite.
-    if (document.getElementById('pet-settings-modal')?.classList.contains('hidden')) return;
-    const host = document.getElementById('pet-roster'); if (!host) return;
-    const focused = host.contains(document.activeElement) ? document.activeElement.dataset : null;
-    const focusedSlug = focused?.slug, focusedRenderer = focused?.renderer;
+    const box = document.getElementById('pet-settings-box');
+    const host = document.getElementById('pet-roster');
+    if (!host || box.closest('.hidden') || activeTab !== 'characters') return;
+    const focused = host.contains(document.activeElement) ? document.activeElement : null;
     host.setAttribute('aria-busy', String(choosing));
-    host.replaceChildren();
-    host.scrollTop = 0;
-    const select = document.getElementById('pet-gallery'); if (select) select.disabled = choosing;
-
-    const rendererSelect = document.getElementById('pet-renderer');
-    const filterRenderer = rendererSelect?.value || (status?.preferences?.renderer === 'live2d' ? 'live2d' : 'hermes-sprite');
-
-    const defaultPetName = t('pet.gallery.hermes') || '伴读使者';
-
-    // Group 0: User's 3 created pets
-    const customSlugs = ['mochi', 'moss', 'amber'];
-    const customPets = [
-      { slug: 'mochi', display_name: '糯米 / Mochi', renderer: 'hermes-sprite', groupPriority: 0 },
-      { slug: 'moss', display_name: '苔苔 / Moss', renderer: 'hermes-sprite', groupPriority: 0 },
-      { slug: 'amber', display_name: '琥珀 / Amber', renderer: 'hermes-sprite', groupPriority: 0 }
-    ];
-
-    // Group 1: 伴读使者
-    const companionPet = { slug: '', display_name: defaultPetName, renderer: 'hermes-sprite', groupPriority: 1 };
-
-    // Group 2: 73 loaded sprite pets from catalog
-    const spriteCatalog = (catalogPets.length ? catalogPets : (gallery.catalog || [])).map(p => ({
-      slug: p.slug,
-      display_name: p.zh_name || p.display_name || p.name || p.slug,
-      renderer: 'hermes-sprite',
-      groupPriority: 2
-    }));
-
-    // Other installed pets from gallery (e.g. test custom-cat or user imports)
-    const otherInstalled = (gallery.pets || [])
-      .filter(p => !customSlugs.includes(p.slug) && p.slug !== '' && !spriteCatalog.some(c => c.slug === p.slug))
-      .map(p => ({
-        ...p,
-        renderer: 'hermes-sprite',
-        groupPriority: 2
-      }));
-
-    // Live2D pets
-    const live2dPets = [
-      { slug: 'arch-chan', display_name: 'Arch-Chan', renderer: 'live2d', groupPriority: 0 }
-    ];
-
-    const allItems = [...customPets, companionPet, {slug:'bongocat',display_name:'BongoCat',renderer:'hermes-sprite',groupPriority:1}, ...spriteCatalog, ...otherInstalled, ...live2dPets];
-    allItems.forEach((it, idx) => { it.originalIndex = idx; });
-
-    // Filter by selected renderer:
-    const filtered = allItems.filter(item => {
-      if (item.renderer !== filterRenderer) return false;
-      const label = (item.slug && petT('pet.preset.' + item.slug)) || item.display_name || item.slug;
-      if (query && !`${label} ${item.slug} ${item.renderer}`.toLocaleLowerCase().includes(query)) return false;
-      return true;
+    box.querySelectorAll('.pet-workbench-tabs button, .pet-library-tools button').forEach(button => {
+      button.disabled = choosing;
     });
+    document.getElementById('pet-status-card').inert = choosing;
+    previewObserver.disconnect();
 
     const favorites = getFavorites();
-    filtered.sort((a, b) => {
-      const favA = favorites.has(a.slug) ? 0 : 1;
-      const favB = favorites.has(b.slug) ? 0 : 1;
-      if (favA !== favB) return favA - favB;
-      if (a.groupPriority !== b.groupPriority) return a.groupPriority - b.groupPriority;
-      return a.originalIndex - b.originalIndex;
-    });
-
-    for (const item of filtered) {
-      const label = (item.slug && petT('pet.preset.' + item.slug)) || item.display_name || item.slug;
-      const live = item.renderer === 'live2d';
+    const selection = petSelection();
+    const entries = rosterItems().map(pet => ({
+      slug: pet.slug,
+      renderer: pet.renderer || 'hermes-sprite',
+      name: petCharacterName(pet.slug, pet.display_name || pet.zh_name || pet.name),
+    })).filter(pet => !query || [pet.name, pet.slug, pet.renderer].join(' ').toLocaleLowerCase().includes(query));
+    entries.sort((a, b) => Number(favorites.has(b.slug)) - Number(favorites.has(a.slug)));
+    const cards = document.createDocumentFragment();
+    for (const pet of entries) {
+      const card = document.createElement('div');
+      card.className = 'pet-roster-item';
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'pet-character-card';
       button.disabled = choosing;
-      const currentActive = status?.active_slug ?? gallery.active;
-      const selected = live
-        ? status?.preferences?.renderer === 'live2d'
-        : status?.preferences?.renderer !== 'live2d' && item.slug === currentActive;
-      button.setAttribute('aria-pressed', String(selected));
-      button.dataset.renderer = item.renderer;
-      button.dataset.slug = item.slug;
-
-      const favBtn = document.createElement('span');
-      favBtn.role = 'button';
-      favBtn.tabIndex = 0;
-      const isFav = favorites.has(item.slug);
-      favBtn.className = 'pet-fav-btn' + (isFav ? ' is-favorite' : '');
-      const favLabel = window.i18n ? window.i18n.t(isFav ? 'pet.favorited' : 'pet.favorite') : (isFav ? '已收藏' : '收藏');
-      favBtn.setAttribute('aria-label', favLabel);
-      favBtn.title = favLabel;
-      favBtn.innerHTML = `<svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-      const onFavClick = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        toggleFavorite(item.slug);
-      };
-      favBtn.onclick = onFavClick;
-      favBtn.onkeydown = (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.stopPropagation();
-          e.preventDefault();
-          toggleFavorite(item.slug);
-        }
-      };
-      button.appendChild(favBtn);
+      button.setAttribute('aria-pressed', String(pet.slug === selection.slug && pet.renderer === selection.renderer));
+      button.dataset.renderer = pet.renderer;
+      button.dataset.slug = pet.slug;
+      button.onclick = () => choose(pet.renderer, pet.slug);
 
       const art = document.createElement('span');
-      art.className = live ? 'pet-card-art live2d' : 'pet-card-art sprite';
-      art.style.backgroundImage = live
-        ? 'url("/assets/pet/arch-chan-avatar.png")'
-        : item.slug === 'bongocat'
-          ? 'url("/assets/pet/bongocat-preview.png")'
-        : item.slug
-          ? `url("/api/pets/thumb?slug=${encodeURIComponent(item.slug)}")`
-          : 'url("/assets/pet/hermes-sprite.png")';
-
-      if (!live) window.paintPetPreview?.(art,item.slug);
+      art.className = 'pet-card-art';
+      art.setAttribute('aria-hidden', 'true');
+      art.dataset.previewSlug = pet.slug;
+      if (pet.renderer === 'live2d') art.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
+      else previewObserver.observe(art);
       const name = document.createElement('strong');
-      name.textContent = label;
-      const kind = document.createElement('small');
-      const kindKey = live ? 'pet.behavior.live2d' : item.slug === 'bongocat' ? 'pet.behavior.bongo' : 'pet.behavior.sprite';
-      kind.setAttribute('data-i18n', kindKey);
-      kind.textContent = t(kindKey);
-
-      button.append(art, name, kind);
-      button.onclick = () => choose(item.renderer, item.slug);
-      host.appendChild(button);
-
-      if (!choosing && focusedSlug === item.slug && focusedRenderer === item.renderer) {
-        button.focus({ preventScroll: true });
+      name.textContent = pet.name;
+      button.append(art, name);
+      if (petNeedsDesktop(pet)) {
+        const desktop = document.createElement('small');
+        desktop.title = t('pet.runtime.desktop');
+        desktop.textContent = pet.renderer === 'live2d' ? 'Live2D' : t('pet.behavior.bongo');
+        button.append(desktop);
       }
+
+      const favorite = document.createElement('button');
+      favorite.type = 'button';
+      favorite.className = 'pet-fav-btn';
+      favorite.dataset.favoriteSlug = pet.slug;
+      const selected = favorites.has(pet.slug);
+      favorite.setAttribute('aria-pressed', String(selected));
+      const label = t(selected ? 'pet.favorited' : 'pet.favorite');
+      favorite.setAttribute('aria-label', label + ' · ' + pet.name);
+      favorite.title = label;
+      favorite.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.3"/></svg>';
+      favorite.onclick = () => toggleFavorite(pet.slug);
+      card.append(button, favorite);
+      cards.append(card);
     }
-    if (!host.childElementCount) {
+    if (!entries.length) {
       const empty = document.createElement('p');
+      empty.className = 'pet-roster-empty';
       empty.textContent = t('ux.noResults');
-      host.appendChild(empty);
+      cards.append(empty);
+    }
+    host.replaceChildren(cards);
+    if (!choosing && focused) {
+      const favorite = focused.classList.contains('pet-fav-btn');
+      focusRosterButton(favorite ? focused.dataset.favoriteSlug : focused.dataset.slug, favorite);
     }
   }
 
   window.addEventListener('readmd:pet-state', e => {
-    status = e.detail;
-    if (typeof status?.preferences?.quiet === 'boolean') quiet(status.preferences.quiet, false);
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect && status?.preferences?.renderer && !rendererSelect.dataset.userChanged) {
-      rendererSelect.value = status.preferences.renderer;
-    }
+    const savedQuiet = e.detail?.preferences?.quiet;
+    if (typeof savedQuiet === 'boolean') quiet(savedQuiet, false);
     renderRoster();
   });
   window.addEventListener('readmd:pet-gallery', e => {
     gallery = e.detail;
-    if (Array.isArray(gallery.catalog) && gallery.catalog.length) {
-      catalogPets = gallery.catalog;
-    }
+    if (Array.isArray(gallery.catalog) && gallery.catalog.length) catalogPets = gallery.catalog;
     renderRoster();
   });
-  window.addEventListener('readmd:language-changed', () => { translateWorkbench(); renderRoster(); });
-  window.addEventListener('readmd:pet-open-settings', () => {
-    const box = document.getElementById('pet-settings-box');
-    if (box) box.dataset.petTab = activeTab;
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect && status?.preferences?.renderer) {
-      rendererSelect.value = status.preferences.renderer;
-      delete rendererSelect.dataset.userChanged;
-    }
-    translateWorkbench();
+  window.addEventListener('readmd:language-changed', () => {
+    updateCharacterPreview();
     renderRoster();
   });
+  window.addEventListener('readmd:pet-open-settings', renderRoster);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

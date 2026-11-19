@@ -7,3 +7,20 @@
 .restore-unavailable { max-width:var(--line-width);margin:var(--space-8) auto;padding:var(--space-6);overflow-wrap:anywhere; }
 .restore-unavailable .modal-actions { justify-content:flex-start;flex-wrap:wrap; }
 .restore-unavailable .tb-btn { min-width:44px;min-height:44px; }
+
+#content.is-office-preview { background:var(--color-surface-sunken); }
+.office-preview { min-height:100%;display:flex;flex-direction:column;align-items:center;gap:var(--space-4);padding:0 var(--space-4) var(--space-6);box-sizing:border-box; }
+.office-preview-status { margin:var(--space-4);overflow-wrap:anywhere; }
+.office-preview-page { display:block;width:auto;height:auto;max-width:100%;background:var(--export-layout-paper);box-shadow:var(--shadow-2); }
+.office-preview-page[hidden], .office-preview-status[hidden] { display:none; }
+
+/* Direct MathJax SVG conversion can precede its generated stylesheet.
+   Keep the alternate MathML in the accessibility tree without painting it. */
+mjx-assistive-mml {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+}

@@ -69,6 +69,8 @@ const state = {
   readingFont: 'sans',      // reader lane: sans | serif
   readingWidth: 'normal',   // narrow | normal | wide
   readingLeading: 'normal', // compact | normal | relaxed
+  readingHeadingColor: 'default',
+  readingBoldColor: 'default',
   aiPanelWidth: 432,
   autoReload: true,
   closeToTray: true,
@@ -144,6 +146,8 @@ function apiMessage(d, fallbackKey) {
   }
   if (d.note_code) { const s = tr('note.' + d.note_code); if (s) return s; }
   const documentOperationErrors = {
+    office_preview_expired: 'error.preview_expired',
+    office_preview_changed: 'mediaTranscribe.sourceChanged',
     document_operation_busy: 'error.review_save_in_progress',
     document_operation_missing: 'error.file_not_found',
     document_operation_identity_changed: 'error.review_save_conflict',

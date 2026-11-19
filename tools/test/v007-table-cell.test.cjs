@@ -1,0 +1,399 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {initialBytes,expected:e,service,app,modal,lf,sha,clone}=require('./v007-table-cell-host.cjs');
+const tick=()=>new Promise(setImmediate);
+async function ready(options){const s=service(options),f=app(s);await f.ready();return f;}
+async function until(fn){for(let i=0;i<200;i++){if(fn())return;await tick();}throw Error('Controlled UI did not settle');}
+const manual=s=>s.calls.filter(x=>x.url==='/api/review'&&x.body.action==='edit');
+function cellEdits(s){return manual(s).filter(x=>x.body.edits.some(edit=>edit.from===e.target.from&&edit.to===e.target.to));}
+
+test('fixed BOM/CRLF input has two identical 3x3 tables and independent UTF16 target168..170',()=>{
+ const bytes=initialBytes;assert.equal(sha(bytes),e.physical.initialSha256);assert.equal(bytes.subarray(0,3).toString('hex'),'efbbbf');assert(!/(^|[^\r])\n/.test(bytes.toString()));
+ const lines=e.canonical.initial.split('\n');assert.deepEqual(lines.slice(2,6),lines.slice(9,13));assert.equal(lines[12],'| 21 | 23 | 24 |');assert.equal(e.canonical.initial.slice(168,170),'23');assert.equal(e.target.utf16Delta,'42😀'.length-2);
+});
+test('actual CM Table spans bind the second duplicate, not the first matching23',async()=>{
+ const f=await ready(),hit=f.hit();assert.equal(hit.unsupported,undefined);assert.equal(hit.rows.length,3);assert(hit.rows.every(r=>r.length===3));
+ assert.equal(hit.selected.row,2);assert.equal(hit.selected.column,1);assert.equal(hit.selected.from,168);assert.equal(hit.selected.to,170);assert.equal(hit.rows[1][1].original,'left\\|right');assert.equal(hit.rows[1][1].value,'left|right');
+ f.select(65);const first=f.hit();assert(first.from<hit.from);assert.notEqual(first.selected.from,hit.selected.from);
+});
+test('one exact manual CM/FIFO edit leaves every other source byte and pending AI identity intact',async()=>{
+ const f=await ready(),pending=await f.pending(),beforeCalls=f.calls.filter(x=>x.body.action==='propose').length,stamp=await f.capture();
+ assert(Object.isFrozen(stamp));assert.equal(stamp.original,'23');assert.equal(stamp.document_id,'owned-document');assert(stamp.revision);assert(stamp.editorDoc===f.view.state.doc);
+ await f.apply(stamp);assert.equal(f.text(),e.canonical.expected);assert.equal(manual(f.store).length,1);assert.equal(cellEdits(f.store).length,1);
+ const request=manual(f.store)[0].body;assert.equal(request.origin,'editor');assert.deepEqual(request.edits,[{from:168,to:170,insert:'42😀'}]);assert.equal(request.document_id,stamp.document_id);assert.equal(request.generation,stamp.generation);assert.equal(request.review_revision,stamp.review_revision);
+ assert.equal(f.calls.filter(x=>x.body.action==='propose').length,beforeCalls);assert.equal(f.calls.some(x=>x.body.action==='resolve'),false);
+ const after=f.review.snapshot(f.tab).changes[0];for(const key of['id','original','replacement','decision','application','origin'])assert.deepEqual(after[key],pending[key]);assert.equal(after.from,pending.from+2);assert.equal(after.to,pending.to+2);
+ assert.equal(f.view.transactions.filter(t=>t.isUserEvent('input.table.cell')).length,1);assert.equal(f.events.filter(x=>x.type==='readmd:document-transaction'&&x.detail.origin==='editor').length,1);
+});
+test('existing Save preserves physical BOM/CRLF and never accepts the outside AI proposal',async()=>{
+ const f=await ready(),pending=await f.pending();await f.apply(await f.capture());assert.equal(await f.save(),true);
+ assert.equal(sha(f.store.disk()),e.physical.savedSha256);assert.equal(f.tab.isDirty,false);assert.equal(f.calls.filter(x=>x.url==='/api/save').length,1);
+ assert.equal(f.review.snapshot(f.tab).changes[0].id,pending.id);assert.equal(f.review.snapshot(f.tab).changes[0].decision,'pending');assert.equal(f.calls.some(x=>x.body.action==='resolve'),false);
+});
+test('a fresh adapter resume and durable-history protocol undo only the cell; disk waits explicit Save',async()=>{
+ const first=await ready();await first.pending();await first.apply(await first.capture());assert.equal(await first.save(),true);const disk=Buffer.from(first.store.disk());
+ const next=app(first.store);await next.ready();assert.equal(next.text(),e.canonical.expected);const pending=clone(next.review.snapshot(next.tab).changes[0]);
+ await next.history(false);assert.equal(next.text(),e.canonical.pending);assert.deepEqual(first.store.disk(),disk);assert.equal(next.review.snapshot(next.tab).changes[0].id,pending.id);assert.equal(next.review.snapshot(next.tab).changes[0].decision,'pending');
+ await next.history(true);assert.equal(next.text(),e.canonical.expected);assert.deepEqual(first.store.disk(),disk);
+ assert.equal(first.store.calls.filter(x=>x.body.action==='undo').length,1);assert.equal(first.store.calls.filter(x=>x.body.action==='redo').length,1);
+ // A fresh VM object is not a new Rust/OS process or SQLite certificate.
+});
+test('an unnamed table resize keeps its selection and resumes through the same draft history',async()=>{
+ const original='| Header | Notes |\n| --- | --- |\n| A | keep me |\n';
+ const resized=original.replace('Header |','Header {width=156} |');
+ const store=service(original,{draft:true}),first=app(store);
+ await first.ready();
+ const anchor=original.indexOf('keep me');first.select(anchor,anchor+7);
+ const edit=first.context.ReadMDTableStructure.resizeTrack(first.hit(),'width',0,156);
+ await assert.rejects(first.review.captureManualRange(edit.from,edit.to,first.tab),{code:'review_stale_generation'});
+ const stamp=await first.review.captureManualRange(edit.from,edit.to,first.tab,{allowDraft:true});
+ await first.review.applyManualRange(edit.insert,stamp,first.tab,undefined,{preserveSelection:true,userEvent:'input.table.resize'});
+ assert.equal(first.text(),resized);
+ const selection=first.view.state.selection.main;
+ assert.equal(first.view.state.sliceDoc(selection.from,selection.to),'keep me');
+ assert.equal(first.view.transactions.filter(tx=>tx.isUserEvent('input.table.resize')).length,1);
+ assert.equal(manual(store).length,1);
+ assert.deepEqual(store.calls.filter(({body})=>body.action==='resume').map(({body})=>body.path),['draft:table-tab','draft:table-tab']);
+ const reopened=app(store);await reopened.ready();
+ assert.equal(reopened.text(),resized);
+ await reopened.history();assert.equal(reopened.text(),original);
+ await reopened.history(true);assert.equal(reopened.text(),resized);
+ assert.equal(store.disk().toString('utf8'),original);
+});
+test('edit then durable undo equal-text ABA rejects the old Apply',async()=>{
+ const f=await ready(),stamp=await f.capture(),before=f.text();f.type({from:0,insert:'X'});await f.review.flush(f.tab);await f.history(false);assert.equal(f.text(),before);assert(f.tab.editGeneration>stamp.editGeneration);
+ const count=cellEdits(f.store).length;await assert.rejects(f.apply(stamp),{code:'review_stale_generation'});assert.equal(f.text(),before);assert.equal(cellEdits(f.store).length,count);
+});
+for(const [name,mutate]of[
+ ['tab object reuse',f=>{f.state.tabs=[{...f.tab}];}],
+ ['path change',f=>{f.tab.path+='-other';}],
+ ['file revision',f=>{f.tab.revision='other-revision';}],
+ ['CM editGeneration',f=>{f.tab.editGeneration++;}],
+ ['lifecycle decision',f=>{f.context.ReadMDLifecycle={busy:()=>true};}],
+ ['session restoring',f=>{f.context.ReadMDSession={restoring:()=>true};}],
+ ['read-only collaboration',f=>{f.context.ReadMDCollaborationShare={canEdit:()=>false};}],
+ ['read-only CM',f=>{f.view.dispatch({effects:f.CM.StateEffect.appendConfig.of(f.CM.EditorState.readOnly.of(true))});}]
+])test('stale Apply refuses before mutation: '+name,async()=>{
+ const f=await ready(),stamp=await f.capture(),before=f.text();mutate(f);await assert.rejects(f.apply(stamp),{code:'review_stale_generation'});assert.equal(f.text(),before);assert.equal(manual(f.store).length,0);
+});
+test('an externally advanced durable head rejects old Apply despite identical CM text',async()=>{
+ const f=await ready(),stamp=await f.capture(),before=f.text();f.store.remoteHead();await assert.rejects(f.apply(stamp),{code:'review_stale_generation'});assert.equal(f.text(),before);assert.equal(manual(f.store).length,0);
+});
+test('an actual owned-file external change is reported by resume before any cell mutation',async()=>{
+ const f=await ready(),stamp=await f.capture(),before=f.text(),outside='OUTSIDE OWNED CHANGE\r\n';f.store.external(outside);
+ await assert.rejects(f.apply(stamp),{code:'review_stale_generation'});assert.equal(f.text(),before);assert.equal(f.store.disk().toString(),outside);assert.equal(manual(f.store).length,0);
+});
+test('tab change while physical resume is pending refuses old Apply',async()=>{
+ const f=await ready(),stamp=await f.capture(),gate=f.store.pause('resume'),work=f.apply(stamp);await gate.entered.promise;f.state.tabs=[{...f.tab,id:'new-tab'}];f.state.activeTabId='new-tab';gate.release.resolve();
+ await assert.rejects(work,{code:'review_stale_generation'});assert.equal(manual(f.store).length,0);assert.equal(f.text(),e.canonical.initial);
+});
+test('a filtered CM transaction cannot be reported as a committed manual cell',async()=>{
+ const f=await ready(),stamp=await f.capture();f.view.dispatch({effects:f.CM.StateEffect.appendConfig.of(f.CM.EditorState.transactionFilter.of(tx=>tx.isUserEvent('input.table.cell')?[]:tx))});
+ await assert.rejects(f.apply(stamp),{code:'review_conflict'});assert.equal(f.text(),e.canonical.initial);assert.equal(manual(f.store).length,0);
+});
+test('non-document CM effects preserve the exact target while split-surrogate spans are rejected',async()=>{
+ const f=await ready(),stamp=await f.capture();f.view.dispatch({effects:f.CM.StateEffect.appendConfig.of([])});await f.apply(stamp);assert.equal(cellEdits(f.store).length,1);
+ const other=await ready();await assert.rejects(other.review.captureManualRange(6,7,other.tab),{code:'review_conflict'});assert.equal(manual(other.store).length,0);
+});
+test('a manual persistence failure keeps the dirty draft and never writes disk or auto-replays',async()=>{
+ const f=await ready(),stamp=await f.capture(),before=f.store.disk();f.store.fail('edit');await assert.rejects(f.apply(stamp),{code:'review_persistence_failed'});
+ assert.equal(f.text(),e.canonical.initial.slice(0,168)+'42😀'+e.canonical.initial.slice(170));assert(f.tab.isDirty);assert.deepEqual(f.store.disk(),before);assert.equal(manual(f.store).length,1);
+ await assert.rejects(f.apply(stamp),{code:'review_stale_generation'});assert.equal(manual(f.store).length,1);
+});
+test('lost acknowledgement retries only the same FIFO call ID and does not add another history entry',async()=>{
+ const f=await ready(),stamp=await f.capture();f.store.fail('edit',true);await assert.rejects(f.apply(stamp),{code:'review_persistence_failed'});const first=clone(manual(f.store)[0].body);
+ assert.equal(f.store.history.length,1);assert.equal(await f.review.retry(f.tab),true);assert.equal(manual(f.store).length,2);assert.deepEqual(manual(f.store)[1].body,first);assert.equal(f.store.history.length,1);
+});
+test('failed Save retains disk, pending AI and dirty corrected draft',async()=>{
+ const f=await ready(),pending=await f.pending(),before=f.store.disk();await f.apply(await f.capture());f.store.fail('save');assert.equal(await f.save(),false);
+ assert.deepEqual(f.store.disk(),before);assert.equal(f.text(),e.canonical.expected);assert(f.tab.isDirty);assert.equal(f.review.snapshot(f.tab).changes[0].id,pending.id);assert.equal(f.review.snapshot(f.tab).changes[0].decision,'pending');
+});
+test('existing modal presents nine real cell targets and applies only the selected second-table cell',async()=>{
+ const f=await ready();await f.pending();const ui=modal(f);f.context.openTableModal();await until(()=>ui.get('table-cell-apply')&&!ui.get('table-cell-apply').disabled);
+ assert.equal(ui.buttons().length,9);assert.equal(ui.get('table-cell-input').value,'23');ui.get('table-cell-input').value='42😀';await ui.get('table-cell-apply').click();
+ assert.equal(f.text(),e.canonical.expected);assert.equal(manual(f.store).length,1);assert(ui.root.classList.contains('hidden'));
+});
+test('cancel and late capture cannot mutate or reopen the old modal',async()=>{
+ const f=await ready(),gate=f.store.pause('resume'),ui=modal(f);f.context.openTableModal();await gate.entered.promise;ui.get('table-cell-cancel').click();gate.release.resolve();await tick();await tick();
+ assert(ui.root.classList.contains('hidden'));assert.equal(ui.get('table-cell-controls'),null);assert.equal(manual(f.store).length,0);assert.equal(f.text(),e.canonical.initial);
+});
+for(const close of ['cancel','escape'])test('actual modal Apply pending at resume is cancelled by '+close+' before dispatch',async()=>{
+ const f=await ready(),ui=modal(f),physical=Buffer.from(f.store.disk());f.context.openTableModal();await until(()=>ui.get('table-cell-apply')&&!ui.get('table-cell-apply').disabled);
+ ui.get('table-cell-input').value='42😀';const gate=f.store.pause('resume'),work=ui.get('table-cell-apply').click();await gate.entered.promise;
+ if(close==='cancel')ui.get('table-cell-cancel').click();else ui.escape();assert(ui.root.classList.contains('hidden'));gate.release.resolve();await work;
+ assert.deepEqual({manualEdits:manual(f.store).length,cmUnchanged:f.text()===e.canonical.initial,diskUnchanged:f.store.disk().equals(physical)},{manualEdits:0,cmUnchanged:true,diskUnchanged:true});
+});
+for(const queued of [false,true])test('a '+(queued?'queued':'processing')+' Review operation during fresh resume invalidates old Apply',async()=>{
+ const f=await ready(),ui=modal(f);f.context.openTableModal();await until(()=>ui.get('table-cell-apply')&&!ui.get('table-cell-apply').disabled);const base=await f.review.capture(f.tab);
+ ui.get('table-cell-input').value='42😀';const gate=f.store.pause('resume'),work=ui.get('table-cell-apply').click();await gate.entered.promise;
+ const backgroundGate=f.store.pause('propose'),at=f.text().length,background=f.review.propose([{from:at,to:at,insert:'\nBACKGROUND_ONLY\n'}],base,f.tab);await backgroundGate.entered.promise;
+ if(queued)assert.equal(f.review.history(false),true);gate.release.resolve();await tick();await tick();const beforeBackground={cell:f.text().slice(168,170),cellEdits:cellEdits(f.store).length};
+ backgroundGate.release.resolve();await Promise.all([background,work]);await f.review.flush(f.tab);
+ assert.deepEqual(beforeBackground,{cell:'23',cellEdits:0});assert.equal(cellEdits(f.store).length,0);
+});
+test('unknown Markdown escapes are read-only instead of showing the wrong literal value',async()=>{
+ const f=await ready();assert.equal(f.context.cmTableCellLiteral('\\!'),null);assert.equal(f.context.cmTableCellLiteral('left\\|right'),'left|right');assert.equal(f.context.cmTableCellLiteral('a\\\\b'),'a\\b');
+});
+test('cancelling after dispatch does not claim rollback of the authorized manual edit',async()=>{
+ const f=await ready(),ui=modal(f),physical=Buffer.from(f.store.disk());f.context.openTableModal();await until(()=>ui.get('table-cell-apply')&&!ui.get('table-cell-apply').disabled);
+ ui.get('table-cell-input').value='42😀';const gate=f.store.pause('edit'),work=ui.get('table-cell-apply').click();await gate.entered.promise;
+ assert.equal(f.text().slice(168,172),'42😀');ui.get('table-cell-cancel').click();gate.release.resolve();await work;
+ assert.equal(manual(f.store).length,1);assert.equal(f.text().slice(168,172),'42😀');assert.deepEqual(f.store.disk(),physical);
+});
+test('an unknown-escape selected cell is visibly read-only and has no active Apply',async()=>{
+ const source=e.canonical.initial.slice(0,168)+'\\!'+e.canonical.initial.slice(170),f=await ready(source),ui=modal(f);f.context.openTableModal();
+ assert.equal(ui.get('table-cell-input').disabled,true);assert.equal(ui.get('table-cell-apply').disabled,true);ui.get('table-cell-apply').click();assert.equal(f.text(),source);assert.equal(manual(f.store).length,0);
+});
+test('the existing alignment control still changes only its second-table delimiter token',async()=>{
+ const f=await ready(),ui=modal(f);f.context.openTableModal();await until(()=>ui.get('table-cell-apply')&&!ui.get('table-cell-apply').disabled);
+ const right=ui.get('table-align-controls').children.find(button=>button.dataset.tableAlign==='right');right.click();assert.equal(await f.review.flush(f.tab),true);
+ const lines=e.canonical.initial.split('\n');lines[10]='| --- | ---: | ---: |';assert.equal(f.text(),lines.join('\n'));assert.equal(cellEdits(f.store).length,0);assert(ui.root.classList.contains('hidden'));
+});
+test('outside a source table the original insertion picker remains available and inert until a choice',async()=>{
+ const f=await ready(),ui=modal(f);f.select(0);f.context.openTableModal();assert.equal(ui.get('table-grid-picker').children.length,100);assert.equal(ui.get('table-cell-apply'),null);assert.equal(f.text(),e.canonical.initial);assert.equal(manual(f.store).length,0);
+});
+for(const [name,source,marker]of[
+ ['ragged', '| A | B | C |\n| --- | --- | --- |\n| 1 | 2 |\n','1'],
+ ['HTML merged','<table><tr><td colspan="2">merged</td></tr></table>\n','merged'],
+ ['nested quote','> | A | B |\n> | --- | --- |\n> | 1 | 2 |\n','1'],
+ ['oversized cells','| A | B |\n| --- | --- |\n| '+ 'X'.repeat(65537)+' | 2 |\n','2']
+])test('complex or unknown geometry is explicitly refused: '+name,async()=>{
+ const f=await ready(source);f.select(lf(source).lastIndexOf(marker));const hit=f.hit();assert.equal(hit?.unsupported,true);const ui=modal(f);f.context.openTableModal();assert.equal(ui.get('table-cell-apply'),null);assert.equal(manual(f.store).length,0);assert.equal(f.text(),lf(source));
+});
+test('unsupported rich cells remain source-exact and replacement rejects newlines or broken surrogate values',async()=>{
+ const f=await ready();assert.equal(f.context.cmTableCellLiteral('**bold**'),null);assert.equal(f.context.cmTableCellLiteral('left\\|right'),'left|right');assert.equal(f.context.cmTableCellLiteral('&#124; &#92; &amp;'),'| \\ &');
+ for(const value of['line\nnext','line\rnext','\ud800','\udc00','a\0b'])assert.equal(f.context.cmTableCellReplacement(value),null);
+ assert.equal(f.context.cmTableCellReplacement('42😀'),'42😀');
+});
+
+test('sort keeps numeric precision, equal-key order and empty cells last in either direction', () => {
+  const keys = ['**10**', '2e0', '02.00', '-2.01', '', '9007199254740993',
+    '9007199254740992', '-0.2', '[Beta](https://example.invalid)', 'Alpha'];
+  const lines = keys.map((value, index) => '| ' + value + ' | ' + index + ' |');
+  const source = '| Key | ID |\n| --- | --- |\n' + lines.join('\n');
+  const f = app(service(Buffer.from(source)));
+  f.select(3);
+  const ctx = f.hit();
+  for (const [ascending, expected] of [
+    [true, [3, 7, 1, 2, 0, 6, 5, 9, 8, 4]],
+    [false, [5, 6, 0, 1, 2, 7, 3, 8, 9, 4]],
+  ]) {
+    const edit = require('../../assets/js/editor/table-structure.js').sortRows(ctx, 0, ascending, 'en');
+    const result = source.slice(0, edit.from) + edit.insert + source.slice(edit.to);
+    assert.equal(result, source.slice(0, source.indexOf(lines[0])) + expected.map(i => lines[i]).join('\n'));
+  }
+});
+
+const attrs = require('../../assets/js/editor/table-attributes.js');
+const structure = require('../../assets/js/editor/table-structure.js');
+const geometryTable = [
+  '| Title | Middle | Final |',
+  '| --- | :---: | --- |',
+  '| **Alpha**   | left\\|right | first |',
+  '| [Charlie](https://example.invalid)  | Delta {align=left} | last |',
+].join('\n');
+const duplicates = '# 前置 😀\n\n' + geometryTable + '\n\n' + geometryTable + '\n';
+const sourceWith = (source, match, replacement) => {
+  const from = source.lastIndexOf(match);
+  return source.slice(0, from) + replacement + source.slice(from + match.length);
+};
+const setTableField = (ui, name, value) => {
+  const field = ui.get('table-cell-' + name);
+  field.value = value;
+  field.listeners.input();
+};
+const cellButton = (ui, row, column) => ui.buttons().find(button => button.dataset.tableRow === row && button.dataset.tableColumn === column);
+
+test('cell suffixes are exact, bounded, ordered independently, and distinct from literal Markdown', () => {
+  const source = '**x**  {valign=middle  colspan=2 align=right rowspan=3}  ';
+  assert.deepEqual(attrs.parseCell(source), {
+    from: 6, to: source.length - 2, text: '**x**   ',
+    attributes: { valign: 'middle', colspan: 2, align: 'right', rowspan: 3 },
+  });
+  assert.equal(attrs.parseCell(' \t{align=left}  ').text, ' \t  ');
+  for (const source of [
+    'x {class=blue}', 'x\\{align=left}', 'x \\{align=left}', 'x {align=left\\}',
+    'x `{align=left}`', 'x\t{align=left}',
+  ]) assert.equal(attrs.parseCell(source), null, source);
+  for (const suffix of ['colspan=0', 'colspan=17', 'rowspan=33', 'colspan=02',
+    'align=RIGHT', 'valign=top align=', 'align=left align=right', 'align=left style=color', ' align=left', 'align=left\tvalign=top']) {
+    assert.deepEqual(attrs.parseCell('x {' + suffix + '}'), { invalid: true }, suffix);
+  }
+  assert.equal(attrs.suffix({ valign: 'top', rowspan: 2, colspan: 3, align: 'center' }, true),
+    ' {colspan=3 rowspan=2 align=center valign=top}');
+});
+
+test('shared geometry refuses bounds, overlap, and header crossing, and tracks all covered slots', () => {
+  const rows = [
+    ['H {colspan=2}', 'I', 'J'],
+    ['A {rowspan=2 colspan=2}', 'B', 'E'],
+    ['C', 'D {valign=top}', 'F {colspan=1 rowspan=1}'],
+  ];
+  const layout = attrs.layout(rows);
+  assert.equal(layout.hasAttributes, true);
+  assert.deepEqual(layout.owners[0][1], { row: 0, column: 0, rowspan: 1, colspan: 2 });
+  const owner = layout.owners[1][0];
+  for (const [row, column] of [[1, 1], [2, 0], [2, 1]]) assert.equal(layout.owners[row][column], owner);
+  assert.equal(layout.owners[2][2], null);
+  assert.equal(layout.cells[2][1].attributes.valign, 'top');
+  for (const [row, col, source] of [[0, 0, 'H {rowspan=2}'], [1, 0, 'A {rowspan=3}'], [1, 2, 'E {colspan=2}'], [2, 1, 'D {colspan=2}']]) {
+    const other = rows.map(row => [...row]);
+    other[row][col] = source;
+    assert.equal(attrs.layout(other), null, source);
+  }
+});
+
+test('endpoint merge, alignment, and split edit only the anchor suffix on the selected duplicate', async () => {
+  const f = await ready(duplicates), ui = modal(f);
+  f.select(duplicates.lastIndexOf('**Alpha**') + 3);
+  f.context.openTableModal();
+  assert.equal(ui.get('table-cell-input').disabled, true, 'rich content remains available to merge');
+  assert.equal(ui.get('table-cell-input').value, '**Alpha**');
+  assert.equal(ui.get('table-cell-controls').children.at(-1).textContent, '');
+  assert.equal(ui.get('table-cell-merge').disabled, true);
+  cellButton(ui, 2, 1).click({ shiftKey: true });
+  assert.equal(ui.get('table-cell-rowspan').value, '2');
+  assert.equal(ui.get('table-cell-colspan').value, '2');
+  assert.equal(cellButton(ui, 2, 1).dataset.tableInRange, '');
+  const from = duplicates.lastIndexOf('**Alpha**') + '**Alpha**'.length;
+  await ui.get('table-cell-merge').click();
+  const merged = sourceWith(duplicates, '**Alpha**', '**Alpha** {colspan=2 rowspan=2}');
+  assert.equal(f.text(), merged);
+  assert.deepEqual(manual(f.store)[0].body.edits, [{ from, to: from, insert: ' {colspan=2 rowspan=2}' }]);
+  assert.equal(f.store.disk().toString(), duplicates);
+
+  f.select(from - 2);
+  f.context.openTableModal();
+  setTableField(ui, 'align', 'center');
+  setTableField(ui, 'valign', 'middle');
+  await ui.get('table-cell-properties-apply').click();
+  const aligned = sourceWith(duplicates, '**Alpha**', '**Alpha** {colspan=2 rowspan=2 align=center valign=middle}');
+  assert.equal(f.text(), aligned);
+
+  f.select(aligned.lastIndexOf('Delta') + 2);
+  f.context.openTableModal();
+  assert.equal(ui.get('table-cell-input').value, 'Delta');
+  assert.equal(ui.get('table-cell-align').value, 'left');
+  await ui.get('table-cell-split').click();
+  const split = sourceWith(duplicates, '**Alpha**', '**Alpha** {align=center valign=middle}');
+  assert.equal(f.text(), split);
+  assert.equal(manual(f.store).length, 3);
+  await f.history();
+  assert.equal(f.text(), aligned);
+  await f.history(true);
+  assert.equal(f.text(), split);
+});
+
+test('span inputs reject cross-section and overlapping rectangles, and cell properties fence structure changes', async () => {
+  const source = sourceWith(duplicates, 'left\\|right', 'left\\|right {colspan=2}');
+  const f = await ready(source), ui = modal(f);
+  f.select(source.lastIndexOf('Title') + 1);
+  f.context.openTableModal();
+  setTableField(ui, 'rowspan', '2');
+  assert.equal(ui.get('table-cell-merge').disabled, true);
+  cellButton(ui, 1, 0).click();
+  setTableField(ui, 'colspan', '2');
+  assert.equal(ui.get('table-cell-merge').disabled, true);
+  const context = f.hit();
+  assert.equal(structure.columnEdit(context, 0, true), null);
+  assert.equal(structure.sortRows(context, 0, true, 'en'), null);
+  assert(ui.get('table-cell-controls').querySelectorAll('button').filter(button => button.dataset.tableMove).every(button => button.disabled));
+  assert.equal(f.text(), source);
+  assert.equal(manual(f.store).length, 0);
+});
+
+test('an affected review and cancellation during span capture leave source untouched', async () => {
+  const f = await ready(duplicates), ui = modal(f);
+  const from = duplicates.lastIndexOf('Charlie');
+  await f.review.propose([{ from, to: from + 'Charlie'.length, insert: 'Review' }], await f.review.capture(f.tab), f.tab);
+  const proposed = f.text();
+  f.select(proposed.lastIndexOf('**Alpha**') + 2);
+  f.context.openTableModal();
+  setTableField(ui, 'rowspan', '2');
+  setTableField(ui, 'colspan', '2');
+  await ui.get('table-cell-merge').click();
+  assert.equal(ui.get('table-cell-controls').children.at(-1).textContent, 'review.conflict');
+  assert.equal(f.text(), proposed);
+  assert.equal(manual(f.store).length, 0);
+
+  const gate = f.store.pause('resume');
+  const committing = ui.get('table-cell-merge').click();
+  await gate.entered.promise;
+  ui.get('table-cell-cancel').click();
+  gate.release.resolve();
+  await committing;
+  assert.equal(f.text(), proposed);
+  assert.equal(manual(f.store).length, 0);
+});
+
+test('empty anchors round-trip with exact whitespace, and literal edits cannot introduce metadata', async () => {
+  const source = '| A | B |\n| --- | --- |\n|   | Body |\n';
+  const f = await ready(source), ui = modal(f);
+  f.select(source.lastIndexOf('   |') + 1);
+  f.context.openTableModal();
+  setTableField(ui, 'colspan', '2');
+  await ui.get('table-cell-merge').click();
+  const merged = source.replace('   | Body', '   {colspan=2}| Body');
+  assert.equal(f.text(), merged);
+
+  f.select(merged.lastIndexOf('{colspan'));
+  f.context.openTableModal();
+  await until(() => !ui.get('table-cell-apply').disabled);
+  ui.get('table-cell-input').value = 'text {align=right}';
+  await ui.get('table-cell-apply').click();
+  const typed = merged.replace('{colspan=2}', 'text &#123;align=right} {colspan=2}');
+  assert.equal(f.text(), typed);
+
+  f.select(typed.lastIndexOf('Body') + 1);
+  f.context.openTableModal();
+  await ui.get('table-cell-split').click();
+  assert.equal(f.text(), typed.replace(' {colspan=2}', ''));
+  await f.history();
+  await f.history();
+  f.select(merged.lastIndexOf('Body') + 1);
+  f.context.openTableModal();
+  await ui.get('table-cell-split').click();
+  assert.equal(f.text(), source);
+});
+
+test('Tab selects source content without formatting, and Enter cannot insert an attributed row', async () => {
+  const f = await ready(duplicates), at = duplicates.lastIndexOf('**Alpha**') + 3;
+  f.select(at);
+  assert.equal(f.context.cmTableTab(f.view, 1), true);
+  const selection = () => f.view.state.sliceDoc(f.view.state.selection.main.from, f.view.state.selection.main.to);
+  assert.equal(selection(), 'left\\|right');
+  assert.equal(f.context.cmTableTab(f.view, -1), true);
+  assert.equal(selection(), '**Alpha**');
+  f.select(at);
+  assert.equal(f.context.cmTableEnter(f.view), true);
+  assert.equal(f.toasts.at(-1), 'editor.tableCellStructureLocked');
+  assert.equal(f.text(), duplicates);
+  assert.equal(manual(f.store).length, 0);
+});
+
+test('table rewrite helpers protect attributed source when incremental syntax is unavailable', () => {
+  const T = require('../../assets/js/editor/md-transforms.js');
+  const cursor = geometryTable.indexOf('Delta');
+  assert.deepEqual(T.tableNavEdit(geometryTable, cursor, 1), { blocked: true });
+  assert.deepEqual(T.tableEnterEdit(geometryTable, cursor), { blocked: true });
+});
+
+test('split cells retain individual alignment through column insertion and rich-text sorting', async () => {
+  const source = '| Key | Qty |\n|---|---|\n| **Zulu** {align=right} | 4 |\n| Alpha {valign=bottom} | 3 |';
+  const f = await ready(source), ui = modal(f);
+  f.select(source.indexOf('Zulu')+1);
+  f.context.openTableModal();
+  const action = name => ui.get('table-cell-controls').querySelectorAll('button').find(b=>b.dataset.tableMove===name);
+  assert.equal(action('insert-column').disabled,false);
+  action('sort-asc').click();
+  await until(()=>f.text()!==source);
+  assert.equal(f.text(), '| Key | Qty |\n|---|---|\n| Alpha {valign=bottom} | 3 |\n| **Zulu** {align=right} | 4 |');
+  await f.history();
+  assert.equal(f.text(),source);
+  f.select(source.indexOf('Zulu')+1);
+  f.context.openTableModal();
+  action('insert-column').click();
+  await until(()=>f.text()!==source);
+  assert.match(f.text(),/\*\*Zulu\*\* \{align=right\} \| \| 4 \|/);
+  assert.match(f.text(),/Alpha \{valign=bottom\} \| \| 3 \|/);
+});

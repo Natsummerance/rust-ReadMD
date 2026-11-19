@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-11-05",
+  "scope": "V7-07 literal rectangular top-level GFM single cell; partial P1 only",
+  "sourceCommit": "457a1fc98982e58295375ef6e7f2afb12c829eab",
+  "sourceTreeSha256": "2be79ff667292f34ec3d491eb51c77997659dd51d5f2185fc71480a7bb67d3b5",
+  "bootSha256": "b2fcad09bd8964a60bea5a115e8b08f4d5d9e29f56f5d4f8df1fb7551907c1a3",
+  "indexSha256": "947f0bec95edb1a471d9ee7f7c8e380b00a02d71f851b2e97e974b3898a698cb",
+  "nativeProducer": {
+    "compiledBinarySha256": "9cad49b1f715320dcb3e9cafa573d61e388b7a1bf19597cc75e5dc773e0db1f7",
+    "signedBinarySha256": "f2183ecde88fcb26bb47f46facb44eda3324ff7d37e842dbfda5c3bc131a3059",
+    "buildLabel": "table-cell-native-457a-build-01",
+    "cleanBuild": true,
+    "adHocSigned": true,
+    "notarized": false,
+    "officialRelease": false
+  },
+  "headlessProducer": {
+    "sourceCommit": "7a6ca78e31361ff542000a3a09d0f37707aa1673",
+    "binarySha256": "83c41846abc34667e0af1a5fb9022ac700da53173edef6aeac7d18ec8ee86174",
+    "unchangedRustSubtreeVerified": true,
+    "uiSourceCommit": "457a1fc98982e58295375ef6e7f2afb12c829eab"
+  },
+  "fixedInput": {
+    "fixture": "tests/fixtures/table-cell/v007/expectations.json",
+    "fixtureSha256": "8ac21e17b63acb4507ea8f1f0e02a9985659debb52a736bcd597add0eae9b8ae",
+    "physicalEncoding": "UTF-8 BOM, CRLF",
+    "repeatedTables": 2,
+    "rows": 3,
+    "columns": 3,
+    "targetUtf16": {
+      "from": 168,
+      "to": 170,
+      "original": "23",
+      "replacement": "42😀"
+    },
+    "pendingAi": {
+      "proposalInput": [
+        184,
+        201
+      ],
+      "initialAppliedAndUndo": [
+        184,
+        204
+      ],
+      "afterEditSaveReopenRedo": [
+        186,
+        206
+      ],
+      "original": "ORIGINAL_AI_SCOPE",
+      "replacement": "PENDING_AI_CANDIDATE",
+      "decision": "pending",
+      "application": "applied",
+      "takenOver": false
+    }
+  },
+  "actualHeadless": {
+    "passed": true,
+    "reportSha256": "f44c48b9854e66465347ae017f2d1dcaf244002b62175862ac906d2276aeabda",
+    "receiptEntries": 11,
+    "realRustProcesses": 2,
+    "productionCspAndAuth": true,
+    "positiveEntry": "Existing toolbar/menu, Table modal, exact cell button, input, Apply",
+    "oneManualEditorFifoEvent": true,
+    "explicitPhysicalBomCrlfSave": true,
+    "freshProcessPersistentUndoRedo": true,
+    "staleRefusals": [
+      "Cancel",
+      "browser Escape",
+      "ABA edit and durable undo",
+      "tab switch",
+      "external file modification"
+    ],
+    "responseDeliveryBarriers": 4,
+    "ownedProcessesAndBrowserContextsStopped": true,
+    "ownedScratchRemoved": true,
+    "nativeCertified": false
+  },
+  "actualMacNative": {
+    "passed": true,
+    "reportSha256": "6a09a5ca9f2324e48b462199204f2454db175a86219791b9969d8685ee4136aa",
+    "independentReadbackSha256": "533bd042464865d54afe529284231b3ca8345f0990b7f22b3979093f3fd47257",
+    "phases": [
+      {
+        "phase": "table_cell_edit_save",
+        "checks": 25,
+        "driverSha256": "8b15623e58701e89e340fbda80d25f363b9dc96b73d242c62ea44b1b8e53677c",
+        "normalExit": true
+      },
+      {
+        "phase": "table_cell_reopen_history",
+        "checks": 14,
+        "driverSha256": "753b3f4701e39e3cd6f337a37e4caf58a969d2f7ab733d9cd5da4608a64252d7",
+        "normalExit": true
+      },
+      {
+        "phase": "table_cell_reopen_verify",
+        "checks": 11,
+        "driverSha256": "37cf658e00a9d0d6c24a04381d6741f61b47580011069a0257da11316914d40c",
+        "normalExit": true
+      }
+    ],
+    "checks": 50,
+    "differentAppProcesses": 3,
+    "actualToolbarSaveTaskStrictTrue": 2,
+    "persistentManualEditEvents": 1,
+    "persistentAiProposalEvents": 1,
+    "persistentUndoEvents": [
+      0,
+      1,
+      1
+    ],
+    "persistentRedoEvents": [
+      0,
+      1,
+      1
+    ],
+    "pendingIdentityAndAllFieldsPreserved": true,
+    "actualCellAndActionTargetsAtLeast44px": true,
+    "nativeDirtyFlagChecked": true,
+    "physicalBuffersIndependentlyCompared": true,
+    "allThreeNormalQuit": true,
+    "allActualPidsIndependentlyAbsent": true,
+    "readOnlySqliteInspections": 3,
+    "ownedScratchRemoved": true,
+    "programmaticDomActivation": true,
+    "syntheticDomEscape": true,
+    "physicalKeyboardCertified": false,
+    "physicalPointerCertified": false,
+    "systemImeCertified": false,
+    "wholeVisualMatrixCertified": false
+  },
+  "precommitRegression": {
+    "files": 152,
+    "tests": 2038,
+    "passed": 2035,
+    "failed": 0,
+    "existingSkipped": 3,
+    "ranBeforeCommit": true,
+    "all15CommittedFileDigestsVerified": true,
+    "commitReceiptSha256": "2b5e1c73c39a421562d263bbcdcd76c3e2af7e46f5357973f2b0320b69e84c27",
+    "sourceOnlyCellOwnerControls": 38,
+    "styleWiringI18nStructureAssetsPrivacyAndBootCheckPassed": true,
+    "legacyFiveBytePinsUnchanged": true
+  },
+  "firstFailuresRetained": [
+    {
+      "kind": "Headless seal input ordering",
+      "detail": "Path-component manifest order differed from flat string order; all 1177 path/size/digest triples identical. New canonical manifest, no assets changed or service launched."
+    },
+    {
+      "kind": "Native QA response envelope",
+      "reportSha256": "dce183ddc96eaa4f2968aac42bf7a59b988531fae6c5bd2264b4c5755589dadf",
+      "detail": "Test wrapper expected a bare resume snapshot instead of actual found/snapshot envelope. Test-only fix preserves original Response."
+    },
+    {
+      "kind": "Native QA save waiting",
+      "reportSha256": "bf73e9ee2697466b08b4f2964067647c9a24a33e51b684e07816035fb9027aba",
+      "detail": "Phase1 passed, phase2 restore/undo/redo passed, then FIFO check failed. Old clean-UI predicate has a reproduced early-return window; exact runtime interleaving was not recorded. New observer waits for the genuine document-save Promise strict true."
+    },
+    {
+      "kind": "Native startup state",
+      "reportSha256": "5ae7fb58fce1c6e507f01b2abac875bb6f672a2b43b44d3f415593163e51a47f",
+      "detail": "First visible/focused/Mac conjunction was false; which field and root cause were not captured. New bounded passive status polling preserves all final strict predicates and never forces focus."
+    }
+  ],
+  "remaining": [
+    "Sorting, row/column structural actions, merge and extension properties are not accepted by this slice",
+    "Only bounded literal GFM cells; rich/HTML/merged/unknown source remains read-only or refused",
+    "All Save-failure and processing/queue interleavings need their own actual consumers",
+    "Windows/Linux new candidate CI and native WebView-specific evidence remain separate",
+    "Physical keyboard, system IME, RTL, theme and size matrices remain separate"
+  ],
+  "modelsRequested": false,
+  "wholeV707Accepted": false,
+  "wholeP1Accepted": false,
+  "wholeP2Accepted": false,
+  "v007Released": false
+}

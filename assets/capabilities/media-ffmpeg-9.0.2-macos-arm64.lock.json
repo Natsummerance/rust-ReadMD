@@ -1,0 +1,102 @@
+{
+  "schema": 2,
+  "id": "media-ffmpeg",
+  "version": "9.0.2",
+  "platform": "macos-arm64",
+  "files": [
+    {
+      "path": "bin/ffmpeg",
+      "size": 5544632,
+      "sha256": "e433f09920e1652e780c90ca6018fb381ee91a92186249882024c086a197982c",
+      "executable": true,
+      "compressedSize": 2724590
+    },
+    {
+      "path": "bin/ffprobe",
+      "size": 5351896,
+      "sha256": "535af1f32e5f858618575a0e271d87fc50b00f40ef8be7e45080a95e4e3f8c22",
+      "executable": true,
+      "compressedSize": 2632942
+    },
+    {
+      "path": "LICENSE",
+      "size": 26517,
+      "sha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
+      "executable": false,
+      "compressedSize": 9350
+    },
+    {
+      "path": "SOURCE",
+      "size": 749,
+      "sha256": "f526b662b0273f282eec8a5670f89b0e4b8fd772775ac37cb1fe79633bb004c7",
+      "executable": false,
+      "compressedSize": 457
+    },
+    {
+      "path": "NOTICE",
+      "size": 409,
+      "sha256": "aa20244ba61f233737b5941966fff39a0ab5b709efd5e9a44f12cc0e92ef184e",
+      "executable": false,
+      "compressedSize": 303
+    },
+    {
+      "path": "licenses/FFMPEG-LICENSE.md",
+      "size": 4346,
+      "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
+      "executable": false,
+      "compressedSize": 1769
+    }
+  ],
+  "review": {
+    "license": "LGPL-2.1-or-later (FFmpeg command-line programs; no external libraries, GPL or nonfree components)",
+    "minimumPlatform": "macOS 11.0 or later; Apple arm64",
+    "portable": true,
+    "redistributionApproved": true,
+    "sourceDeliveryReviewed": true,
+    "sources": [
+      {
+        "component": "FFmpeg unmodified release source",
+        "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+        "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e"
+      }
+    ],
+    "buildConfiguration": [
+      "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+      "Darwin arm64; macOS SDK; deployment target 11.0",
+      "--prefix=/readmd/media-ffmpeg",
+      "--arch=aarch64",
+      "--target-os=darwin",
+      "--cc=/usr/bin/clang",
+      "--disable-autodetect",
+      "--disable-shared",
+      "--enable-static",
+      "--disable-network",
+      "--disable-doc",
+      "--disable-ffplay",
+      "--disable-debug",
+      "--disable-gpl",
+      "--disable-nonfree",
+      "--disable-everything",
+      "--enable-pthreads",
+      "--enable-ffmpeg",
+      "--enable-ffprobe",
+      "--enable-indev=lavfi",
+      "--enable-protocol=file,pipe",
+      "--enable-demuxer=aac,asf,avi,flac,matroska,mov,mp3,ogg,wav",
+      "--enable-parser=aac,aac_latm,ac3,dca,flac,mpegaudio,opus,vorbis",
+      "--enable-decoder=aac,aac_fixed,aac_latm,ac3,ac3_fixed,alac,amrnb,amrwb,ape,atrac1,atrac3,atrac3p,dca,eac3,flac,g723_1,g729,mlp,mp1,mp1float,mp2,mp2float,mp3,mp3float,mp3adu,mp3adufloat,mp3on4,mp3on4float,nellymoser,opus,qdm2,qdmc,real_144,real_288,shorten,sipr,speex,truehd,tta,vorbis,wavpack,wmalossless,wmapro,wmav1,wmav2,wmavoice,adpcm_ima_wav,adpcm_ima_qt,adpcm_ms,adpcm_swf,adpcm_yamaha,pcm_alaw,pcm_mulaw,pcm_s8,pcm_u8,pcm_s16be,pcm_s16le,pcm_u16be,pcm_u16le,pcm_s24be,pcm_s24le,pcm_u24be,pcm_u24le,pcm_s32be,pcm_s32le,pcm_u32be,pcm_u32le,pcm_s64be,pcm_s64le,pcm_f16le,pcm_f24le,pcm_f32be,pcm_f32le,pcm_f64be,pcm_f64le,pcm_s16be_planar,pcm_s16le_planar,pcm_s24le_planar,pcm_s32le_planar,pcm_s8_planar,pcm_sga,pcm_vidc,pcm_zork",
+      "--enable-encoder=pcm_s16le,aac,flac",
+      "--enable-muxer=wav,pcm_s16le,adts,mp4,flac,ogg",
+      "--enable-filter=aresample,atrim,asetpts,sine,anull,aformat,concat,amix,pan",
+      "--extra-cflags=-arch arm64 -mmacosx-version-min=11.0 -O2",
+      "--extra-ldflags=-arch arm64 -mmacosx-version-min=11.0",
+      "make -j2 ffmpeg ffprobe"
+    ],
+    "inputLockSha256": "8b3f7ef9a8075b84cd04efca97c3c40d19f7b1cbab221748b541adf7c615bb15",
+    "compression": {
+      "node": "24.22.1",
+      "zlib": "1.2.12",
+      "gzipOS": 255
+    }
+  }
+}

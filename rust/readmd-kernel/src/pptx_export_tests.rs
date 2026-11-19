@@ -4,12 +4,13 @@ use std::fs;
 fn strings(deck:&Deck)->String {
     deck.slides.iter().flat_map(|slide|&slide.shapes).map(|shape|match shape{
         Shape::Text{lines,..}=>lines.iter().map(|line|plain(line)).collect::<String>(),
-        Shape::Table{rows,..}=>rows.iter().flatten().flatten().map(|line|plain(line)).collect(),
+        Shape::Table{rows,..}=>table::lines(rows).map(|line|plain(line)).collect(),
         Shape::Image{alt,..}=>alt.clone(),
+        Shape::Accent{..}=>String::new(),
     }).collect()
 }
 fn assert_bounds(deck:&Deck){
-    for slide in &deck.slides {for shape in &slide.shapes{let rect=match shape{Shape::Text{rect,..}|Shape::Image{rect,..}|Shape::Table{rect,..}=>rect};
+    for slide in &deck.slides {for shape in &slide.shapes{let rect=match shape{Shape::Text{rect,..}|Shape::Image{rect,..}|Shape::Table{rect,..}|Shape::Accent{rect,..}=>rect};
         assert!(rect[0]>=0.&&rect[1]>=0.&&rect[0]+rect[2]<=W+0.01&&rect[1]+rect[3]<=H+0.01,"{rect:?}");
     }}
 }
@@ -57,7 +58,7 @@ fn table_rows_repeat_headers_and_preserve_all_cells_on_continuation(){
     let mut source="# Long table\n\n|Observation|Result|\n|---|---|\n".to_string();for n in 0..60{source.push_str(&format!("|row-{n:03}|value-{n:03}|\n"));}
     let deck=build(&source,"","Data",&json!({})).unwrap();assert!(deck.slides.len()>3);assert_bounds(&deck);
     let text=strings(&deck);for n in 0..60{assert!(text.contains(&format!("row-{n:03}")));assert!(text.contains(&format!("value-{n:03}")));}
-    for shape in deck.slides.iter().flat_map(|s|&s.shapes){if let Shape::Table{rows,..}=shape{assert_eq!(plain(&rows[0][0][0]),"Observation");}}
+    for shape in deck.slides.iter().flat_map(|s|&s.shapes){if let Shape::Table{rows,..}=shape{assert_eq!(plain(&rows[0].cells[0].lines[0]),"Observation");}}
 }
 
 #[test]
@@ -98,4 +99,48 @@ fn unsupported_html_and_cancel_keep_existing_output_untouched(){
     let dir=tempfile::tempdir().unwrap();let out=dir.path().join("existing.pptx");fs::write(&out,b"original bytes").unwrap();
     assert!(export("# Test\n\n<video src=\"movie.mp4\"></video>","",out.to_str().unwrap(),&json!({}),"Test").is_err());assert_eq!(fs::read(&out).unwrap(),b"original bytes");
     crate::speech::with_cancel(std::sync::Arc::new(||true),||{assert_eq!(export("# Test","",out.to_str().unwrap(),&json!({}),"Test").err().as_deref(),Some("cancelled"));});assert_eq!(fs::read(out).unwrap(),b"original bytes");
+}
+
+#[test]
+fn launch_cover_preserves_words_and_cjk_lines() {
+    let lines = wrap(&text("Evaluating document recovery"), 57., 736.).unwrap();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(plain(&lines[1]).trim(), "recovery");
+    let cjk = "这一行中文在窄文本框内仍会正常换行";
+    let lines = wrap(&text(cjk), 30., 126.).unwrap();
+    assert!(lines.len() > 1);
+    assert_eq!(lines.iter().map(|line| plain(line)).collect::<String>(), cjk);
+}
+
+#[test]
+fn slide_ornaments_and_native_fade_preserve_editable_title_and_table() {
+    let source = "# ReadMD release\n\nAn editable presentation.\n\n---\n\n## Results\n\n| Key | Value |\n|---|---|\n| A | 42 |\n";
+    let opts = json!({"pptxLayout":"launch","transition":"fade","pptxTitleFade":true});
+    let deck = build(source, "", "Deck", &opts).unwrap();
+    assert_bounds(&deck);
+    let html = preview_html(&deck).unwrap();
+    assert!(html.contains("linear-gradient(90deg,#11182E,#293B72)"));
+    assert!(html.contains("border-radius:50%"));
+
+    let entries = crate::convert::parse_zip_entries(&package(&deck, "Deck").unwrap()).unwrap();
+    let read_slide = |n| {
+        let entry = format!("ppt/slides/slide{n}.xml");
+        let xml = &entries.iter().find(|(name, _)| *name == entry).unwrap().1;
+        std::str::from_utf8(xml).unwrap()
+    };
+    let slide = read_slide(1);
+    let title = deck.slides[0].shapes.iter().position(|shape| matches!(shape, Shape::Text {..})).unwrap() + 2;
+    assert!(slide.contains("<a:gradFill"));
+    assert!(slide.contains("<a:prstGeom prst=\"ellipse\""));
+    assert!(slide.contains(&format!("<p:spTgt spid=\"{title}\"/>")));
+    assert!(slide.contains("<p:animEffect transition=\"in\" filter=\"fade\""));
+    assert!(slide.find("<p:transition").unwrap() < slide.find("<p:timing>").unwrap());
+    assert!(read_slide(2).contains("<a:tbl>"));
+    crate::math_document::parse_xml(slide).unwrap();
+
+    let disabled = build(source, "", "Deck", &json!({"pptxLayout":"launch","pptxTitleFade":false})).unwrap();
+    let bytes = package(&disabled, "Deck").unwrap();
+    assert!(crate::convert::parse_zip_entries(&bytes).unwrap().iter().all(|(_, part)|
+        !part.windows(b"<p:timing>".len()).any(|window| window == b"<p:timing>")));
+    assert!(build(source, "", "Deck", &json!({"pptxTitleFade":"true"})).is_err());
 }

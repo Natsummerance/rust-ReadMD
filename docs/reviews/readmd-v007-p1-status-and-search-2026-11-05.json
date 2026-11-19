@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "scope": "Limited Mac CLI/browser status-admission and compact-search focus regression; not whole P1/P2",
+  "implementationBaseCommit": "19c3f5d585bf1bb0b58c2f59cbc3f96b46dcf826",
+  "serviceBinary": {
+    "producerCommit": "19c3f5d585bf1bb0b58c2f59cbc3f96b46dcf826",
+    "sha256": "56b2e94da7f25ec3655fdf4300ec2c67de5630ea15cf1d8b6185d2311bfcd490",
+    "arch": "arm64",
+    "platform": "darwin",
+    "reusedFrozenBinary": true
+  },
+  "sourceSha256": {
+    "assets/index.html": "2990b5fbdd038acf95e801c87b144d95dd57af07cf3e7b39dc67ad80bd7d0fe5",
+    "assets/readmd.boot.js": "3717593636fb82666af0cc2cd85849bb3b340224ec8c8e15706419a9d66db595",
+    "assets/js/reader/search.js": "c2d4aeeec3f4295c04d36211e66d2bf2416c63494fea2ffeff18173800ee7fb3",
+    "ui-tests/shell-compact-browser.cjs": "0b5efa915d7964ee9d07a1374fab4fded323eec68dc7086899c37d014bdbb91c",
+    "rust/readmd-kernel/src/capability_packs.rs": "c8cc2d733c8f5256d7d103dea903c79b7148bacf81d8d42d6b946f6837fb5d10",
+    "rust/readmd-kernel/src/capability_packs/status_read_tests.rs": "d7886b3e06bb3dce425de2e5260beeaf12d871319198237167bdc8abb69b22d9",
+    "tools/test/node-runtime-status-fairness.cjs": "d7c2c294934bdc4a0617688befd296430bcfd8ccd23f24fc88f504423c58f71a",
+    "tools/test/node-runtime-status-observer.cjs": "f543e121a651712427a59f25c700e09d69f575428b67893c40a4bda3e00d90e9",
+    "tools/test/node-runtime-status-observer.test.cjs": "171316f97cd4dbee68c404956c41a17e787d0ff323f49208fa2d6ab97638acd3"
+  },
+  "receipts": [
+    {
+      "label": "status-validation-real-read-01",
+      "receiptSha256": "e23e0ecadb0896948bc67f92830d9ef2c5d70abbbe36d2bd6b025e9d8b6065d1",
+      "logSha256": "654b4699535c2a5bd0af7fe0905368d1068f1115fbd4ee52580408d3905bb32d",
+      "testedTreeSha256": "93cb02fad3f1633acd079578811eed087851f740b50c51b691a2db59e710e919"
+    },
+    {
+      "label": "status-validation-real-read-restored",
+      "receiptSha256": "4a5551aa0662c26850272982c86dc1c085fcbf5d80e1dfdd48843e083bd4152b",
+      "logSha256": "0bff0d85e38837ea9d52748e90bbe81c95eb129a56ca11c9e00736a3d5388fd0",
+      "testedTreeSha256": "93cb02fad3f1633acd079578811eed087851f740b50c51b691a2db59e710e919"
+    },
+    {
+      "label": "status-first-rust-model-free-01",
+      "receiptSha256": "ef4846997b30d3c73315d381f71d00373c486a40f87fe30a2778dfb40dc91cba",
+      "logSha256": "199cbc1dfc32cbeef7e461fccba5c5ccc4dad2d2d0ec3b654721045559113da1",
+      "testedTreeSha256": "ccf012de0e9af3424620de950567d0088c707192c80efc40efcebadb0b3b4770"
+    },
+    {
+      "label": "status-first-all-node-final-03",
+      "receiptSha256": "2b99cfc21d4ed6694755de075ac3d0e285e31258c36160fcdc21b8d4e97d7cc0",
+      "logSha256": "caa5dd64cce97ad4b181abc14bf1c2249a456e42a9a4cdbecbfca0586f4ef9e5",
+      "testedTreeSha256": "3b5a4047cf847431b1b3bc24600e12b6de006a492b78edef1bff858b18485f11"
+    },
+    {
+      "label": "status-first-real-node-final-03",
+      "receiptSha256": "d6b01592cfbc07681c7dd2f4ba8be1fd4410ba628dc000707131cfda5d26686f",
+      "logSha256": "e660aff5a23bb8f32658cb118e7953ab6dc5dd2d53b3a1c8ad1f995ae1b81abc",
+      "testedTreeSha256": "3b5a4047cf847431b1b3bc24600e12b6de006a492b78edef1bff858b18485f11"
+    },
+    {
+      "label": "status-first-compact-browser-01",
+      "receiptSha256": "fc24cc017afc388a6546ab78da2ca4a38f7982edf07fefdf047f7b123e4f2491",
+      "logSha256": "a608b35ae218c1f836a0be1439a71f11eed4fbee8957724f91ad2c6263ddcd65",
+      "testedTreeSha256": "31cad30d5a52a02b4e79e50ce5ccb22ad90b6595539dfdaf0ee2d0814641e1fa"
+    },
+    {
+      "label": "status-first-reader-fix-01",
+      "receiptSha256": "0ffa88fd836cb4de98a6fb8993b531c1312625061d5132b22de9bf8717e9454c",
+      "logSha256": "23b92c8266ae8348a54746306c84b4230bbc411e315c8e101d63c2c41c617a92",
+      "testedTreeSha256": "31cad30d5a52a02b4e79e50ce5ccb22ad90b6595539dfdaf0ee2d0814641e1fa"
+    },
+    {
+      "label": "status-first-bundle-check-02",
+      "receiptSha256": "4acc21ea7163b8635bbfbafec0dec94e14883ad621a65a007fbdd5f0232e3446",
+      "logSha256": "fb830eea659f5f2186e192aee171736a4c6e043bd5671070edd45dea5aad02a1",
+      "testedTreeSha256": "93425c77959fae444896e9e66ff3e95b7558ccff8a1d8f16fd8d291a98ef7126"
+    }
+  ],
+  "localRust": {
+    "passed": 4264,
+    "failed": 0,
+    "ignored": 10,
+    "filtered": 83,
+    "filter": "code_chunk_runner:: plus actual macOS Vision inference excluded; controlled real Node acceptance is separate",
+    "modelActions": 0
+  },
+  "localNode": {
+    "passed": 1956,
+    "failed": 0,
+    "skipped": 3,
+    "total": 1959
+  },
+  "actualValidation": {
+    "realOperate": true,
+    "realPositiveFileRead": true,
+    "liveGenericRuntimeLeaseThroughStatusAndJoin": true,
+    "actualNodeSpawnCertified": false,
+    "normalParentPass": 1,
+    "restoredParentPass": 1,
+    "validOnlyInstallNegative": {
+      "expectedFailure": true,
+      "actualReadEntered": true,
+      "checkedTwoSecondLeaseRejected": true,
+      "sourceRestored": true,
+      "receiptSha256": "8035032d958b2fb0a4a4ae1e8ca81ead2ced35b30800817025ab5aa79b25ac1d"
+    }
+  },
+  "actualNode": {
+    "reportSha256": "a50a27a99875a2691fbd04c845b1765cc46b93ad7e5537d47b88522b50231f47",
+    "protocol": "status-first-lease-progress-v2",
+    "sameAnchorPreparationProbeAndHash": true,
+    "probeSha256": "b6fb419f0f43bb2fbca273700294dd2f3b685a64b60e8417c295f47646a70e4a",
+    "packSha256": "d6bdddce9e87853479c8bd80ef2f7107ca26dc387949f1c4ae32a43fe24328cf",
+    "runAndHashDeadlineMs": 3000,
+    "busyDeadlineFromFirstTimerMs": 3000,
+    "cancelResponseMs": 24.667624999999134,
+    "observedWorkerStopMs": 3.745292000000518,
+    "cleanupErrors": [],
+    "observerDescriptorsClosed": true,
+    "ownedTmpRemoved": true,
+    "sampledPeakBytes": 285982827,
+    "retainedBytes": 201998,
+    "osProcessCoLivenessCertified": false,
+    "allHistoricalHiddenMutationExcluded": false,
+    "physicalAllocationOrAllTimePeakCertified": false
+  },
+  "responseDrop": {
+    "expectedDriverFailure": true,
+    "onlyClientResponseDropped": true,
+    "emptyErrorMessage": true,
+    "realCancellationAcknowledged": true,
+    "sameOwnedWorkerGone": true,
+    "ownedScratchRemoved": true,
+    "receiptSha256": "fd990e3b7b4766d83448b711f61777e8e75664a4ef8e731420d48992fbc49974"
+  },
+  "browser": {
+    "actualChromeHeadless": true,
+    "productionCspAndToken": true,
+    "focusCases": 16,
+    "compactCases": 14,
+    "compactChecks": 22,
+    "compactModalFocusProjections": 10,
+    "repairSafetyGroups": 6,
+    "originalBomCrLfBytesProtected": true,
+    "nativeUiCertified": false,
+    "physicalKeysOrImeCertified": false,
+    "windowsLinuxNativeCertified": false
+  },
+  "firstFailuresRetained": [
+    {
+      "kind": "real compact search closes onto hidden search-input",
+      "reportSha256": "e8e973e8a677932e57c83dd226af476dc2b9c4332e6453fbf0a1e1736786e9f2"
+    },
+    {
+      "kind": "rebuild omitted index content revision; derived asset URL corrected without changing test expectation",
+      "logSha256": "494567dea9c369b68f26b93ce977dd5f74a77a9736209ae93be74c3e74d005ff"
+    },
+    {
+      "kind": "test driver local before variable shadowed imported deadline helper; no Run requested; owned resources cleaned",
+      "reportSha256": "dcfee91326a432c3e7d5f202cb9c2c7951c1400a98bfef37b97c8b44fb335e15"
+    }
+  ],
+  "finalCrossPlatformCi": "pending new frozen candidate",
+  "nativeAcceptance": "pending dedicated desktop window; no old native result reassigned",
+  "dailyApplicationChanged": false,
+  "releaseChanged": false,
+  "modelsRequested": false,
+  "wholeP1Accepted": false,
+  "wholeP2Accepted": false
+}

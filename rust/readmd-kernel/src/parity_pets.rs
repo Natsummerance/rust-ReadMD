@@ -2047,9 +2047,9 @@ fn companion_character<'a>(renderer: &str, slug: &'a str) -> &'a str {
 
 fn pet_lines(app: &App) -> Value {
     let requested = app.setting("language").as_str().unwrap_or("auto").to_string();
-    let locale = if requested == "auto" || requested.is_empty() { pet_locale() } else { requested };
+    let locale = if crate::server::supported_interface_language(&requested) { requested } else { pet_locale() };
     let mut lines = Map::new();
-    for candidate in ["en", locale.as_str()] {
+    for candidate in ["en", locale.as_str()].into_iter().filter(|code| crate::server::supported_interface_language(code)) {
         let path = app.paths.assets_dir.join("i18n").join(format!("{candidate}.json"));
         if let Ok(raw) = fs::read_to_string(path) {
             if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&raw) {

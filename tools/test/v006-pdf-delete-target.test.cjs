@@ -85,11 +85,14 @@ test('repeated cancellation of the same task shares one in-flight request', asyn
 function dialogHost() {
   class Element extends EventTarget {
     constructor() { super(); this.isConnected = true; this.classes = new Set(['hidden']); this.focuses = 0;
-      this.classList = { add: value => this.classes.add(value), remove: value => this.classes.delete(value) }; }
+      this.classList = { add: value => this.classes.add(value), remove: value => this.classes.delete(value),
+        toggle: (value, on) => on ? this.classes.add(value) : this.classes.delete(value) }; }
+    toggleAttribute() {}
     focus() { this.focuses++; }
   }
-  const nodes = new Map(), timers = []; for (const id of ['confirm-modal', 'confirm-action', 'confirm-cancel', 'confirm-title', 'confirm-message']) nodes.set(id, new Element());
+  const nodes = new Map(), timers = []; for (const id of ['confirm-modal', 'confirm-action', 'confirm-cancel', 'confirm-title', 'confirm-message', 'confirm-input']) nodes.set(id, new Element());
   const c = { $: id => nodes.get(id), document: { activeElement: null }, HTMLElement: Element, setTimeout: f => timers.push(f) };
+  c.window = { i18n: { t: key => key }, ReadMDModal: { open: element => element.classList.remove('hidden'), close: element => element.classList.add('hidden') } };
   vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(root, 'assets/js/core/dialog.js'), 'utf8'), c);
   return { c, nodes, timers };
 }

@@ -66,10 +66,7 @@ async function checkUpdateOnce(silent = true) {
       return res;
     }
     scheduleUpdateCheck(true);
-    if (res && res.current_version) {
-      if ($('status-version')) $('status-version').textContent = 'v' + res.current_version;
-      if ($('menu-version-label')) $('menu-version-label').textContent = _t('update.currentVer', { ver: res.current_version }) || ('当前版本 v' + res.current_version);
-    }
+    syncVersionLabels(res.current_version);
     if (res.has_update) {
       updateInfo = res;
       upgradeUrl = res.html_url;
@@ -162,7 +159,6 @@ async function startUpdateDownload() {
   updateStatusFailures = 0;
   updatePollPending = false;
   const asset = updateInfo.asset;
-  const useMirror = $('update-use-mirror') && $('update-use-mirror').checked;
   if (!asset.expected_sha) {
     showToast(_t('update.unverifiedPackage') || '无法验证更新包');
     return;
@@ -180,17 +176,16 @@ async function startUpdateDownload() {
     let started = false;
     let startResult = null;
     if (hasPy && py.start_download_update) {
-      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, useMirror);
+      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, false);
       started = startResult && startResult.ok;
     } else {
-      const resp = await fetch('/api/update/download', {
+      const resp = await apiFetch('/api/update/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           download_url: asset.download_url,
           target_filename: asset.name,
           expected_sha: asset.expected_sha,
-          use_mirror: useMirror,
         }),
       });
       startResult = await resp.json();

@@ -12,11 +12,15 @@ const exists = rel => fs.existsSync(path.join(root, rel));
 
 test('platform matrix distinguishes native evidence from HarmonyOS source integration', () => {
   const matrix = JSON.parse(read('release/platform-matrix.json'));
+  const published = JSON.parse(read('website/release.json'));
   const ids = new Set(matrix.formal_support.map(item => item.id));
   for (const id of ['windows-x64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64']) {
     assert.ok(ids.has(id), id);
   }
-  assert.equal(matrix.release, read('VERSION').trim());
+  // This matrix records the published release's scoped evidence. A local
+  // candidate version must not relabel those historical platform results.
+  assert.equal(matrix.release, published.stable);
+  assert.match(read('VERSION').trim(), /^\d+\.\d+\.\d+(?:-[\w.]+)?$/);
   assert.ok(matrix.experimental_support.some(p=>p.id==='harmonyos-arm64' && p.status==='source-integrated-sdk-device-unverified' && p.artifacts.length===0));
   assert.ok(matrix.formal_support.every(p=>p.status));
   assert.equal(matrix.evidence_policy.release_blocked_until_complete, false);
@@ -154,6 +158,10 @@ test('manual release runs build candidates by default and publish only with expl
   for (const ref of ['refs/heads/main', 'refs/tags/V0.0.5']) {
     assert.equal(evaluate(condition(quality), 'workflow_dispatch', ref, false), true, 'manual candidates keep quality checks');
   }
+  const createTag=/CREATE_RELEASE_TAG: \$\{\{ (.+?) \}\}/.exec(publishing)?.[1];
+  assert.ok(createTag,'missing version tags may be created only in the publishing job');
+  for(const [event,requested,expected] of [['workflow_dispatch',true,true],['workflow_dispatch',false,false],['push',true,false]])
+    assert.equal(evaluate(createTag,event,'refs/heads/main',requested),expected);
 });
 
 test('candidate runs retain every existing desktop artifact and integrations', () => {
@@ -176,7 +184,9 @@ test('candidate runs retain every existing desktop artifact and integrations', (
   assert.match(integrations, /if-no-files-found: error/);
   for (const glob of ['dist/integrations/*.vsix', 'dist/integrations/*.zip']) assert.ok(integrations.includes(glob), glob);
   const publishing = workflow.slice(workflow.indexOf('\n  release:'));
-  assert.match(publishing, /uses: actions\/download-artifact@v4\s+with:\s+path: release-assets\s+merge-multiple: true/);
+  assert.match(publishing, /uses: actions\/download-artifact@v4\s+with:\s+path: release-assets\s+pattern: ReadMD-\{windows-x64,linux-x86_64,macos-arm64,macos-x64,integrations\}\s+merge-multiple: true/);
+  assert.match(publishing, /node tools\/publish-release\.mjs --assets-dir release-assets --checksums-only/);
+  assert.doesNotMatch(publishing, /sha256sum\s+\*/,'quality artifacts must not enter the checksum manifest');
 });
 
 test('release packages require the current pet runtime and aligned versions', () => {

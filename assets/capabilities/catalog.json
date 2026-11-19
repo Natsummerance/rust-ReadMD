@@ -80,12 +80,183 @@
       "reason": "portable-runtime-and-models-not-packaged"
     },
     {
+      "id": "media-ffmpeg",
+      "features": [
+        "media_decode"
+      ],
+      "reason": "reviewed-platform-builds-not-packaged"
+    },
+    {
       "id": "latex",
       "features": [
         "xelatex",
         "pdflatex"
       ],
       "reason": "portable-tex-distribution-not-packaged"
+    }
+  ],
+  "offlinePacks": [
+    {
+      "id": "node",
+      "version": "24.22.2",
+      "platform": "macos-arm64",
+      "name": "Node.js",
+      "descriptionKey": "menu.runCode",
+      "features": [
+        "code_javascript"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 40493182,
+      "installedBytes": 122722515,
+      "sha256": "d6bdddce9e87853479c8bd80ef2f7107ca26dc387949f1c4ae32a43fe24328cf",
+      "manifestSha256": "da13a43544dcbedb96e1d86626f8228505f182b4860f38e9dd7ab14410189986",
+      "license": "MIT; complete bundled third-party notices",
+      "minimumPlatform": "macOS 13.5"
+    },
+    {
+      "id": "node",
+      "version": "24.22.2",
+      "platform": "macos-x64",
+      "name": "Node.js",
+      "descriptionKey": "menu.runCode",
+      "features": [
+        "code_javascript"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 41598085,
+      "installedBytes": 125880081,
+      "sha256": "b6eb3e2a7d6bbf4102ff2b60653e1225d94f286bb40d8407b86098a73489ed02",
+      "manifestSha256": "94762ae3595c0c31e0f4c77ed7f0197b0883d36a3cc438fe442596cc1dcc1a2c",
+      "license": "MIT; complete bundled third-party notices",
+      "minimumPlatform": "macOS 13.5"
+    },
+    {
+      "id": "node",
+      "version": "24.22.2",
+      "platform": "linux-arm64",
+      "name": "Node.js",
+      "descriptionKey": "menu.runCode",
+      "features": [
+        "code_javascript"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 45701828,
+      "installedBytes": 123536976,
+      "sha256": "066224336ce77ea0830c54d4c53a8d4b40ecc5784762e8feb185caad31a79b19",
+      "manifestSha256": "caa7d4cc9aaf5e9440918302de2ac09a0a5396e7849d93a4d81121239f81f374",
+      "license": "MIT; complete bundled third-party notices",
+      "minimumPlatform": "Linux kernel 4.18, glibc 2.28 and GLIBCXX_3.4.25"
+    },
+    {
+      "id": "node",
+      "version": "24.22.2",
+      "platform": "linux-x64",
+      "name": "Node.js",
+      "descriptionKey": "menu.runCode",
+      "features": [
+        "code_javascript"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 45765842,
+      "installedBytes": 127039366,
+      "sha256": "380bd8c92c58e741f5b8b671026436234877ef10188e43a0a6286eb4a587d5c5",
+      "manifestSha256": "fdf9422e75ecaedd5d7942f08cf6eb0233037376eed5fd26799e177e9dfa3d27",
+      "license": "MIT; complete bundled third-party notices",
+      "minimumPlatform": "Linux kernel 4.18, glibc 2.28 and GLIBCXX_3.4.25"
+    },
+    {
+      "id": "node",
+      "version": "24.22.2",
+      "platform": "windows-arm64",
+      "name": "Node.js",
+      "descriptionKey": "menu.runCode",
+      "features": [
+        "code_javascript"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 32074994,
+      "installedBytes": 82317895,
+      "sha256": "6752f5650ab73c99f15ae41975857c2a4d0551175bc2c594cc6146a401ca185a",
+      "manifestSha256": "29d2b7338fb8b10862512256aaa06b638b6396522c6f3c163d8f8a1069f11c15",
+      "license": "MIT; complete bundled third-party notices",
+      "minimumPlatform": "Windows 10"
+    },
+    {
+      "id": "node",
+      "version": "24.22.2",
+      "platform": "windows-x64",
+      "name": "Node.js",
+      "descriptionKey": "menu.runCode",
+      "features": [
+        "code_javascript"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 36001304,
+      "installedBytes": 94083645,
+      "sha256": "6bac29c5611a8dca18b34d427d33e5213b41f0779d6b69ec4d2751c718fd51d5",
+      "manifestSha256": "b03a4c34d07b322dbda0fe172632ab534161b2ee29f97caa55286ea9f4479128",
+      "license": "MIT; complete bundled third-party notices",
+      "minimumPlatform": "Windows 10"
+    },
+    {
+      "id": "typst",
+      "version": "0.15.1",
+      "platform": "macos-arm64",
+      "labelKey": "capability.typst.name",
+      "descriptionKey": "capability.typst.purpose",
+      "features": [
+        "academic_pdf"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 21695503,
+      "installedBytes": 45060277,
+      "sha256": "716ffc09f78c8f93f1f089fea7f60119f6aa76b4b406b607730cf59f232a0525",
+      "manifestSha256": "9dcffebf99b6da143e6755d60c93841b08bdcd3e4281d7bbe4d92dd933b87b77",
+      "license": "Apache-2.0; original dependency and font notices included",
+      "minimumPlatform": "macOS 11.0.0"
+    },
+    {
+      "id": "media-ffmpeg",
+      "version": "9.0.2",
+      "platform": "macos-arm64",
+      "name": "FFmpeg",
+      "description": "WAV / MP3 / AAC / M4A / MP4 / FLAC / Ogg / WebM / MKV / WMA / MOV / AVI",
+      "features": [
+        "media_decode"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 5372700,
+      "installedBytes": 10928549,
+      "sha256": "1f5fbeee59af5ab023a11b8228bc7aab79fe71b46953b1f75f4d78d31be78feb",
+      "manifestSha256": "2966f342b6d74c7a2fbd0514d3b5f05a30a633608162816873313fc30fc54a7f",
+      "license": "LGPL-2.1-or-later (FFmpeg command-line programs; no external libraries, GPL or nonfree components)",
+      "minimumPlatform": "macOS 11.0 or later; Apple arm64"
+    },
+    {
+      "id": "whisper",
+      "version": "1.9.5",
+      "platform": "macos-arm64",
+      "labelKey": "plugin.whisper.name",
+      "descriptionKey": "plugin.whisper.desc",
+      "features": [
+        "transcribe"
+      ],
+      "delivery": "offline-only",
+      "format": "stream-v2",
+      "downloadBytes": 57683133,
+      "installedBytes": 61981597,
+      "sha256": "6fc2ccd5c2a89b51f85c97055683741996b9aca41c32a631668d87d13448ca10",
+      "manifestSha256": "d6df7ac7dea434f2fc30ab7e9d58f5fa4561cfaba015cad37c8f6243c843e5c2",
+      "license": "MIT (whisper.cpp, GGML, OpenAI Whisper model, stb_vorbis); MIT-0 (miniaudio)",
+      "minimumPlatform": "macOS 11.0 or later; Apple arm64"
     }
   ]
 }

@@ -517,6 +517,18 @@ impl Store {
         Ok(())
     }
 
+    /// Commit a completed turn together. A failed assistant insert must not
+    /// leave a lone user row or report that the full response was persisted.
+    pub fn remember_chat_turn(&self, session: &str, user: &str, assistant: &str, model: &str) -> Result<()> {
+        let mut conn = self.guard(); let tx = conn.transaction()?;
+        for (role, text) in [("user", user), ("assistant", assistant)] {
+            if role == "user" && text.is_empty() { continue; }
+            tx.execute("INSERT INTO chat_messages (session, role, content, model, created_at) VALUES (?1,?2,?3,?4,?5)",
+                params![session, role, text, model, now_millis()])?;
+        }
+        tx.commit()?; Ok(())
+    }
+
     pub fn chat_history(&self, session: &str, limit: usize) -> Result<Vec<Value>> {
         let conn = self.guard();
         let mut stmt = conn.prepare(
@@ -2075,6 +2087,18 @@ mod tests {
         assert_eq!(hist[0]["role"], "user");
         store.clear_chat("s1").unwrap();
         assert!(store.chat_history("s1", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn completed_chat_turn_rolls_back_both_rows_when_history_cannot_commit() {
+        let store=Store::in_memory().unwrap();
+        store.guard().execute_batch("CREATE TRIGGER reject_assistant BEFORE INSERT ON chat_messages WHEN NEW.role='assistant' BEGIN SELECT RAISE(ABORT,'owned fixture failure'); END;").unwrap();
+        assert!(store.remember_chat_turn("owned", "question", "answer", "fixture").is_err());
+        assert!(store.chat_history("owned",10).unwrap().is_empty());
+        store.guard().execute_batch("DROP TRIGGER reject_assistant;").unwrap();
+        store.remember_chat_turn("owned", "question", "answer", "fixture").unwrap();
+        let history=store.chat_history("owned",10).unwrap();assert_eq!(history.len(),2);
+        assert_eq!(history[0]["content"],"question");assert_eq!(history[1]["content"],"answer");
     }
 
     #[test]

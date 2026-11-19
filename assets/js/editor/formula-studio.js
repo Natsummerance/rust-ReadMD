@@ -182,12 +182,7 @@ window.ReadMDFormula = (() => {
           byId('formula-source-details').open=true;return;
         }
       }
-      // Use the existing offline MathJax loader, then render from source rather
-      // than HTML. A stale promise never changes another draft or a closed modal.
-      if (!window.MathJax?.tex2svgPromise) { target.textContent = '$$x$$'; renderMath(target); }
-      if (window.MathJax?.startup?.promise) await MathJax.startup.promise;
-      const deadline = Date.now() + 12000;
-      while (!window.MathJax?.tex2svgPromise && Date.now() < deadline) await new Promise(r => setTimeout(r, 40));
+      await ensureMathRenderer();
       if (draft !== current || epoch !== renderEpoch) return;
       if (!window.MathJax?.tex2svgPromise) throw Error('renderer unavailable');
       const prefix = 'rd-formula-token-' + epoch + '-' + Math.random().toString(36).slice(2, 10) + '-';
@@ -242,13 +237,31 @@ window.ReadMDFormula = (() => {
     const from = token ? token.from : source.selectionStart;
     const to = token ? token.to : source.selectionEnd;
     if(current.dialect==='dsl'&&!sourceInput){
+      if (current.insertingTemplate) return;
+      const epoch = ++renderEpoch;
+      const previousSource = current.tex;
+      const wasValid = current.valid;
+      current.insertingTemplate = true;
+      current.valid = false;
+      byId('formula-apply').disabled = true;
+      const stillCurrent = () => draft === current && renderEpoch === epoch && current.tex === previousSource;
       try{
         const response=await apiFetch('/api/math/serialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:tex,dialect:'latex',target:'dsl',display:false})});
         const result=await response.json();if(!response.ok||!result.ok)throw Error('invalid');
-        if(draft!==current)return;tex=result.output;
+        if (!stillCurrent()) return;
+        tex=result.output;
         // A catalogue item replaces a slot, not the whole Office root.
         const wrapped=/^office\.oMath\(([\s\S]*)\)$/.exec(tex);if(wrapped)tex=wrapped[1];
-      }catch(_){if(draft===current)byId('formula-error').textContent=tr('formula.invalid');return;}
+      } catch (_) {
+        if (stillCurrent()) {
+          current.valid = wasValid;
+          byId('formula-apply').disabled = !wasValid;
+          byId('formula-error').textContent = tr('formula.invalid');
+        }
+        return;
+      } finally {
+        current.insertingTemplate = false;
+      }
     }
     // Empty, unselected drafts accept a template directly. Existing content is
     // replaced only when the user selected it, never just by opening the picker.
@@ -280,8 +293,11 @@ window.ReadMDFormula = (() => {
     renderTemplatePreviews();
   }
   async function renderTemplatePreviews() {
-    if (!draft || !window.MathJax?.tex2svgPromise) return;
+    if (!draft) return;
     const current = draft;
+    try { await ensureMathRenderer(); }
+    catch (_) { return; }
+    if (draft !== current || !window.MathJax?.tex2svgPromise) return;
     for (const button of byId('formula-list').querySelectorAll('[data-template-tex]')) {
       if (!button.isConnected || button.dataset.previewPending) continue;
       button.dataset.previewPending = 'true';
@@ -393,7 +409,7 @@ window.ReadMDFormula = (() => {
     byId('formula-more').onclick = () => { pageSize += 72; picker(); };
     byId('formula-mode').addEventListener('change', renderDraft);
     let timer;
-    byId('formula-source').addEventListener('input', () => { if (!draft) return; draft.tex = byId('formula-source').value; draft.valid = false; byId('formula-apply').disabled = true; clearTimeout(timer); timer = setTimeout(renderDraft, 100); });
+    byId('formula-source').addEventListener('input', () => { if (!draft) return; ++renderEpoch; draft.tex = byId('formula-source').value; draft.valid = false; byId('formula-apply').disabled = true; clearTimeout(timer); timer = setTimeout(renderDraft, 100); });
     byId('formula-source').addEventListener('paste', event => { clearTimeout(timer); void pasteExternalFormula(event); });
     byId('formula-token').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); replaceSelection(e.target.value); } });
     byId('formula-token-replace').onclick = () => replaceSelection(byId('formula-token').value);

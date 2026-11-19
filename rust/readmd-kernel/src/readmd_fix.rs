@@ -1,16 +1,29 @@
-//! Pure Rust implementation of ReadMD Markdown Auto-Repair and Syntax Normalizer.
-//! Ported directly from `src/readmd_core/readmd_fix.py`.
-//! Zero external runtime dependencies. Runs in microseconds.
+//! ReadMD Markdown auto-repair and syntax normalization.
+//! The legacy normalizer preserves the `src/readmd_core/readmd_fix.py` contract.
 
 use regex::Regex;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
+
+#[path = "readmd_fix_reader.rs"]
+mod reader;
 
 #[derive(Debug, Clone)]
 pub struct FixResult {
     pub text: String,
     pub fixes: Vec<String>,
     pub stats: Value,
+    pub(crate) diagnostics: Vec<ReaderFixDiagnostic>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub(crate) enum ReaderFixDiagnostic {
+    HeadingSpace { line: usize },
+    TableSeparator { line: usize },
+    TableAlignment { line: usize, end_line: usize, rows: usize, columns: usize },
+    InlineDelimiter { line: usize, delimiter: &'static str },
+    InlineMath { line: usize },
 }
 
 lazy_static::lazy_static! {
@@ -27,6 +40,7 @@ lazy_static::lazy_static! {
     static ref LATEX_RE: Regex = Regex::new(r"[\\^_{}]").unwrap();
     static ref FENCE_RE: Regex = Regex::new(r"^([\s\x1c-\x1f]{0,3})(`{3,}|~{3,})(.*)$").unwrap();
     static ref RESTORE_RE: Regex = Regex::new(r"\x1a[A-Za-z0-9_]+\x1a").unwrap();
+    static ref LINE_ENDING_RE: Regex = Regex::new(r"\r\n|\r|\n").unwrap();
     // Py 93 `re.match(r'^([-*+]|\d+\.)\s', s)` — the list/ordered-list exemption in
     // _looks_like_code_indent. Python's \d is Unicode `Nd`; `regex` crate \d is \p{Nd}.
     static ref CODE_INDENT_LIST_RE: Regex = Regex::new(r"^([-*+]|\d+\.)[\s\x1c-\x1f]").unwrap();
@@ -340,7 +354,7 @@ fn mask_all_code(text: &str, mut spans: Vec<(String, String)>) -> (String, Vec<(
 
 /// Keep publication fields and parsed citation affixes out of ordinary prose
 /// repair. Per-line placeholders preserve diagnostics and table/list boundaries.
-fn mask_publication_literals(text: &str) -> (String, Vec<(String, String)>) {
+fn publication_literal_ranges(text: &str) -> Vec<Range<usize>> {
     let mut ranges=Vec::new();
     let body=crate::md_ast::source_without_front_matter(text);
     if body.len()<text.len(){ranges.push(0..text.len()-body.len());}
@@ -349,6 +363,10 @@ fn mask_publication_literals(text: &str) -> (String, Vec<(String, String)>) {
             ranges.extend(scan.citations.into_iter().map(|citation|citation.span.byte_from..citation.span.byte_to));
         }
     }
+    ranges
+}
+
+fn mask_literal_ranges(text: &str, mut ranges: Vec<Range<usize>>) -> (String, Vec<(String, String)>) {
     if ranges.is_empty(){return (text.into(),Vec::new());}
     ranges.sort_by_key(|range|range.start);
     let prefix=format!("P{}",uuid::Uuid::new_v4().simple());
@@ -488,7 +506,7 @@ fn norm_sep_cell(c: &str) -> String {
     c.to_string()
 }
 
-fn normalize_table(block: &[String], start_no: usize, fixes: &mut Vec<String>) -> (Vec<String>, bool) {
+fn normalize_table(block: &[String], start_no: usize, fixes: &mut Vec<String>, diagnostics: &mut Vec<ReaderFixDiagnostic>) -> (Vec<String>, bool) {
     // Py 280 `re.match(r'^\s*', block[0]).group(0)` — Python's `\s`, so the indent
     // may be a run of U+001C..U+001F that `str::trim_start` would leave in place.
     let indent = block.first().map(|l| py_space_prefix(l)).unwrap_or("");
@@ -566,22 +584,31 @@ fn normalize_table(block: &[String], start_no: usize, fixes: &mut Vec<String>) -
         new_block.insert(1, sep_line);
         changed = true;
         fixes.push(format!("[表格] 第 {} 行附近：缺少表头分隔行，已自动补全", start_no));
+        diagnostics.push(ReaderFixDiagnostic::TableSeparator { line: start_no });
     }
 
     if row_diffs > 0 {
+        let end_line = start_no + block.len() - 1;
         fixes.push(format!(
             "[表格] 第 {}-{} 行：{} 行列数不齐，已对齐为 {} 列",
             start_no,
-            start_no + block.len() - 1,
+            end_line,
             row_diffs,
             max_cols
         ));
+        diagnostics.push(ReaderFixDiagnostic::TableAlignment { line: start_no, end_line, rows: row_diffs, columns: max_cols });
     }
 
     (new_block, changed)
 }
 
-fn process_tables(lines: &mut Vec<String>, fixes: &mut Vec<String>, stats: &mut HashMap<&'static str, usize>) {
+fn process_tables(
+    lines: &mut Vec<String>,
+    fixes: &mut Vec<String>,
+    stats: &mut HashMap<&'static str, usize>,
+    mut endings: Option<&mut Vec<&str>>,
+    diagnostics: &mut Vec<ReaderFixDiagnostic>,
+) {
     // Py 333: `n = len(lines)` is captured ONCE and never re-read, even though
     // Py 369 `lines[i:j] = new_block` grows the list when a header separator row is
     // inserted. The stale bound means the final `delta` lines are never considered.
@@ -614,10 +641,20 @@ fn process_tables(lines: &mut Vec<String>, fixes: &mut Vec<String>, stats: &mut 
             continue;
         }
 
-        let (new_block, changed) = normalize_table(block, i + 1, fixes);
+        let (new_block, changed) = normalize_table(block, i + 1, fixes, diagnostics);
         if changed {
             *stats.entry("table").or_insert(0) += 1;
             let new_len = new_block.len();
+            if new_len > block.len() {
+                if let Some(endings) = endings.as_deref_mut() {
+                    // normalize_table inserts one separator after the header.
+                    let ending = endings[i];
+                    if ending.is_empty() {
+                        endings[i] = i.checked_sub(1).map_or("\n", |previous| endings[previous]);
+                    }
+                    endings.insert(i + 1, ending);
+                }
+            }
             lines.splice(i..j, new_block);
             j = i + new_len;
         }
@@ -629,7 +666,7 @@ fn process_tables(lines: &mut Vec<String>, fixes: &mut Vec<String>, stats: &mut 
 // Headings
 // ----------------------------------------------------------------------------
 
-fn process_headings(lines: &mut Vec<String>, fixes: &mut Vec<String>, stats: &mut HashMap<&'static str, usize>) {
+fn process_headings(lines: &mut [String], fixes: &mut Vec<String>, stats: &mut HashMap<&'static str, usize>, diagnostics: &mut Vec<ReaderFixDiagnostic>) {
     for idx in 0..lines.len() {
         let line = &lines[idx];
         if !line.contains('#') || looks_like_code_indent(line) {
@@ -641,6 +678,7 @@ fn process_headings(lines: &mut Vec<String>, fixes: &mut Vec<String>, stats: &mu
             let rest = caps.get(3).map(|m| m.as_str()).unwrap_or("");
             lines[idx] = format!("{}{} {}", indent, hashes, rest);
             fixes.push(format!("[标题] 第 {} 行：# 后缺少空格，已补全", idx + 1));
+            diagnostics.push(ReaderFixDiagnostic::HeadingSpace { line: idx + 1 });
             *stats.entry("heading").or_insert(0) += 1;
         }
     }
@@ -1064,8 +1102,18 @@ fn process_math(lines: &mut Vec<String>, fixes: &mut Vec<String>, stats: &mut Ha
 // Main Entrypoint
 // ----------------------------------------------------------------------------
 
-pub fn fix_markdown(mut text: &str) -> FixResult {
+pub fn fix_markdown(text: &str) -> FixResult {
+    fix_markdown_impl(text, false)
+}
+
+/// Prepare the reader's corrected view without changing literal source bytes.
+pub(crate) fn fix_markdown_for_reader(text: &str) -> FixResult {
+    fix_markdown_impl(text, true)
+}
+
+fn fix_markdown_impl(mut text: &str, reader: bool) -> FixResult {
     let mut fixes = Vec::new();
+    let mut diagnostics = Vec::new();
     let mut stats = HashMap::new();
     stats.insert("table", 0);
     stats.insert("bold", 0);
@@ -1073,27 +1121,60 @@ pub fn fix_markdown(mut text: &str) -> FixResult {
     stats.insert("heading", 0);
     stats.insert("misc", 0);
 
-    if text.starts_with('\u{feff}') {
+    let bom = text.starts_with('\u{feff}');
+    if bom {
         text = &text['\u{feff}'.len_utf8()..];
-        *stats.entry("misc").or_insert(0) += 1;
-        fixes.push("[通用] 已去除 UTF-8 BOM".to_string());
+        if !reader {
+            *stats.entry("misc").or_insert(0) += 1;
+            fixes.push("[通用] 已去除 UTF-8 BOM".to_string());
+        }
     }
 
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let (publication, spans)=mask_publication_literals(&normalized);
-    let (masked, spans) = mask_all_code(&publication, spans);
-    let mut lines: Vec<String> = masked.split('\n').map(|s| s.to_string()).collect();
+    let mut restored = if reader && !text.contains(['#', '|']) {
+        text.to_owned()
+    } else {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        let mut endings = reader.then(|| {
+            LINE_ENDING_RE
+                .find_iter(text)
+                .map(|ending| ending.as_str())
+                .chain([""])
+                .collect::<Vec<_>>()
+        });
+        let mut literals = publication_literal_ranges(&normalized);
+        if reader {
+            literals = reader::structural_literals(&normalized, literals);
+        }
+        let (masked, spans) = mask_literal_ranges(&normalized, literals);
+        let (masked, spans) = if reader { (masked, spans) } else { mask_all_code(&masked, spans) };
+        let mut lines: Vec<String> = masked.split('\n').map(|s| s.to_string()).collect();
 
-    process_tables(&mut lines, &mut fixes, &mut stats);
-    process_headings(&mut lines, &mut fixes, &mut stats);
-    process_emphasis(&mut lines, &mut fixes, &mut stats);
-    process_math(&mut lines, &mut fixes, &mut stats);
+        process_tables(&mut lines, &mut fixes, &mut stats, endings.as_mut(), &mut diagnostics);
+        process_headings(&mut lines, &mut fixes, &mut stats, &mut diagnostics);
+        if let Some(endings) = endings {
+            let mut view = String::with_capacity(text.len());
+            for (line, ending) in lines.into_iter().zip(endings) {
+                view.push_str(&line);
+                view.push_str(ending);
+            }
+            restore(&view, &spans)
+        } else {
+            process_emphasis(&mut lines, &mut fixes, &mut stats);
+            process_math(&mut lines, &mut fixes, &mut stats);
+            restore(&lines.join("\n"), &spans)
+        }
+    };
+    if reader {
+        restored = reader::close_inline(restored, &mut fixes, &mut stats, &mut diagnostics);
+        if bom {
+            restored.insert(0, '\u{feff}');
+        }
+    }
 
-    let restored = restore(&lines.join("\n"), &spans);
-
-        FixResult {
+    FixResult {
         text: restored,
         fixes,
+        diagnostics,
         stats: json!({
             "table": stats.get("table").cloned().unwrap_or(0),
             "bold": stats.get("bold").cloned().unwrap_or(0),

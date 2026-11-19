@@ -1,0 +1,362 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "reviewStatus": "Limited native evidence reviewed; complete P1/P2 acceptance remains open",
+  "scope": "Limited Mac dedicated opt-in QA host; not whole P1/P2 or a V007 release",
+  "producer": {
+    "commit": "83b4ccf7556e19f3d2e1f5075072fa5ff6dc3f31",
+    "sourceTreeSha256": "b520d8259937e7de4cbf472ad235cdb1992080537b1d0b15cde71255e5a7939f",
+    "cleanNativeBuild": {
+      "label": "native-shell-quit-host-build-01",
+      "sourceCommit": "83b4ccf7556e19f3d2e1f5075072fa5ff6dc3f31",
+      "changedFiles": 0,
+      "sourceTreeSha256": "b520d8259937e7de4cbf472ad235cdb1992080537b1d0b15cde71255e5a7939f",
+      "exit": 0,
+      "sourceUnchanged": true,
+      "sourceReceiptSha256": "debe81884780ddf220d079909678e0c3efb5006b5589eabf497a9e45d730bdb9",
+      "resultReceiptSha256": "3200c6815a6ef4915ea01f4d03fe2f6bf471703bda554b84311f8620438d46dd",
+      "logSha256": "b79dd0a0b37ef9c80e049e8bf279c592b92aed8a0c06e6d038c86b59138fec67"
+    },
+    "compiledBinarySha256": "9cad49b1f715320dcb3e9cafa573d61e388b7a1bf19597cc75e5dc773e0db1f7",
+    "signedBinarySha256": "0e5816555f8b92191a4eeba924fbe262422cf2ce75f8eb3c5bb601a3b23e5180",
+    "binaryDigestProvenance": "Root serialized native build and exact pre-freeze binary pin; the original build result does not itself contain a binary digest",
+    "bootSha256": "3717593636fb82666af0cc2cd85849bb3b340224ec8c8e15706419a9d66db595",
+    "indexSha256": "2990b5fbdd038acf95e801c87b144d95dd57af07cf3e7b39dc67ad80bd7d0fe5",
+    "harnessSha256": "d68d49da3d54422d351b2e55e3959b97b3551157fc48d8b3007cdc89b6c52f39",
+    "systemHostSha256": "4067bc7321c4f7d5e863dc58ee13269fd98dc30b9e9eff833e617e441efe92e7",
+    "assetFiles": 1177,
+    "assetTreeSha256": "a25ef6c5297238d628729a7a748298b708a163919361fb69965a7a90a2338137",
+    "adHocSigned": true,
+    "notarized": false,
+    "officialRelease": false,
+    "dedicatedQaBundle": true,
+    "replacedDailyApplication": false
+  },
+  "implementation": {
+    "change": "Explicit owned-profile opt-in QA host holds one real quit until a matching fresh valid terminal receipt is written and synchronized, then resumes the original quit path",
+    "scope": "debug/native-qa host, harness and CI tests; ordinary business quit guard and boot assets retained",
+    "notClaimedAsNewProductBugFix": true
+  },
+  "controlledTests": {
+    "rustQa": {
+      "label": "native-shell-quit-host-unit-clean-02",
+      "sourceCommit": "83b4ccf7556e19f3d2e1f5075072fa5ff6dc3f31",
+      "changedFiles": 0,
+      "sourceTreeSha256": "b520d8259937e7de4cbf472ad235cdb1992080537b1d0b15cde71255e5a7939f",
+      "exit": 0,
+      "sourceUnchanged": true,
+      "passed": 11,
+      "failed": 0,
+      "sourceReceiptSha256": "debe81884780ddf220d079909678e0c3efb5006b5589eabf497a9e45d730bdb9",
+      "resultReceiptSha256": "924468f2bc5ccb0eb71e6117da0f33b8e3f265bed0e8897c570c2312f12098db",
+      "logSha256": "85f8194a102e331beee7d623e85d5d0e1f3fa876ec56d7ab49b197852998ceb4",
+      "filtered": 113,
+      "ignored": 0
+    },
+    "frozenWryShapeNodeVm": {
+      "label": "native-shell-quit-host-vm-clean-02",
+      "sourceCommit": "83b4ccf7556e19f3d2e1f5075072fa5ff6dc3f31",
+      "changedFiles": 0,
+      "sourceTreeSha256": "b520d8259937e7de4cbf472ad235cdb1992080537b1d0b15cde71255e5a7939f",
+      "exit": 0,
+      "sourceUnchanged": true,
+      "passed": 22,
+      "failed": 0,
+      "sourceReceiptSha256": "debe81884780ddf220d079909678e0c3efb5006b5589eabf497a9e45d730bdb9",
+      "resultReceiptSha256": "f2a238e81a872beed8f3a2533d80e49897da45e755ebff9dd0df28e043be5794",
+      "logSha256": "3656d14902392fb822284b24fa59cc8084c55b8ee175587da1b9f69bbca9f1d9",
+      "skipped": 0,
+      "nativeExecutionCertified": false
+    },
+    "precommitUnit01": {
+      "sourceHead": "08efcc3707c38f6a7f31b027e13578e29b69e7dd",
+      "changedFiles": 4,
+      "sourceTreeSha256": "578e32fcb0cb1e92718f3e67fabfb103d6dbd7a4f4c51be20778485b54691f37",
+      "preserved": true,
+      "primary83Evidence": false
+    }
+  },
+  "macNative": {
+    "passed": true,
+    "normalNewProcesses": 3,
+    "checks": 67,
+    "phases": [
+      {
+        "phase": "shell_edit_save",
+        "checks": 46,
+        "normalSystemLaunch": true,
+        "ownedProfileOptIn": true,
+        "launcherExitCode": 0,
+        "nativeProcessGone": true,
+        "forcedCleanup": false,
+        "directNativeExitCodeObserved": false
+      },
+      {
+        "phase": "reopen_close",
+        "checks": 11,
+        "normalSystemLaunch": true,
+        "ownedProfileOptIn": true,
+        "launcherExitCode": 0,
+        "nativeProcessGone": true,
+        "forcedCleanup": false,
+        "directNativeExitCodeObserved": false
+      },
+      {
+        "phase": "closed_stays_closed",
+        "checks": 10,
+        "normalSystemLaunch": true,
+        "ownedProfileOptIn": true,
+        "launcherExitCode": 0,
+        "nativeProcessGone": true,
+        "forcedCleanup": false,
+        "directNativeExitCodeObserved": false
+      }
+    ],
+    "sourceBound": true,
+    "productionCspCertified": true,
+    "strictAuthCertified": true,
+    "fakeBridge": false,
+    "cspModified": false,
+    "automaticCompletionDisabled": true,
+    "modelInferenceRequested": false,
+    "nodeInstallationRequested": false,
+    "nativeReportSha256": "541511fa8addbfd2b080c392126be4f95a6514e0f9f505b0f28a6b4dd9a64ea0",
+    "independentVisualReviewSha256": "e4e679349cbefff7694efbedcc63cceedfbd00bf4a6814980b44285a1c6ca82e",
+    "activation": "WKWebView DOM activation/focus/programmatic scrolling plus real AppKit target/action and genuine Rust services",
+    "allOwnedProcessesGone": true,
+    "forcedCleanup": false,
+    "assetsUnchanged": true,
+    "behaviorScope": [
+      "single topbar and brand/action placement",
+      "sidebar width/focus and 44 CSS px targets",
+      "More and real Fix entry; 48 missing anchors and bounded scrolling",
+      "modal close focus and unchanged source",
+      "real NSWindow FullScreen state/event transitions and Zen coordination",
+      "real Save plus BOM/CRLF preservation and session flush",
+      "new-process restore and background-tab close remains closed"
+    ]
+  },
+  "visual": {
+    "frames": [
+      {
+        "id": 101,
+        "bytes": 492762,
+        "pngWidth": 3840,
+        "pngHeight": 2550,
+        "sha256": "5941ac57abe9c408a70d7c0b56e298eb5ab6473f2203f239ce05d82c7e315b42",
+        "renderer": "existing WKSnapshotConfiguration with AppKit standard controls",
+        "independentlyInspected": true,
+        "physicalDisplayScreenshot": false,
+        "physical4kHardwareCertified": false,
+        "wholeFullscreenChromePixelsCertified": false,
+        "normalWindowLayoutReadable": true
+      },
+      {
+        "id": 102,
+        "bytes": 472940,
+        "pngWidth": 3840,
+        "pngHeight": 2714,
+        "sha256": "cd423a6fee39ecaa2df2de73d3ce2b9cc68d8c3b18adb8877d8b02d1460d94aa",
+        "renderer": "existing WKSnapshotConfiguration with AppKit standard controls",
+        "independentlyInspected": true,
+        "physicalDisplayScreenshot": false,
+        "physical4kHardwareCertified": false,
+        "wholeFullscreenChromePixelsCertified": false,
+        "normalWindowLayoutReadable": true
+      },
+      {
+        "id": 103,
+        "bytes": 472025,
+        "pngWidth": 3840,
+        "pngHeight": 2550,
+        "sha256": "07d4b1d04a34de8535f6be1524ed8d785b6ca7f860ea2e00a7093f8edbf26c4b",
+        "renderer": "existing WKSnapshotConfiguration with AppKit standard controls",
+        "independentlyInspected": true,
+        "physicalDisplayScreenshot": false,
+        "physical4kHardwareCertified": false,
+        "wholeFullscreenChromePixelsCertified": false,
+        "normalWindowLayoutReadable": true
+      },
+      {
+        "id": 104,
+        "bytes": 477405,
+        "pngWidth": 3840,
+        "pngHeight": 2714,
+        "sha256": "e6c9401c5b03fb878e3dca424c09007bbc0b3e6f9bacbeb881d120bc3f2eabf6",
+        "renderer": "existing WKSnapshotConfiguration with AppKit standard controls",
+        "independentlyInspected": true,
+        "physicalDisplayScreenshot": false,
+        "physical4kHardwareCertified": false,
+        "wholeFullscreenChromePixelsCertified": false,
+        "normalWindowLayoutReadable": true
+      },
+      {
+        "id": 201,
+        "bytes": 943123,
+        "pngWidth": 3840,
+        "pngHeight": 6144,
+        "sha256": "2eadea05c0ac085729bd9dbb11702a4ba0ea441606537c8cd79cbebbd5b09cfc",
+        "renderer": "existing WKSnapshotConfiguration with AppKit standard controls",
+        "independentlyInspected": true,
+        "physicalDisplayScreenshot": false,
+        "physical4kHardwareCertified": false,
+        "wholeFullscreenChromePixelsCertified": false,
+        "visibleLimitation": "A green AppKit standard-control drawing is clipped at an edge; composite only"
+      }
+    ],
+    "normalWindowCases": [
+      {
+        "id": 101,
+        "width": 1024,
+        "height": 680,
+        "theme": "light",
+        "lang": "zh-CN"
+      },
+      {
+        "id": 102,
+        "width": 1160,
+        "height": 820,
+        "theme": "dark",
+        "lang": "en"
+      },
+      {
+        "id": 103,
+        "width": 1024,
+        "height": 680,
+        "theme": "dark",
+        "lang": "ar"
+      },
+      {
+        "id": 104,
+        "width": 1160,
+        "height": 820,
+        "theme": "light",
+        "lang": "de"
+      }
+    ],
+    "webHeaderCssPx": 52,
+    "minimumDomTargetCssPx": 44,
+    "allFiveFramesInspected": true,
+    "normalWindowLayoutReadable": true,
+    "visualWholeAccepted": false,
+    "renderer": "WKSnapshotConfiguration plus AppKit standard-control drawing",
+    "physicalMonitorScreenshot": false,
+    "actualNsWindowFullscreenStateAssertionsPassed": true,
+    "fullscreenChromePixelsCertified": false,
+    "limitation": "Frame 201 has a clipped green standard-control drawing at an edge; NSWindow FullScreen state/event and Zen assertions are separate from composite pixels"
+  },
+  "earlier08Evidence": {
+    "producerCommit": "08efcc3707c38f6a7f31b027e13578e29b69e7dd",
+    "attributedTo83": false,
+    "ci": {
+      "runId": 41905858297,
+      "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41905858297",
+      "passed": true,
+      "jobsPassed": 8,
+      "artifactsVerified": 48,
+      "artifactVerificationSha256": "f043cb74ad3a7dee1540a7e59282bd8e4537d3293206b03f34ab41ba278a134b"
+    },
+    "extensionHost": {
+      "passedBehaviorChecks": 8,
+      "frames": [
+        {
+          "name": "accept.png",
+          "sha256": "9263117e96583ee28f7476f328a78aa9bffdde33ff48493fe3f070dedcc12e7b",
+          "independentlyReviewed": true
+        },
+        {
+          "name": "cancel.png",
+          "sha256": "3e431cf59b126fa29fefcb959de53fc606e4a3f4b4d97bb13528107e05ebba03",
+          "independentlyReviewed": true
+        },
+        {
+          "name": "document-conflict.png",
+          "sha256": "20494d950a47d0752e934ae4c2d38686454bb4d4806804c5df3a7e2b78d32f3c",
+          "independentlyReviewed": true
+        },
+        {
+          "name": "source-conflict.png",
+          "sha256": "b4f3b8a3c686f56dc57743b2aaac73b4905c7a3af751adbb38c2e7fb3dfeb7fe",
+          "independentlyReviewed": true
+        }
+      ],
+      "nativeExtensionHost": true,
+      "kernelProducerCommit": "08efcc3707c38f6a7f31b027e13578e29b69e7dd",
+      "kernelSha256": "5d03bfff7294302d4d0ae17f905f75d8f089548ebcfbf2cbfe3ac3867377c3db",
+      "vscodeVersion": "1.143.1",
+      "behaviorReportSha256": "acf0a07626c82b8894308ed7e310e336136560bc7bdd83944f935d3a2cb4f15d",
+      "controllerReportSha256": "47a2b4b92aaf1f5d667604db81c96ec7ad86fe1ab86ca5baa7b0e2ea41633121",
+      "visualReviewSha256": "56e5e12e28bd0b99b26a99489604e8d39636e8492e5e0e4e3d5399b16784abbb",
+      "visualWholeAccepted": false,
+      "openVisualIssues": [
+        "Generated base64 metadata dominates the native diff",
+        "Transient notification cards overlap conflict captures"
+      ],
+      "originalLongPathFirstFailurePreserved": true,
+      "pathAdjustmentReason": "Owned macOS Unix-domain socket path length limit; same controller/guard behavior"
+    }
+  },
+  "ci83": {
+    "runId": 41945332544,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41945332544",
+    "status": "completed",
+    "conclusion": "failure",
+    "jobsPassed": 7,
+    "acceptedAsPassing": false,
+    "failedJobId": 126976023931,
+    "failedStep": "P1 previous released writer cannot downgrade resource history",
+    "failureBoundary": "Downloaded package rejected by the previous published writer size/SHA pin before any fence behavior executed",
+    "failedJobLogBytes": 787027,
+    "failedJobLogSha256": "20930905afd9187a1ed71e30536852cb81ce2361155b5a0df593218644024706",
+    "historicalDownloadedBytesPreserved": false,
+    "pinUpdate": "Current e7 V006 package inputs independently recertified after actual publication; original fence behavior and authentication refusals retained; successor CI required",
+    "earlier08ResultReusedAs83": false
+  },
+  "preservedFirstFailures": [
+    {
+      "attempt": "01",
+      "sourceCommit": "08efcc3707c38f6a7f31b027e13578e29b69e7dd",
+      "passed": false,
+      "reportSha256": "e0c91dbfa3b3d22b6faf49361310250275568642dcc3bc8a8b390809745d2d57",
+      "ownerClassification": "test infrastructure",
+      "cause": "Menu hit area was measured while its scale animation was still running",
+      "newProductDefectClaimed": false
+    },
+    {
+      "attempt": "05",
+      "sourceCommit": "08efcc3707c38f6a7f31b027e13578e29b69e7dd",
+      "passed": false,
+      "reportSha256": "1924e8adec237f359cc56e0310a572d80ce0ad1362c4fcaa74dd4e93a559dece",
+      "ownerClassification": "test infrastructure",
+      "cause": "Missing terminal receipt after premature host quit",
+      "newProductDefectClaimed": false
+    },
+    {
+      "attempt": "06",
+      "sourceCommit": "08efcc3707c38f6a7f31b027e13578e29b69e7dd",
+      "passed": false,
+      "reportSha256": "684cf36d2fe9c330749aa2f23a23144d9a083f3f0754d1b2a6654189ada2970f",
+      "ownerClassification": "test infrastructure",
+      "cause": "Frozen Wry IPC prevents JavaScript interception; replace the unsupported QA strategy with an explicitly opted-in debug-host barrier",
+      "newProductDefectClaimed": false
+    }
+  ],
+  "pending": [
+    "physical F11 and Escape",
+    "physical mouse/trusted pointer and native wheel",
+    "system IME",
+    "native file chooser",
+    "physical 4K monitor/DPI hardware",
+    "full-screen WindowServer chrome pixel certification",
+    "Extension Host overall visual quality",
+    "successor CI and actual version-fence behavior with the recertified current V006 package inputs"
+  ],
+  "acceptanceLedger": {
+    "wholeItemsAccepted": 0,
+    "changedByThisLimitedRecord": false,
+    "fullContractItems": 75,
+    "p1WholeAccepted": false,
+    "p2WholeAccepted": false,
+    "v007Published": false
+  }
+}

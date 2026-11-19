@@ -13,6 +13,9 @@ fn source(data: &Path, selected: Spec) -> PathBuf {
         .join(selected.version)
 }
 pub(super) fn needed(data: &Path, selected: Spec) -> ApiResult<bool> {
+    if crate::whisper_cpp::is_media_pack(selected.id) {
+        return Ok(false);
+    }
     let parent = root_for(data, selected);
     // Any receipt blocks automatic import, including an unknown/corrupt one.
     // It grants no deletion/execution rights and never overrides an explicit
@@ -50,6 +53,9 @@ fn receipt(parent: &Path, lock: &Value, decision: &str) -> ApiResult<()> {
     Ok(())
 }
 pub(super) fn disable(data: &Path, selected: Spec, lock: &Value) -> ApiResult<()> {
+    if crate::whisper_cpp::is_media_pack(selected.id) {
+        return Ok(());
+    }
     // Persist before removal. Failure leaves the resource in place rather than
     // allowing a successful uninstall to be undone by next-start migration.
     receipt(&managed_parent(data, selected, true)?, lock, "uninstalled")

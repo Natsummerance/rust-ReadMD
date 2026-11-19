@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 pub struct Scan { pub citations: Vec<SourceCitation>, pub diagnostics: Vec<Value> }
+pub(crate) struct NoCite { pub keys: Vec<String>, pub span: SourceSpan }
 fn error(field: &str) -> ApiError { ApiError::new(422, "academic_context").noted("field", field) }
 fn options() -> Options { Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_MATH | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS | Options::ENABLE_STRIKETHROUGH }
 type SourceEvents<'a> = Box<dyn Iterator<Item=(Event<'a>,Range<usize>)>+'a>;
@@ -17,7 +18,12 @@ type SourceEvents<'a> = Box<dyn Iterator<Item=(Event<'a>,Range<usize>)>+'a>;
 /// parsing budget and keeps its original parser options and source offsets.
 fn source_events(source:&str)->ApiResult<(SourceEvents<'_>,HashSet<(usize,usize)>)>{
     if !crate::publication_inline_text::has_owned_syntax(source){
-        return Ok((Box::new(Parser::new_ext(source,options()).into_offset_iter()),HashSet::new()));
+        // A BOM precedes the Markdown document, not its YAML block. Without
+        // stripping it the parser treats metadata @keys as visible citations.
+        let bom=usize::from(source.starts_with('\u{feff}'))*3;
+        let events=Parser::new_ext(&source[bom..],options()).into_offset_iter()
+            .map(move |(event,range)|(event,range.start+bom..range.end+bom));
+        return Ok((Box::new(events),HashSet::new()));
     }
     let document=crate::publication_inline_text::consumer_document(source).map_err(|code|ApiError::new(422,code))?;
     let edges=document.nodes.into_iter().flat_map(|node|[node.opening,node.closing].into_iter().flatten())
@@ -248,6 +254,45 @@ fn item(source: &str, range: Range<usize>, terms: &[(String,String)], mode: Cite
     Ok(SourceItem{cite,span:SourceSpan::new(source,range)?,fields})
 }
 
+/// Pandoc's nocite value is Markdown in YAML, including literal/folded blocks
+/// and lists. Reuse the bounded metadata and citation parsers so braces, Unicode
+/// identifiers, escapes and literal code keep the same meaning as body citations.
+pub(crate) fn nocite(source: &str) -> ApiResult<Option<NoCite>> {
+    let located=|mut error:ApiError,from:usize,to:usize| {
+        if let crate::error::ErrorShape::ApiCode{extras}=&mut error.shape {
+            extras.push(("from".into(),json!(from)));extras.push(("to".into(),json!(to)));
+        }
+        error
+    };
+    let Some((value,from,to))=crate::publication_metadata::bounded_source_member(source,&["nocite"])
+        .map_err(|e|located(ApiError::new(422,e.code).noted("field",e.path),e.from,e.to))? else {return Ok(None);};
+    let bad=||located(error("nocite"),from,to);
+    let values=match &value {Value::Null=>Vec::new(),Value::Array(values)=>values.iter().collect(),value=>vec![value]};
+    let mut keys=Vec::new();let mut seen=HashSet::new();
+    for value in values {
+        let text=value.as_str().ok_or_else(bad)?;
+        // A bare wildcard is special only in nocite. Bracing it lets the
+        // existing source scanner protect code, links and escaped @ signs.
+        let mut normalized=String::with_capacity(text.len());
+        let mut pos=0;
+        while pos<text.len() {
+            if text[pos..].starts_with("@*") && boundary(text,pos) && !escaped(text,pos)
+                && text[pos+2..].chars().next().is_none_or(|c|c.is_whitespace()||",;.]".contains(c)) {
+                normalized.push_str("@{*}");pos+=2;
+            } else {let c=text[pos..].chars().next().unwrap();normalized.push(c);pos+=c.len_utf8();}
+        }
+        let scanned=scan(&normalized,"en-US")?;
+        if !scanned.diagnostics.is_empty() {return Err(bad());}
+        for item in scanned.citations.into_iter().flat_map(|citation|citation.items) {
+            if seen.insert(item.cite.key.clone()) {keys.push(item.cite.key);}
+        }
+    }
+    if keys.len()>5000 {return Err(ApiError::new(413,"academic_budget"));}
+    let start=crate::document_transaction::byte_offset(source,from).map_err(|_|bad())?;
+    let end=crate::document_transaction::byte_offset(source,to).map_err(|_|bad())?;
+    Ok(Some(NoCite{keys,span:SourceSpan::new(source,start..end)?}))
+}
+
 pub fn scan(source: &str, locale: &str) -> ApiResult<Scan> {
     if source.len()>crate::document_transaction::MAX_DOCUMENT_BYTES{return Err(ApiError::new(413,"academic_budget"));}
     let mut hard=Vec::new();let mut links=Vec::new();let mut html_stack:Vec<(String,usize)>=Vec::new();
@@ -400,3 +445,7 @@ pub fn reading_order(source:&str,citations:Vec<SourceCitation>,note_style:bool,k
 #[cfg(test)]
 #[path="publication_citations_author_tests.rs"]
 mod author_tests;
+
+#[cfg(test)]
+#[path="publication_citations_nocite_tests.rs"]
+mod nocite_tests;

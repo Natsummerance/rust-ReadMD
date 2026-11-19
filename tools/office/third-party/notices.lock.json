@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "files": [
+    {
+      "package": "accesskit_windows",
+      "version": "0.34.0",
+      "path": "notices/accesskit-windows-0.34.0/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/AccessKit/accesskit/c88605b96d04431f9c3c792464a0f2f253480e94/LICENSE-MIT",
+      "commit": "c88605b96d04431f9c3c792464a0f2f253480e94",
+      "crateSha256": "106c2b961215864d1c2e703ee63269c25c4e80a577ffb2c1017b9c17dcdf83a1",
+      "size": 1023,
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  ]
+}

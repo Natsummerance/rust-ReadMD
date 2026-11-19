@@ -42,6 +42,11 @@ const zhBundle = JSON.parse(fs.readFileSync(path.join(extDir, 'l10n', 'bundle.l1
 const enBundle = JSON.parse(fs.readFileSync(path.join(extDir, 'l10n', 'bundle.l10n.json'), 'utf-8'));
 
 const vscodeStub = {
+  EventEmitter: class {
+    constructor() { this.listeners = new Set(); this.event = listener => { this.listeners.add(listener); return { dispose: () => this.listeners.delete(listener) }; }; }
+    fire(value) { for (const listener of this.listeners) listener(value); }
+    dispose() { this.listeners.clear(); }
+  },
   languages: {
     createDiagnosticCollection: () => ({ set() {}, delete() {}, clear() {}, dispose() {} }),
     registerDocumentLinkProvider: () => ({ dispose() {} }),

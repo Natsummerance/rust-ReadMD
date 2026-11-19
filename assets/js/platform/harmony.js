@@ -31,7 +31,7 @@ window.installReadMDHarmony=function(){
    return result;
   },
   read_clipboard:async()=>({text:await native('clipboard'),html:'',source_type:'text'}),
-  get_app_info:async()=>({version:'0.0.5',platform:'harmonyos',native:true}),
+  get_app_info:async()=>({version:'0.0.7',platform:'harmonyos',native:true}),
   get_system_language:async()=>navigator.language,
   show_window:async()=>true,report_ready:async()=>true,start_modules:()=>api('/api/modules'),
  }};

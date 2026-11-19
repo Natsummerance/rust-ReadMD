@@ -54,7 +54,8 @@ try {
           $result = $event.SourceEventArgs.Result
           if ($result) {
             $start = $result.Audio.AudioPosition.TotalSeconds
-            $segments.Add(@{start=$start;text=$result.Text;confidence=[double]$result.Confidence})
+            $end = $start + $result.Audio.Duration.TotalSeconds
+            $segments.Add(@{start=$start;end=$end;text=$result.Text;confidence=[double]$result.Confidence})
           }
         } elseif ($event.SourceIdentifier -eq $completed) {
           if ($event.SourceEventArgs.Error) { throw $event.SourceEventArgs.Error }
@@ -75,7 +76,9 @@ try {
 }
 "#;
 
-fn run(command: &mut Command, payload: &[u8], timeout: Duration) -> Result<Vec<u8>, String> {
+pub(crate) fn run(command: &mut Command, payload: &[u8], timeout: Duration) -> Result<Vec<u8>, String> {
+    const OUTPUT_LIMIT: u64 = 8 * 1024 * 1024;
+    if cancelled() { return Err("cancelled".into()); }
     let mut input = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
     input.write_all(payload).map_err(|e| e.to_string())?;
     let output = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
@@ -84,7 +87,20 @@ fn run(command: &mut Command, payload: &[u8], timeout: Duration) -> Result<Vec<u
         .stderr(Stdio::null()).spawn().map_err(|e| format!("speech_engine_unavailable: {e}"))?;
     let deadline = Instant::now() + timeout;
     let status = loop {
-        if cancelled() {let _=child.kill();let _=child.wait();return Err("cancelled".into());}
+        let stop = if cancelled() {
+            Some("cancelled")
+        } else {
+            match output.as_file().metadata() {
+                Ok(metadata) if metadata.len() <= OUTPUT_LIMIT => None,
+                Ok(_) => Some("speech_output_too_large"),
+                Err(_) => Some("speech_process_failed"),
+            }
+        };
+        if let Some(code) = stop {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(code.into());
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(40)),
@@ -95,7 +111,7 @@ fn run(command: &mut Command, payload: &[u8], timeout: Duration) -> Result<Vec<u
         }
     };
     if !status.success() { return Err("speech_process_failed".into()); }
-    if output.as_file().metadata().map_err(|e| e.to_string())?.len() > 8 * 1024 * 1024 { return Err("speech_output_too_large".into()); }
+    if output.as_file().metadata().map_err(|e| e.to_string())?.len() > OUTPUT_LIMIT { return Err("speech_output_too_large".into()); }
     std::fs::read(output.path()).map_err(|e| e.to_string())
 }
 
@@ -108,15 +124,20 @@ fn request(payload: Value, timeout: Duration) -> Result<Value, String> {
 
 pub fn capabilities() -> Value {
     static CAPABILITIES: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    CAPABILITIES.get_or_init(|| request(json!({"probe":true}), Duration::from_secs(15))
-        .unwrap_or_else(|e| json!({"ok":false,"engine":"system-speech","languages":[],"error":e}))).clone()
+    if let Some(cached) = CAPABILITIES.get() {
+        return cached.clone();
+    }
+    match request(json!({"probe":true}), Duration::from_secs(15)) {
+        Ok(value) => CAPABILITIES.get_or_init(|| value).clone(),
+        Err(error) => json!({"ok":false,"engine":"system-speech","languages":[],"error":error}),
+    }
 }
 
 /// Complete decoded audio duration, rather than the end of the last phrase.
 /// Read only RIFF headers with bounded seeks; never allocate or scan PCM data.
 /// Other containers/encodings remain the installed recognizer's decision and
 /// have no duration field when their sample count cannot be established here.
-fn wave_duration(path: &Path) -> Result<Option<f64>, String> {
+pub(crate) fn wave_duration(path: &Path) -> Result<Option<f64>, String> {
     const INVALID: &str = "audio_decode_failed: invalid_wave_duration";
     fn invalid(known_frames: Option<(u32, u16)>) -> Result<Option<f64>, String> {
         if known_frames.is_some() { Err(INVALID.into()) } else { Ok(None) }
@@ -220,12 +241,17 @@ pub fn transcribe(path: &str, language: Option<&str>) -> Result<Value, String> {
     // For non-WAV inputs this is the selected decoded audio stream, including
     // codec trimming/padding, not the duration of a video's longer image track.
     let duration = wave_duration(input)?;
-    let mut result = request(json!({"path":input,"language":language.unwrap_or("auto")}), Duration::from_secs(600))?;
+    let mut result = recognize_wave(input, language)?;
+    if let Some(duration) = duration { result["duration"] = json!(duration); }
+    Ok(result)
+}
+
+pub(crate) fn recognize_wave(input: &Path, language: Option<&str>) -> Result<Value, String> {
+    let result = request(json!({"path":input,"language":language.unwrap_or("auto")}), Duration::from_secs(600))?;
     if result.get("ok").and_then(Value::as_bool) != Some(true) {
         return Err(result.get("error").and_then(Value::as_str).unwrap_or("speech_recognition_failed").into());
     }
     if cancelled() { return Err("cancelled".into()); }
-    if let Some(duration) = duration { result["duration"] = json!(duration); }
     Ok(result)
 }
 

@@ -1055,7 +1055,7 @@ fn escaped(source: &str, at: usize) -> bool {
         == 1
 }
 
-fn inline_destination(source: &str, span: Range<usize>, expected: &str) -> Option<Range<usize>> {
+pub(crate) fn inline_destination(source: &str, span: Range<usize>, expected: &str) -> Option<Range<usize>> {
     let raw = &source[span.clone()];
     if !(raw.starts_with('[') || raw.starts_with("![")) {
         return None;
@@ -1086,7 +1086,7 @@ fn inline_destination(source: &str, span: Range<usize>, expected: &str) -> Optio
     found
 }
 
-fn definition_destination(
+pub(crate) fn definition_destination(
     source: &str,
     span: Range<usize>,
     expected: &str,

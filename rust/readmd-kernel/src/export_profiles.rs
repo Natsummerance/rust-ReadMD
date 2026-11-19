@@ -3,13 +3,19 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 pub fn catalog() -> &'static [Value] {
-    static CATALOG: OnceLock<Value> = OnceLock::new();
+    static CATALOG: OnceLock<Vec<Value>> = OnceLock::new();
     CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!("../../../assets/data/export-profiles.json"))
-            .expect("built-in export catalog")
-    })["profiles"]
-        .as_array()
-        .expect("export profiles")
+        ["../../../assets/data/export-profiles.json", "../../../assets/data/export-templates.json"]
+            .into_iter()
+            .zip([
+                include_str!("../../../assets/data/export-profiles.json"),
+                include_str!("../../../assets/data/export-templates.json"),
+            ])
+            .flat_map(|(path, text)| {
+                let mut parsed: Value = serde_json::from_str(text).unwrap_or_else(|_| panic!("built-in export catalog {path}"));
+                parsed["profiles"].take().as_array().expect("export profiles").clone()
+            }).collect()
+    })
 }
 pub fn preset(id: &str) -> Option<Value> {
     crate::export_styles::preset(id).or_else(|| {
@@ -37,7 +43,10 @@ mod tests {
                     assert_eq!(&sanitized[key], value);
                 }
             }
-            assert!(p["formats"].as_array().unwrap().len() >= 3);
+            let formats = p["formats"].as_array().unwrap();
+            assert!(!formats.is_empty());
+            assert!(formats.iter().all(|value| matches!(value.as_str(),
+                Some("pdf" | "docx" | "epub" | "html" | "tex" | "pptx" | "png" | "png-pages"))));
         }
         assert_eq!(
             catalog().iter().filter(|p| p["category"] == "book").count(),
@@ -61,6 +70,7 @@ mod tests {
         let source="---\ntitle: Evidence workshop\n---\n# One\n\nA substantial paragraph with evidence.\n\n| Topic | Result |\n|---|---|\n| Inquiry | Recheck |\n\n```rust\nlet evidence = 42;\n```\n\n# Two\n\nA second chapter.\n";
         let dir = tempfile::tempdir().unwrap();
         for p in catalog() {
+            if !["common", "book", "academic"].contains(&p["category"].as_str().unwrap_or("")) { continue; }
             let id = p["id"].as_str().unwrap();
             let options = preset(id).unwrap();
             let style = crate::export_styles::sanitize(&options);

@@ -33,23 +33,23 @@ pub(crate) fn install_admission(data:&Path)->ApiResult<Guard> {
         .ok_or_else(||ApiError::new(409,"capability_install_busy"))
 }
 
-#[cfg(target_os="macos")]
-mod macos_admission;
-/// Mac APFS volumes can share a container's free space. Serialize managed
-/// installation writers across profiles for this user, independently of readers.
+#[cfg(any(windows,target_os="linux",target_os="macos"))]
+mod shared_admission;
+/// Profiles can share a volume/quota and APFS volumes can share a container.
+/// Serialize managed writers for this user, independently of resource readers.
 pub(crate) struct SharedInstallAdmission {
-    #[cfg(target_os="macos")]
-    guard: macos_admission::Admission,
+    #[cfg(any(windows,target_os="linux",target_os="macos"))]
+    guard: shared_admission::Admission,
 }
 impl SharedInstallAdmission {
     pub(crate) fn acquire()->ApiResult<Self> {
         Ok(Self {
-            #[cfg(target_os="macos")]
-            guard: macos_admission::Admission::acquire()?,
+            #[cfg(any(windows,target_os="linux",target_os="macos"))]
+            guard: shared_admission::Admission::acquire()?,
         })
     }
     pub(crate) fn verify(&self)->ApiResult<()> {
-        #[cfg(target_os="macos")]
+        #[cfg(any(windows,target_os="linux",target_os="macos"))]
         self.guard.verify()?;
         Ok(())
     }
@@ -101,7 +101,13 @@ impl LocalWorker {
 impl Drop for LocalWorker { fn drop(&mut self) { self.active.fetch_sub(1,Ordering::AcqRel); } }
 pub(crate) struct WorkerReservation { _local:LocalWorker,_process:Guard }
 fn worker_busy(id:&str)->ApiResult<&'static str> {
-    match id { "latex"=>Ok("latex_busy"),"typst"=>Ok("typst_busy"),"ocr"=>Ok("ocr_busy"),_=>Err(invalid()) }
+    match id {
+        "latex" => Ok("latex_busy"),
+        "typst" => Ok("typst_busy"),
+        "ocr" => Ok("ocr_busy"),
+        "node" | crate::whisper_cpp::WHISPER_ID => Ok("capability_install_busy"),
+        _ => Err(invalid()),
+    }
 }
 pub(crate) fn reserve_worker(data:&Path,id:&str,active:&'static AtomicUsize)->ApiResult<WorkerReservation> {
     let code=worker_busy(id)?;
@@ -125,8 +131,11 @@ fn location(data:&Path,id:&str,key:Key)->ApiResult<(PathBuf,PathBuf)> {
     // Callers additionally resolve a fixed capability Spec. Keep this module
     // incapable of naming arbitrary paths even when invoked incorrectly.
     let name=match key {
-        Key::Resource if matches!(id,"pdfium"|"typst"|"ocr"|"fonts"|"latex")=>format!("{id}.lock"),
-        Key::Worker(index) if index<WORKER_SLOTS&&matches!(id,"latex"|"typst"|"ocr")=>format!("{id}.worker-{index}.lock"),
+        Key::Resource if matches!(id, "pdfium" | "typst" | "ocr" | "fonts" | "latex" | "node"
+            | crate::whisper_cpp::WHISPER_ID | crate::whisper_cpp::DECODER_ID) => format!("{id}.lock"),
+        Key::Worker(index) if index < WORKER_SLOTS
+            && matches!(id, "latex" | "typst" | "ocr" | "node" | crate::whisper_cpp::WHISPER_ID) =>
+            format!("{id}.worker-{index}.lock"),
         Key::TransferGate if id=="transfers"=>"transfer-v1.gate.lock".into(),
         Key::TransferCount(index) if id=="transfers"&&index<TRANSFER_SLOTS=>format!("transfer-v1.count-{index}.lock"),
         Key::TransferBytes(index) if id=="transfers"&&index<TRANSFER_BYTES_SLOTS=>format!("transfer-v1.bytes-{index}.lock"),

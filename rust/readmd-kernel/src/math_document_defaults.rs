@@ -117,7 +117,13 @@ impl<'a> Scan<'a> {
                 Block::Quote(v) => { self.tag("quote"); self.blocks(v, depth + 1)?; },
                 Block::Code { lang, text } => { self.tag("code"); self.field(lang)?; self.field(text)?; },
                 Block::Math(latex) => self.formula(latex, None, true)?, Block::OfficeMath { latex, omml } => self.formula(latex, Some(omml), true)?,
-                Block::Table { aligns, header, rows } => { self.tag("table"); for align in aligns { self.tag(align.as_str()); } self.tag("header"); for cell in header { self.inlines(cell, depth + 1)?; } self.tag("rows"); for row in rows { self.tag("row"); for cell in row { self.inlines(cell, depth + 1)?; } } },
+                Block::Table { aligns, header, rows, geometry } => {
+                    self.tag("table");
+                    if geometry.is_enhanced() { self.tag("geometry"); self.json(geometry)?; }
+                    for align in aligns { self.tag(align.as_str()); }
+                    self.tag("header"); for cell in header { self.inlines(cell, depth + 1)?; }
+                    self.tag("rows"); for row in rows { self.tag("row"); for cell in row { self.inlines(cell, depth + 1)?; } }
+                },
                 Block::Hr => self.tag("hr"), Block::PageBreak => self.tag("page-break"),
                 Block::SectionStart(section) => { self.tag("section"); self.json(section)?; },
                 Block::Html(s) => { self.tag("html"); self.field(s)?; },

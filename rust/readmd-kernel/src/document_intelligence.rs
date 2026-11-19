@@ -516,6 +516,41 @@ fn analyze_with_style(
     )
 }
 
+pub fn check_read_revision(args: &Value, revision: &str) -> Result<(), String> {
+    if let Some(value) = args.get("expected_revision") {
+        let expected = value.as_str().filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+            .ok_or("expected_revision_required")?;
+        if !revision.eq_ignore_ascii_case(expected) { return Err("document_conflict".into()); }
+    }
+    Ok(())
+}
+
+/// Section reads use the same file admission and byte revision as ordinary MCP reads.
+pub fn read_chapter_document(path: &Path, args: &Value) -> Result<Value, String> {
+    fn line(args: &Value, key: &str, default: usize) -> Result<usize, String> {
+        match args.get(key) {
+            None => Ok(default),
+            Some(v) => v.as_u64().and_then(|n| usize::try_from(n).ok())
+                .filter(|n| *n > 0).ok_or_else(|| "invalid_line_range".into()),
+        }
+    }
+    let at = line(args, "chapter_line", 1)?;
+    let first = line(args, "start_line", 1)?;
+    let last = line(args, "end_line", first.saturating_add(999))?;
+    if first > 1 && args.get("expected_revision").is_none() { return Err("expected_revision_required".into()); }
+    let path = absolute_file(path)?;
+    let bytes = bytes_bounded(&path)?;
+    let revision = revision(&bytes);
+    check_read_revision(args, &revision)?;
+    let (text, encoding) = crate::text_encoding::detect_and_decode(&bytes);
+    let mut page = crate::manuscript::chapter_page(&text, at, first, last)?;
+    page["ok"] = json!(true);
+    page["path"] = json!(path);
+    page["revision"] = json!(revision);
+    page["encoding"] = json!(encoding);
+    Ok(page)
+}
+
 pub fn read_document(path: &Path, start: usize, end: usize) -> Result<Value, String> {
     if start == 0 || end < start || end - start >= 1000 {
         return Err("invalid_line_range".into());

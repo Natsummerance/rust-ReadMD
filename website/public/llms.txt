@@ -1,5 +1,5 @@
 # ReadMD
-> ReadMD is a local-first Markdown reader, editor, converter and presenter. Published version: V0.0.4; V0.0.5 is being validated. VS Code and MCP share the native Rust engine.
+> ReadMD is a local-first Markdown reader, editor, converter and presenter. Find the current release on the download page and GitHub Releases. VS Code and MCP share the native Rust engine.
 
 ## Docs
 - [ReadMD homepage](https://rust.readmd.asia/): Product definition, platform support, conversion scope, privacy model, and direct answers about long-document reading.
@@ -12,7 +12,7 @@
 - [Scan to Markdown](https://rust.readmd.asia/scan-to-markdown/): Qualified Windows WinRT and macOS Apple Vision workflows for local OCR, screenshot extraction, and Markdown review.
 - [BibTeX citations](https://rust.readmd.asia/bibtex-citations/): Keep a neighboring .bib library connected to inline citation badges, source cards, copyable BibTeX, and assembled references.
 - [Release notes](https://rust.readmd.asia/release-notes/): Version-specific changes, security boundaries, platform assets, and release evaluation guidance.
-- [Download page](https://rust.readmd.asia/download/): Candidate Windows, macOS, and Linux packages, plus VS Code and MCP Server assets with checksum guidance and evidence status.
+- [Download page](https://rust.readmd.asia/download/): Current Windows, macOS, Linux, VS Code and MCP packages, with checksum guidance and platform requirements.
 - [Simplified Chinese homepage](https://rust.readmd.asia/zh-cn/): Chinese product definition, release facts, local processing boundaries, and citation-ready answers.
 - [Simplified Chinese download page](https://rust.readmd.asia/zh-cn/download/): Chinese package paths and checksum workflow.
 - [Simplified Chinese workflow answers](https://rust.readmd.asia/zh-cn/workflows/): Chinese guidance for long documents, office conversion, offline OCR, and presentation.
@@ -35,13 +35,13 @@
 - [GitHub repository](https://github.com/Natsummerance/rust-ReadMD): MIT-licensed source code, releases, checksums, issues, and platform download assets.
 
 ## Key Facts
-- Published stable version: V0.0.4; candidate V0.0.5 is not yet published
+- Current stable release and packages: https://rust.readmd.asia/download/ · https://github.com/Natsummerance/rust-ReadMD/releases/latest
 - License: MIT
 - Languages: 46 interface languages, including LTR and RTL layouts
 - Core model: local-first processing; no cloud account required for core document work
 - Long-document threshold: semantic pagination near 8,000 lines or 500 KB
 - Formats converted to Markdown: DOCX, PPTX, XLSX, PDF, HTML, LaTeX
 
-- [ReadMD in VS Code and MCP](https://rust.readmd.asia/integrations/): Local engine integrations and V0.0.5 preview.
+- [ReadMD in VS Code and MCP](https://rust.readmd.asia/integrations/): Local engine integrations introduced in V0.0.5.
 
-- [AI autocomplete in V0.0.5](https://rust.readmd.asia/ai-autocomplete/): Suggestions stream beside your cursor. Tab accepts the visible words; Esc dismisses, and undo restores your draft.
+- [AI autocomplete (introduced in V0.0.5)](https://rust.readmd.asia/ai-autocomplete/): Suggestions stream beside your cursor. Tab accepts the visible words; Esc dismisses, and undo restores your draft.

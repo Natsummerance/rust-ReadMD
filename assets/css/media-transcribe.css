@@ -1,0 +1,75 @@
+#media-transcribe-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: var(--z-modal);
+  background: var(--color-overlay);
+  color: var(--color-fg);
+}
+.media-transcribe-box {
+  width: min(42rem, calc(100vw - 2rem));
+  max-block-size: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+.media-transcribe-box .modal-header,
+.media-transcribe-box .modal-footer {
+  flex: none;
+}
+.media-transcribe-box .modal-footer {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-block-start: 1px solid var(--color-border);
+}
+.media-transcribe-body {
+  display: grid;
+  gap: var(--space-3);
+  overflow: auto;
+  min-block-size: 0;
+  padding: var(--space-4);
+}
+.media-transcribe-file,
+.media-transcribe-actions,
+.media-transcribe-cue {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.media-transcribe-file button { flex: none; }
+#media-filename { overflow-wrap: anywhere; }
+.media-transcribe-hints {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-fg-muted);
+}
+.media-transcribe-selection,
+.media-transcribe-result {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  min-inline-size: 0;
+  border: 0;
+  padding: 0;
+}
+.media-transcribe-selection {
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+}
+.media-transcribe-selection label { display: grid; gap: var(--space-1); min-inline-size: 0; }
+.media-transcribe-selection select,
+.media-transcribe-selection input,
+.media-transcribe-result select,
+.media-transcribe-result textarea {
+  min-inline-size: 0;
+  padding: var(--space-2);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  color: var(--color-fg);
+}
+#media-range-hint { grid-column: 1 / -1; color: var(--color-fg-muted); }
+#media-cue-text { inline-size: 100%; resize: vertical; }
+#media-progress, #media-status, #media-storage-status { margin: 0; }
+#media-progress:empty, #media-status:empty, #media-storage-status:empty { display: none; }
+#media-progress, #media-storage-status { color: var(--color-fg-muted); }

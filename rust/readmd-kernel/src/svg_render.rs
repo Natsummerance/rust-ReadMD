@@ -10,10 +10,15 @@ fn css_safe(value:&str)->bool {
     !lower.contains('@')&&!lower.contains('\\')&&URL.get_or_init(||regex::Regex::new(r#"url\s*\(\s*['"]?([^)'"\s]*)"#).unwrap())
         .captures_iter(&lower).all(|c|c[1].starts_with('#'))
 }
-pub(crate) fn validate(bytes:&[u8])->Result<()> {
+pub(crate) fn validate(bytes:&[u8])->Result<()> { inspect(bytes).map(|_| ()) }
+
+// A translated layer title or accessible description is not painted text.
+// Character references inside a real text element still need font coverage.
+pub(crate) fn inspect(bytes: &[u8]) -> Result<bool> {
     if bytes.len()>4*1024*1024{return Err("svg_budget");}
     let source=std::str::from_utf8(bytes).map_err(|_|"svg_invalid")?;
     let mut reader=Reader::from_str(source);reader.config_mut().check_end_names=true;
+    let mut text_depth=None;let mut needs_cjk=false;
     let mut roots=0;let mut depth=0usize;let mut nodes=0;let mut style_depth=None;
     loop {match reader.read_event().map_err(|_|"svg_invalid")? {
         event @ (Event::Start(_)|Event::Empty(_))=>{
@@ -21,6 +26,7 @@ pub(crate) fn validate(bytes:&[u8])->Result<()> {
             let e=match event{Event::Start(e)|Event::Empty(e)=>e,_=>unreachable!()};
             nodes+=1;if nodes>50000||depth>128{return Err("svg_budget");}
             let local=e.local_name();let name=local.as_ref();
+            if !empty && text_depth.is_none() && matches!(name,"text"|"tspan"|"textPath") { text_depth=Some(depth+1); }
             if depth==0{roots+=1;if roots!=1||name!="svg"{return Err("svg_invalid");}}
             if matches!(name,"script"|"foreignObject"|"animate"|"animateTransform"|"set"){return Err("svg_unsafe");}
             if name=="style"&&!empty{style_depth=Some(depth+1);}
@@ -32,15 +38,18 @@ pub(crate) fn validate(bytes:&[u8])->Result<()> {
             }
             if !empty{depth+=1;}
         }
-        Event::End(_)=>{if style_depth==Some(depth){style_depth=None;}depth=depth.checked_sub(1).ok_or("svg_invalid")?;}
+        Event::End(_)=>{if text_depth==Some(depth){text_depth=None;}if style_depth==Some(depth){style_depth=None;}depth=depth.checked_sub(1).ok_or("svg_invalid")?;}
         Event::DocType(_)|Event::PI(_)=>return Err("svg_unsafe"),
-        Event::Text(text)=>{if style_depth.is_some()&&!css_safe(&text.xml_content(XmlVersion::Implicit1_0)){return Err("svg_unsafe");}}
-        Event::CData(text)=>{if style_depth.is_some()&&!css_safe(&text.xml_content(XmlVersion::Implicit1_0)){return Err("svg_unsafe");}}
-        Event::GeneralRef(text)=>{if style_depth.is_some()||quick_xml::escape::unescape(&format!("&{};",text.as_ref())).is_err(){return Err("svg_unsafe");}}
+        Event::Text(text)=>{if text_depth.is_some(){needs_cjk|=crate::publication_fonts::needs_cjk(&text.xml_content(XmlVersion::Implicit1_0));}
+            if style_depth.is_some()&&!css_safe(&text.xml_content(XmlVersion::Implicit1_0)){return Err("svg_unsafe");}}
+        Event::CData(text)=>{if text_depth.is_some(){needs_cjk|=crate::publication_fonts::needs_cjk(&text.xml_content(XmlVersion::Implicit1_0));}
+            if style_depth.is_some()&&!css_safe(&text.xml_content(XmlVersion::Implicit1_0)){return Err("svg_unsafe");}}
+        Event::GeneralRef(text)=>{if text_depth.is_some(){if let Some(c)=text.resolve_char_ref().map_err(|_|"svg_invalid")?{needs_cjk|=crate::publication_fonts::needs_cjk(c.encode_utf8(&mut [0;4]));}}
+            if style_depth.is_some()||quick_xml::escape::unescape(&format!("&{};",text.as_ref())).is_err(){return Err("svg_unsafe");}}
         Event::Eof=>break,
         _=>(),
     }}
-    if roots!=1||depth!=0{return Err("svg_invalid");}Ok(())
+    if roots!=1||depth!=0{return Err("svg_invalid");}Ok(needs_cjk)
 }
 fn engine()->Result<(PathBuf,String)> {
     let platform=if cfg!(all(windows,target_arch="x86_64")){"windows-x64"}else if cfg!(all(target_os="macos",target_arch="aarch64")){"macos-arm64"}else if cfg!(target_os="macos"){"macos-x64"}else if cfg!(target_arch="aarch64"){"linux-arm64"}else{"linux-x64"};
@@ -52,9 +61,9 @@ fn engine()->Result<(PathBuf,String)> {
     Ok((file,digest))
 }
 pub fn rasterize(bytes:&[u8])->Result<Vec<u8>> {
-    validate(bytes)?;let(program,engine)=engine()?;
+    let needs_cjk=inspect(bytes)?;let(program,engine)=engine()?;
     let fonts=crate::publication_fonts::current();
-    if fonts.is_none()&&crate::publication_fonts::needs_cjk(std::str::from_utf8(bytes).map_err(|_|"svg_invalid")?){return Err("publication_fonts_unavailable");}
+    if fonts.is_none()&&needs_cjk{return Err("publication_fonts_unavailable");}
     let identity=font_identity(fonts.as_deref());
     let key=format!("{engine}:{identity}:{}",hash(bytes));
     static CACHE:OnceLock<Mutex<VecDeque<(String,Vec<u8>)>>>=OnceLock::new();

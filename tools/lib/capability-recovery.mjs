@@ -6,7 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { validateManifest } from '../build-stream-capability-pack.mjs';
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-const ids = new Set(['fonts', 'pdfium', 'typst', 'ocr', 'latex']);
+const ids = new Set(['fonts', 'pdfium', 'typst', 'ocr', 'latex', 'whisper', 'media-ffmpeg']);
 const platforms = new Set(['universal', 'windows-x64', 'windows-arm64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64']);
 const snapshots = new WeakMap();
 function canonical(value, depth=0) {

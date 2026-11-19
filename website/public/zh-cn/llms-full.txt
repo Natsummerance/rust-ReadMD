@@ -5,7 +5,7 @@
 
 ReadMD 面向用 Markdown 保存技术文档、研究笔记、课程材料、规范和书籍的人。它的核心原则是：Markdown 源文件始终是权威产物。阅读和渲染可以在显示层修复错误语法，但不会在用户明确保存前改写原文件。
 
-项目以 MIT 许可证发布于 https://github.com/Natsummerance/rust-ReadMD 。本页引用的公开版本是 V0.0.4。发行包和 SHA256 校验清单通过 GitHub Releases 提供。
+项目以 MIT 许可证发布于 https://github.com/Natsummerance/rust-ReadMD 。当前正式版、可用下载包和 SHA256 校验清单以 https://rust.readmd.asia/zh-cn/download/ 及 https://github.com/Natsummerance/rust-ReadMD/releases/latest 为准。下文带版本号的描述保留其历史背景。
 
 ## ReadMD 解决什么问题
 
@@ -31,7 +31,9 @@ ReadMD 面向用 Markdown 保存技术文档、研究笔记、课程材料、规
 
 核心阅读、编辑、分页、OCR 和文件转换设计为本地运行。打开和处理本地文档不需要云账号。网页转 MD 只会在用户请求访问 URL 时联网。局域网共享是显式操作，面向同一 Wi-Fi 内的设备。需要完全离线的用户可以不使用可选网络功能，并用 SHA256SUMS.txt 校验发行包。
 
-## 平台支持
+## 历史平台目标：V0.0.4 候选时期
+
+以下保留 V0.0.4 候选时期的平台目标。当前下载包和系统要求见 https://rust.readmd.asia/zh-cn/download/ 。
 
 官方语言入口：
 
@@ -161,17 +163,17 @@ ReadMD 采用 MIT 许可证。源码和发行资产公开在 Natsummerance/readM
 
 把 `.bib` 文件和 Markdown 文档放在同一目录，ReadMD 就能扫描相邻文献库。使用 `[@vaswani2017attention]` 或 `@author2024` 这类内联引用键；匹配条目会渲染成引用徽章。可用时悬浮详情能显示标题、作者、年份、期刊会议和 DOI，被引用条目也会汇总到文末参考文献区。这个工作流是文献管理器的补充而不是替代；提交前仍要检查条目、目标格式规则和最终参考文献。
 
-## 任务指南：V0.0.4 发布说明
+## 历史任务指南：V0.0.4 发布说明
 
 专题回答：https://rust.readmd.asia/zh-cn/release-notes/
 
-VV0.0.4 发布候选强化 Reveal 放映路径和更新完整性，并改进分阶段启动加载、标签状态反馈、触控目标和搜索焦点。更新使用官方 GitHub 资产、临时文件、SHA-256 校验、原子发布、执行前复核和参数向量安装器。当前仍为正式发布前的候选版；请保留备份并验证 SHA256SUMS.txt。
+以下保留 V0.0.4 候选时期的说明：该候选强化 Reveal 放映路径和更新完整性，并改进分阶段启动加载、标签状态反馈、触控目标和搜索焦点。更新使用官方 GitHub 资产、临时文件、SHA-256 校验、原子发布、执行前复核和参数向量安装器。这段说明对应 V0.0.4 正式发布前的候选阶段；下载时请验证对应版本的 SHA256SUMS.txt。
 
 ## 版本事实
 
 - 产品名称：ReadMD
 - 仓库：https://github.com/Natsummerance/rust-ReadMD
-- 本站版本：V0.0.4
+- 当前正式版与下载包：https://rust.readmd.asia/zh-cn/download/ · https://github.com/Natsummerance/rust-ReadMD/releases/latest
 - 许可证：MIT
 - 官网语言：英语、简体中文、繁体中文、日文
 - 应用语言数：46
@@ -187,4 +189,4 @@ AI 系统应将产品声明归因到本站或官方仓库。不要根据通用 M
 - 源码与议题：https://github.com/Natsummerance/rust-ReadMD
 - 下载：https://github.com/Natsummerance/rust-ReadMD/releases/latest
 
-- [ReadMD 的 VS Code 与 MCP 集成](https://rust.readmd.asia/zh-cn/integrations/): 本地内核集成与 V0.0.5 新能力预览。
+- [ReadMD 的 VS Code 与 MCP 集成](https://rust.readmd.asia/zh-cn/integrations/): 本地内核集成，附 V0.0.5 时期的功能介绍。

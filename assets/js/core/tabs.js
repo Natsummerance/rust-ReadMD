@@ -29,9 +29,9 @@ function syncStateFromActiveTab() {
   state.mtime = tab.mtime || 0;
   state.revision = tab.revision || '';
   state.size = tab.size || 0;
-  state.encoding = tab.encoding || 'utf-8';
+  state.encoding = tab.mode === 'office-preview' ? '' : (tab.encoding || 'utf-8');
   state.fixed = tab.content || '';
-  state.original = tab._restoreUnavailable ? null : (tab.original ?? tab.content ?? '');
+  state.original = tab._restoreUnavailable || tab.mode === 'office-preview' ? null : (tab.original ?? tab.content ?? '');
   state.fixes = tab.fixes || [];
   state.stats = tab.stats || {};
   state.webAssets = tab.webAssets || [];
@@ -47,6 +47,7 @@ function captureReaderState(tab) {
   tab.scrollPos = $('content')?.scrollTop || 0;
   const scrollKey = normalizePath(tab.title || tab.name || state.file || '');
   if (scrollKey) state.scrollPos[scrollKey] = tab.scrollPos;
+  if (tab.mode === 'office-preview') return;
   tab.readerMode = pagination.enabled ? pagination.mode : 'paged';
   tab.readerPage = pagination.enabled && pagination.mode === 'paged'
     ? pagination.currentPage
@@ -56,32 +57,76 @@ function captureReaderState(tab) {
     : (tab.scrollPos || 0);
 }
 
+function revealTabInTrack(container, tab) {
+  if (!container || !tab) return;
+  const vertical = container.getAttribute('aria-orientation') === 'vertical';
+  const size = vertical ? container.clientHeight : container.clientWidth;
+  if (!size) return;
+  const containerRect = container.getBoundingClientRect(), tabRect = tab.getBoundingClientRect();
+  const scroll = vertical ? 'scrollTop' : 'scrollLeft';
+  const start = (vertical ? tabRect.top - containerRect.top : tabRect.left - containerRect.left) + container[scroll];
+  const end = start + (vertical ? tab.offsetHeight : tab.offsetWidth);
+  if (start < container[scroll] + 8) container[scroll] = Math.max(0, start - 8);
+  else if (end > container[scroll] + size - 8) container[scroll] = end - size + 8;
+}
+
+// Update chrome in place: changing language must not rebuild a live rename
+// input, change the active identity or persist a new document revision.
+function localizeOpenTabs() {
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+  const tabs = new Map((state.tabs || []).map(tab => [tab.id, tab]));
+  for (const row of document.querySelectorAll('#doc-tabs-bar .tab-item')) {
+    const tab = tabs.get(row.dataset.tabId); if (!tab) continue;
+    const close = t('tabs.closeTab');
+    row.title = tab.title || tab.name || t('tabs.untitled');
+    const button = row.querySelector('.tab-close'); if (button) button.title = close;
+    const reason = tab.externalChanged ? t('toast.saveConflict') : tab.isDirty ? t('tabs.dirty') : '';
+    const dot = row.querySelector('.tab-dirty'); if (dot) dot.title = reason;
+    if (reason) row.setAttribute('aria-description', reason); else row.removeAttribute('aria-description');
+    if (!tab.title && !tab.name && !row.querySelector('.tab-title-input')) {
+      const title = row.querySelector('.tab-title'); if (title) title.textContent = t('tabs.untitled');
+    }
+  }
+}
+
+function syncTopTabOverflow({ reveal = false } = {}) {
+  const bar = $('doc-tabs-bar'), container = $('doc-tabs-container'), wrap = $('doc-tabs-overflow-wrap');
+  if (!container?.clientWidth || !bar || !wrap) return;
+  const overflow = bar.scrollWidth > container.clientWidth + 2;
+  if (!overflow && !$('doc-tabs-dropdown').classList.contains('hidden')) {
+    const focused = wrap.contains(document.activeElement);
+    setTopTabMenu(false);
+    if (focused) focusVisibleTab(state.activeTabId);
+  }
+  wrap.classList.toggle('hidden', !overflow);
+  if (reveal) revealTabInTrack(bar, bar.querySelector('.tab-item.active'));
+}
+
+function setTopTabMenu(open, { focus = false } = {}) {
+  const menu = $('doc-tabs-dropdown'), button = $('doc-tabs-overflow-btn');
+  if (!menu || !button) return;
+  menu.classList.toggle('hidden', !open);
+  button.setAttribute('aria-expanded', String(open));
+  if (open && focus) menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+}
+
 function renderTabsBar() {
   window.ReadMDSession?.persist();
+  if (typeof syncFileSidebar === 'function') syncFileSidebar();
   const bar = $('doc-tabs-bar');
-  const secBar = $('doc-tabs-secondary-bar');
   const dropdown = $('doc-tabs-dropdown');
   const overflowWrap = $('doc-tabs-overflow-wrap');
-  const btnHome = $('btn-home');
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 
   if (state.tabs.length === 0) {
     if (bar) bar.innerHTML = '';
-    if (secBar) { secBar.innerHTML = ''; secBar.classList.add('hidden'); }
     if (overflowWrap) overflowWrap.classList.add('hidden');
-    if (btnHome) btnHome.classList.add('hidden');
+    if (dropdown) dropdown.replaceChildren();
+    setTopTabMenu(false);
     if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
       window.ReadMDGraph.updateVisibility(false);
     }
     return;
-  }
-
-  if (btnHome) {
-    if (state.mode === 'welcome') {
-      btnHome.classList.add('hidden');
-    } else {
-      btnHome.classList.remove('hidden');
-    }
   }
 
   if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
@@ -92,18 +137,18 @@ function renderTabsBar() {
     }
   }
 
-  const createTabEl = (tab) => {
+  const createTabEl = (tab, container) => {
     const el = document.createElement('div');
     el.className = 'tab-item' + (tab.id === state.activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.setAttribute('role', 'tab');
     el.setAttribute('aria-selected', tab.id === state.activeTabId ? 'true' : 'false');
     el.setAttribute('aria-controls', 'content');
-    el.setAttribute('aria-keyshortcuts', 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
+    el.setAttribute('aria-keyshortcuts', (container?.getAttribute('aria-orientation') === 'vertical' ? 'ArrowUp ArrowDown ' : '') + 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
     el.tabIndex = tab.id === state.activeTabId ? 0 : -1;
     el.draggable = true;
 
-    el.title = `${tab.path || tab.title || tab.name} (${_t('tabs.closeTab')}: Delete)`;
+    el.title = tab.title || tab.name || _t('tabs.untitled');
     if (tab.isDirty) {
       const dot = document.createElement('span');
       const reason = tab.externalChanged
@@ -125,6 +170,7 @@ function renderTabsBar() {
 
     const titleSpan = document.createElement('span');
     titleSpan.className = 'tab-title';
+    titleSpan.dir = 'auto';
     titleSpan.textContent = tab.title || tab.name || (_t('tabs.untitled') || '未命名');
     el.appendChild(titleSpan);
 
@@ -136,12 +182,18 @@ function renderTabsBar() {
     closeBtn.setAttribute('aria-hidden', 'true');
     closeBtn.addEventListener('click', e => {
       e.stopPropagation();
-      closeTab(tab.id, false, 'button');
+      requestTabClose(tab.id, 'button');
     });
     el.appendChild(closeBtn);
 
     el.addEventListener('click', () => switchTab(tab.id));
     el.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (el.parentElement?.getAttribute('aria-orientation') !== 'vertical' || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        e.preventDefault();
+        moveTabFocus(tab.id, e.key === 'ArrowUp' ? 'ArrowLeft' : 'ArrowRight');
+        return;
+      }
       if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault();
         const index = state.tabs.findIndex(item => item.id === tab.id);
@@ -166,7 +218,7 @@ function renderTabsBar() {
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        closeTab(tab.id, false, e.key === 'Backspace' ? 'key_backspace' : 'key_delete');
+        requestTabClose(tab.id, e.key === 'Backspace' ? 'key_backspace' : 'key_delete');
       }
       if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
         e.preventDefault();
@@ -199,8 +251,9 @@ function renderTabsBar() {
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
       const rect = el.getBoundingClientRect();
-      const mid = rect.left + rect.width / 2;
-      const isRight = e.clientX > mid;
+      const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+      const mid = vertical ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+      const isRight = (vertical ? e.clientY : e.clientX) > mid;
       el.classList.toggle('tab-drag-over-left', !isRight);
       el.classList.toggle('tab-drag-over-right', isRight);
     });
@@ -214,7 +267,8 @@ function renderTabsBar() {
       const srcId = e.dataTransfer.getData('application/x-readmd-tab') || e.dataTransfer.getData('text/plain');
       if (srcId && srcId !== tab.id) {
         const rect = el.getBoundingClientRect();
-        const isRight = e.clientX > (rect.left + rect.width / 2);
+        const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+        const isRight = vertical ? e.clientY > rect.top + rect.height / 2 : e.clientX > rect.left + rect.width / 2;
         reorderTabs(srcId, tab.id, isRight);
       }
     });
@@ -228,9 +282,16 @@ function renderTabsBar() {
   };
 
 
+  // Snapshot only the row that owns focus now, immediately before rebuilding.
+  // Async rendering must not restore focus captured before its await.
+  const focusedTab = document.activeElement;
+  const focusedTabId = focusedTab?.classList?.contains('tab-item') &&
+    focusedTab.parentElement === bar
+    ? focusedTab.dataset.tabId : null;
+
   if (bar) {
     bar.innerHTML = '';
-    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab)));
+    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab, bar)));
   }
 
   if (dropdown) {
@@ -241,66 +302,45 @@ function renderTabsBar() {
       item.tabIndex = -1;
       item.className = 'doc-tabs-dropdown-item' + (tab.id === state.activeTabId ? ' active' : '');
       item.type = 'button';
-      item.setAttribute('role', 'menuitem');
-      item.tabIndex = -1;
       const label = document.createElement('span');
       label.textContent = (tab.title || tab.name) + (tab.isDirty ? ' •' : '');
+      label.dir = 'auto';
       const meta = document.createElement('small');
       meta.textContent = tab.path || (tab.isVirtual ? (_t('tabs.virtual') || '虚拟') : '');
       item.append(label, meta);
-      item.addEventListener('click', () => {
-        switchTab(tab.id);
-        dropdown.classList.add('hidden');
+      item.addEventListener('click', async () => {
+        setTopTabMenu(false);
+        await switchTab(tab.id);
+        if (document.activeElement === document.body) focusVisibleTab(state.activeTabId);
       });
       dropdown.appendChild(item);
     });
 
   }
 
-  if (bar && overflowWrap) {
-    const syncOverflow = () => {
-      if (!bar.isConnected || !overflowWrap.isConnected) return;
-      overflowWrap.classList.toggle('hidden', !(bar.scrollWidth > bar.clientWidth + 6));
-    };
-    syncOverflow();
-    requestAnimationFrame(syncOverflow);
-  }
-
-  const revealActiveTab = (container) => {
-    const active = container?.querySelector('.tab-item.active');
-    if (!active) return;
-    const containerRect = container.getBoundingClientRect();
-    const activeRect = active.getBoundingClientRect();
-    const left = activeRect.left - containerRect.left + container.scrollLeft;
-    const right = left + active.offsetWidth;
-    if (left < container.scrollLeft + 8) {
-      container.scrollLeft = Math.max(0, left - 8);
-    } else if (right > container.scrollLeft + container.clientWidth - 8) {
-      container.scrollLeft = right - container.clientWidth + 8;
-    }
-  };
-  revealActiveTab(bar);
-  revealActiveTab(secBar);
-
-  if (secBar) {
-    if (window.innerWidth < 650 && state.tabs.length > 0) {
-      secBar.innerHTML = '';
-      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab)));
-      secBar.classList.remove('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.add('hidden');
-    } else {
-      secBar.classList.add('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.remove('hidden');
+  syncTopTabOverflow({ reveal: true });
+  requestAnimationFrame(() => syncTopTabOverflow({ reveal: true }));
+  // Rebuilds retire the old focused row. Preserve its identity without taking
+  // focus from an editor/menu, including focus moved by a synchronous blur.
+  if (focusedTabId && (document.activeElement === document.body || document.activeElement === focusedTab)) {
+    const replacement = Array.from(bar.children).find(item => item.dataset.tabId === focusedTabId);
+    if (replacement?.offsetParent && !replacement.closest('[inert], [hidden]')) {
+      replacement.focus({ preventScroll: true });
     }
   }
+
 }
 
-function focusVisibleTab(tabId) {
-  requestAnimationFrame(() => {
-    const matches = Array.from(document.querySelectorAll(`[data-tab-id="${CSS.escape(tabId)}"]`));
-    const next = matches.find(item => item.offsetParent !== null) || matches[0];
-    if (next && document.activeElement !== next) next.focus({ preventScroll: true });
-  });
+function focusVisibleTab(tabId, { immediate = false } = {}) {
+  const focus = () => {
+    const bar = $('doc-tabs-bar');
+    const next = Array.from(bar?.children || []).find(row => row.dataset.tabId === tabId);
+    if (!next || next.offsetParent === null) return;
+    revealTabInTrack(bar, next);
+    if (document.activeElement !== next) next.focus({ preventScroll: true });
+  };
+  if (immediate) focus();
+  else requestAnimationFrame(focus);
 }
 
 function moveTabFocus(activeTabId, key) {
@@ -369,8 +409,15 @@ function startTabInlineRename(tab, titleSpan, tabEl) {
   };
 
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    else if (e.key === 'Escape') { e.preventDefault(); committed = true; cleanup(); }
+    if (e.isComposing || !['Enter', 'Escape'].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Enter') commit();
+    else {
+      committed = true;
+      cleanup();
+      tabEl.focus({ preventScroll: true });
+    }
   });
   input.addEventListener('blur', () => { setTimeout(() => { if (!committed) commit(); }, 120); });
 }
@@ -379,6 +426,7 @@ function startTabInlineRename(tab, titleSpan, tabEl) {
 function renameBlocked(tab) {
   if (!tab) return true;
   const t = key => window.i18n?.t(key) || key;
+  if (tab.mode === 'office-preview') { showToast(t('toast.noEditableContent')); return true; }
   if (window.ReadMDSession?.busy?.() || tab._renameInFlight || tab._reviewRestorePending) { showToast(t('review.busy')); return true; }
   if (tab.mode === 'file' && (tab.isDirty || (state.editing && state.activeTabId === tab.id))) {
     showToast(t('toast.renameBlockedEdit')); return true;
@@ -503,6 +551,7 @@ async function renameTab(tabId, newTitle) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab || !newTitle || newTitle === (tab.title || tab.name)) return;
+  if (tab.mode === 'office-preview') { showToast(_t('toast.noEditableContent')); return; }
   if (tab.mode === 'file' && tab.path) {
     if (!hasPy || !py.rename_file) { showToast(_t('review.persistenceFailed')); return; }
     if (tab._renamePending) {
@@ -587,13 +636,15 @@ function openTabContextMenu(e, tabId) {
   if (!menu) return;
   menu.dataset.tabId = tabId;
   const tabIndex = state.tabs.findIndex(tab => tab.id === tabId);
+  const rename = menu.querySelector('[data-action="rename"]');
+  if (rename) rename.disabled = state.tabs[tabIndex]?.mode === 'office-preview';
   menu.querySelector('[data-action="move-left"]').disabled = tabIndex <= 0;
   menu.querySelector('[data-action="move-right"]').disabled = tabIndex < 0 || tabIndex >= state.tabs.length - 1;
   menu.style.left = Math.min(window.innerWidth - 180, e.clientX) + 'px';
   menu.style.top = Math.min(window.innerHeight - 200, e.clientY) + 'px';
   menu.classList.remove('hidden');
   menu.dataset.returnFocus = tabId;
-  setTimeout(() => menu.querySelector('button:not([disabled])')?.focus(), 20);
+  menu.querySelector('button:not([disabled])')?.focus();
 }
 
 function closeTabContextMenu({ restoreFocus = false } = {}) {
@@ -602,15 +653,27 @@ function closeTabContextMenu({ restoreFocus = false } = {}) {
   menu.classList.add('hidden');
   if (!restoreFocus) return;
   const tabId = menu.dataset.returnFocus;
-  if (tabId) focusVisibleTab(tabId);
+  if (tabId) focusVisibleTab(tabId, { immediate: true });
 }
 
 async function renderActiveTab({ restoreScroll = false } = {}) {
   const nextTab = getActiveTab();
+  if (!window.ReadMDOffice?.isTab(nextTab)) void window.ReadMDOffice?.releaseView();
   if (!nextTab) return;
   await window.ReadMDReview?.restore(nextTab);
   if (getActiveTab() !== nextTab) return;
   syncStateFromActiveTab();
+  if (window.ReadMDOffice?.isTab(nextTab)) {
+    ++tabRenderEpoch;
+    setFixes([], {});
+    document.title = (nextTab.title || nextTab.name) + ' - ReadMD';
+    setFileTitle(nextTab.title || nextTab.name, false, nextTab.path);
+    updateStatus(); renderTabsBar();
+    if (typeof updateAiContextStrip === 'function') updateAiContextStrip();
+    // Opening the source identity must not fence close/switch behind rendering.
+    void window.ReadMDOffice.render(nextTab);
+    return;
+  }
   if (nextTab._restoreUnavailable) {
     ++tabRenderEpoch;
     if (typeof beginReaderRender === 'function') beginReaderRender();
@@ -630,7 +693,7 @@ async function renderActiveTab({ restoreScroll = false } = {}) {
         else await loadFile(nextTab.path, { force: true });
       } finally { retry.disabled = false; } };
       const close = document.createElement('button'); close.className = 'tb-btn'; close.type = 'button'; close.textContent = t('tabs.closeTab');
-      close.onclick = () => closeTab(nextTab.id, false, 'button');
+      close.onclick = () => requestTabClose(nextTab.id, 'button');
       if (nextTab._restoreDescriptor) { close.disabled = true; close.title = t('error.review_needs_recovery'); }
       actions.append(retry, close); box.append(title, message, actions); pane.replaceChildren(box); pane.classList.remove('hidden');
       if (nextTab._restoreDescriptor) {
@@ -799,7 +862,7 @@ function promptDirtyClose(tabName, owner = typeof getActiveTab === 'function' ? 
     promptDirtyClose.active = true;
     let settled = false, focusTimer;
     const titleEl = $('close-confirm-title');
-    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '是否保存对文档的修改？';
+    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '未保存';
     const descEl = $('close-confirm-desc');
     if (descEl) descEl.textContent = _t('dialog.unsavedMsgDesc', { name: tabName || (_t('tabs.untitled') || '文档') }) || `「${tabName || '文档'}」已被修改，如果直接关闭，未保存的内容将会丢失。`;
     modal.classList.remove('hidden');
@@ -891,14 +954,39 @@ function askChoice(title, desc, choices) {
 }
 
 
+function requestTabClose(tabId, trigger = 'button') {
+  const tab = state.tabs.find(item => item.id === tabId);
+  if (!tab) return Promise.resolve(false);
+  const requests = requestTabClose.pending ||= new Map();
+  if (requests.has(tab)) return requests.get(tab);
+  const lifecycle = window.ReadMDLifecycle, owner = lifecycle?.owner?.();
+  if (owner?.name !== 'close-tab' || !owner.tabCloseCommitted) return closeTab(tabId, false, trigger);
+  // The previous close has its durable ACK and the next tab is already
+  // clickable, but detaching/rendering can still own the lifecycle. Keep this
+  // exact tab request until that work finishes instead of silently dropping it.
+  // A pending confirmation or an unacknowledged close never enters this queue.
+  const pending = (requestTabClose.tail || Promise.resolve()).catch(() => false).then(async () => {
+    while (lifecycle.busy() || window.ReadMDSession?.busy?.()) {
+      if (lifecycle.busy()) await lifecycle.whenIdle();
+      else await window.ReadMDSession.whenIdle();
+    }
+    if (!state.tabs.includes(tab)) return false;
+    return closeTab(tab.id, false, trigger);
+  }).finally(() => requests.delete(tab));
+  requests.set(tab, pending);
+  requestTabClose.tail = pending;
+  return pending;
+}
+
 async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (window.ReadMDSession?.busy?.()) return;
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  const lifecycleOwner = window.ReadMDLifecycle?.owner?.();
   if (tab._restoreDescriptor) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (tab._renamePending || tab._renameInFlight) { showToast(window.i18n.t('review.busy')); return; }
   if(state.activeTabId===tabId&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab)) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab, { park: true })) return;
   if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   let discardShared=false;
   if (tab.isDirty && !force) {
@@ -920,6 +1008,7 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
     closedIndex = state.tabs.indexOf(tab);
     if (closedIndex < 0) return;
     state.tabs.splice(closedIndex, 1);
+    if (lifecycleOwner?.name === 'close-tab') lifecycleOwner.tabCloseCommitted = true;
     wasActive = state.activeTabId === tabId;
     if (wasActive) {
       exitEdit();
@@ -932,6 +1021,9 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (window.ReadMDSession?.closeTabs) {
     if (!await window.ReadMDSession.closeTabs([tab], remove, accepted, trigger)) return;
   } else remove();
+  // Replace the old close buttons as soon as the session acknowledges removal.
+  // Detaching a shared page or rendering its neighbour may take another frame.
+  renderTabsBar();
   // The confirmed session no longer references this page. Until that ACK,
   // its only draft and visible source must survive a failed close.
   if (discardShared && window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
@@ -940,7 +1032,6 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
     await renderActiveTab({ restoreScroll: true });
     focusVisibleTab(state.activeTabId);
   }
-  renderTabsBar();
   if (focusedTabId === tabId) {
     const fallbackTab = state.tabs[Math.min(idx, state.tabs.length - 1)];
     focusVisibleTab(fallbackTab ? fallbackTab.id : state.activeTabId);
@@ -954,7 +1045,7 @@ async function closeOtherTabs(keepTabId) {
   if (!keepTab) return;
   if (state.tabs.some(tab => tab !== keepTab && (tab._renamePending || tab._renameInFlight || tab._restoreDescriptor))) { showToast(window.i18n.t('error.review_needs_recovery')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -1000,7 +1091,7 @@ async function closeAllTabs() {
   if (state.tabs.some(tab => tab._restoreDescriptor)) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (state.tabs.some(tab => tab._renamePending || tab._renameInFlight)) { showToast(window.i18n.t('review.busy')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -1186,15 +1277,15 @@ async function closeAllTabs() {
     });
     return settingsSaveQueue;
   }
-  async function recoveryBarrier(allowClose = false) {
+  async function recoveryBarrier(allowClose = false, park = false) {
     if (!ready) await window.__readmdSessionReady;
-    if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+    if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park })) return false;
     if (await window.ReadMDRecovery?.flush() === false) return false;
     captureReaderState(getActiveTab());
     return !closing || allowClose;
   }
-  async function flush(allowClose = false) {
-    if (!await recoveryBarrier(allowClose)) return false;
+  async function flush(allowClose = false, park = false) {
+    if (!await recoveryBarrier(allowClose, park)) return false;
     const value = snapshot();
     if (!value) return false;
     try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch (_) {}
@@ -1219,14 +1310,14 @@ async function closeAllTabs() {
     const reserved = [], flags = new Map();
     const body = document.body, inert = body?.inert;
     try {
-      if (!await flush(true)) return false;
+      if (!await flush(true, true)) return false;
       const owners = [...state.tabs];
       for (const tab of owners) { flags.set(tab, tab._renameInFlight); tab._renameInFlight = true; }
       if (body) body.inert = true;
       // Existing review reservations defer completed AI receipts as well as
       // writes. A large/unseen reader without a review snapshot needs no CAS.
       for (const tab of owners) if (window.ReadMDReview?.snapshot(tab)) {
-        if (!await window.ReadMDReview.beginRename(tab)) return false;
+        if (!await window.ReadMDReview.beginRename(tab, { park: true })) return false;
         reserved.push(tab);
       }
       if (tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending)) return false;
@@ -1249,6 +1340,9 @@ async function closeAllTabs() {
         await write(true, snapshot(), 'close_compensation');
         return failed();
       }
+      // Mark cancellation before ending review reservations: queued generated
+      // output must not mutate a page whose close was just acknowledged.
+      window.ReadMDCodeRuns?.cancelTabs?.(tabs);
       apply(); // No await between the verified acknowledgement and UI removal.
       fence++;
       try { localStorage.setItem(storageKey, JSON.stringify(snapshot())); } catch (_) {}
@@ -1275,7 +1369,7 @@ async function closeAllTabs() {
       name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
       content, fixed: content, original: file?.original ?? file?.content ?? (dirty || descriptor.unsavedCreation ? '' : content),
       revision: dirty ? descriptor.revision : (file?.revision || ''), mtime: file?.mtime || 0,
-      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fixes || [], stats: file?.stats || {},
+      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fix_details ?? file?.fixes ?? [], stats: file?.stats || {},
       is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
       isVirtual: !file, isDirty: dirty, unsavedCreation: !file && (descriptor.unsavedCreation || dirty),
       originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,
@@ -1380,7 +1474,7 @@ async function closeAllTabs() {
         // Reconcile each group before ANY member is opened. Parallel source /
         // reference reads could otherwise drop a descriptor while rollback owns it.
         const refactors = new Map();
-        for (const descriptor of session.tabs.filter(item => item.renamePending?.refactor)) {
+        for (const descriptor of session.tabs.filter(item => item.renamePending?.refactor && !window.ReadMDOffice?.isPath(item.path))) {
           let result;
           do {
             result = await window.ReadMDRefactor?.restoreDescriptor(descriptor);
@@ -1396,6 +1490,10 @@ async function closeAllTabs() {
         for (let offset = 0; offset < session.tabs.length; offset += 4) {
           const group = await Promise.all(session.tabs.slice(offset, offset + 4).map(async descriptor => {
             let file, receipt, pending = descriptor.renamePending, unavailableStatus = 0;
+            if (window.ReadMDOffice?.isPath(descriptor.path))
+              return !pending && !descriptor.dirty && !descriptor.unsavedCreation
+                ? window.ReadMDOffice.createTab(descriptor)
+                : protectedTab(descriptor, originalRows.get(descriptor.key));
             const open = async path => {
               try { const response = await apiFetch('/api/file?p=' + encodeURIComponent(path)); unavailableStatus = response.status; return response.ok ? await response.json() : null; }
               catch (_) { return null; }
@@ -1458,12 +1556,12 @@ async function closeAllTabs() {
         state.activeTabId = active?.id || null;
         if (active) {
           syncStateFromActiveTab();
-          if (!active._restoreUnavailable) await prepareDocCitations(active.path || active.originPath || '', active.content);
+          if (!active._restoreUnavailable && !window.ReadMDOffice?.isTab(active)) await prepareDocCitations(active.path || active.originPath || '', active.content);
           if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
           await renderActiveTab({ restoreScroll: true });
           if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
           if (!active._restoreUnavailable && state.pagination.enabled && state.pagination.mode === 'paged') renderPage(active.readerPage || 0, null, true);
-          if (!active._restoreUnavailable && (active.isDirty || (await window.ReadMDRecovery.mathDrafts(active)).length)) await toggleEdit();
+          if (!active._restoreUnavailable && !window.ReadMDOffice?.isTab(active) && (active.isDirty || (await window.ReadMDRecovery.mathDrafts(active)).length)) await toggleEdit();
         } else resetHome();
       }
       // An explicit OS/file URL open becomes active after restoring older pages.

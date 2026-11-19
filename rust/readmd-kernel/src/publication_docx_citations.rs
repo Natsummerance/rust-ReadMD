@@ -322,6 +322,10 @@ pub struct Resources {
     pub locale: String,
     pub locale_xml: Option<String>,
     pub manual_bibliography: bool,
+    /// Source nocite selections, including a wildcard, survive an editable
+    /// DOCX round trip together with the offline bibliography resources.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nocite: Vec<String>,
 }
 impl Resources {
     pub fn validate(&self) -> Result<(), String> {
@@ -329,6 +333,8 @@ impl Resources {
             || self.bibliography.is_empty()
             || self.bibliography.len() > 8
             || self.files.len() > 9
+            || self.nocite.len() > 5000
+            || self.nocite.iter().any(|key|key.is_empty()||key.len()>1024||!valid_text(key))
             || self.locale.len() > 128
             || !valid_text(&self.locale)
             || self.locale.is_empty()
@@ -460,6 +466,7 @@ impl Resources {
             locale: "en-US".into(),
             locale_xml: None,
             manual_bibliography: false,
+            nocite: Vec::new(),
         });
         let root = if names.iter().any(|name| out.read(name).is_none()) {
             Some(Path::new(base).canonicalize().map_err(|_| resource_err())?)
@@ -492,6 +499,9 @@ impl Resources {
             canonical_names.push(name);
         }
         out.bibliography = canonical_names;
+        if let Some(selection)=crate::publication::citations::nocite(source).map_err(|_|resource_err())? {
+            out.nocite=selection.keys;
+        }
         let doc = crate::md_ast::parse(source);
         let requested = options
             .pointer("/citations/style")

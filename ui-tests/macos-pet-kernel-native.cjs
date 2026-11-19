@@ -15,7 +15,7 @@ function driver(phase,file,ack){return String.raw`(async()=>{
   await loadFile(${JSON.stringify(file)});
   if(phase==='enable'){
    await openPetSettings();await until(()=>activePetSettingsStatus?.adapter?.available);
-   $('pet-enabled').checked=true;$('pet-runtime').value='desktop';$('pet-renderer').value='hermes-sprite';
+   $('pet-enabled').checked=true;$('pet-runtime-desktop').checked=true;
    currentActivePetSlug='mochi';$('pet-lock-position').checked=false;$('pet-sound').checked=false;
    const result=await savePetSettings();check(result?.ok===true,'real_pet_settings_configure_succeeded');closePetSettings();
   }
@@ -26,8 +26,8 @@ function driver(phase,file,ack){return String.raw`(async()=>{
    state.closeToTray=true;syncWindowPreferences();py.window_control('close');
    await until(()=>window.__readmdNativeWindowState?.visible===false);
    progress('pet_context_ready');await waitAck('context_sent');
-   await until(async()=>{await pollPetControls();return window.__readmdNativeWindowState?.visible===true&&$('more-menu').classList.contains('open');});
-   check(true,'native_pet_context_request_wakes_hidden_reader_and_opens_real_menu');closeMoreMenu();
+   await until(async()=>{await pollPetControls();return window.__readmdNativeWindowState?.visible===true&&$('tab-settings').getAttribute('aria-selected')==='true';});
+   check(true,'native_pet_context_request_wakes_hidden_reader_and_opens_real_menu');closeSide();
   }
   progress(phase==='enable'?'pet_drag_ready':'pet_restored_ready');await waitAck('native_checked_'+phase);
   if(phase==='enable'){

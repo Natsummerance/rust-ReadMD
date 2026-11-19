@@ -93,7 +93,9 @@ fn open_locked(path: &Path, defaults: &Value) -> io::Result<LockedSettings> {
     let name = path.file_name().ok_or_else(|| invalid("Invalid settings path"))?;
     let target = directory.join(name);
     // This lock covers the disk read, merge, temporary write and all syncs.
+    #[cfg(test)] tests::io_stage("lock");
     let lock = SettingsLock::acquire(&directory, WAIT)?;
+    #[cfg(test)] tests::io_stage("read");
     let mut permissions = None;
     let current = match fs::symlink_metadata(&target) {
         Ok(metadata) => {
@@ -114,12 +116,14 @@ fn open_locked(path: &Path, defaults: &Value) -> io::Result<LockedSettings> {
 
 impl LockedSettings {
 fn publish(&self, current: &Value) -> io::Result<()> {
+    #[cfg(test)] tests::io_stage("stage");
     let bytes = serde_json::to_vec_pretty(&current).map_err(|_| invalid("Invalid settings value"))?;
     if bytes.len() as u64 > MAX_SETTINGS_BYTES { return Err(invalid("Settings exceed storage limit")); }
     let mut temporary = tempfile::Builder::new().prefix(".readmd-settings-").tempfile_in(&self.directory)?;
     temporary.write_all(&bytes)?;
     if let Some(permissions) = &self.permissions { temporary.as_file().set_permissions(permissions.clone())?; }
     #[cfg(test)] tests::fault(tests::Stage::BeforeFileSync)?;
+    #[cfg(test)] tests::io_stage("sync_file");
     temporary.as_file().sync_all()?;
     #[cfg(test)] tests::fault(tests::Stage::BeforeReplace)?;
     // Keep the original shared-delete Windows file handle for a checked
@@ -129,11 +133,13 @@ fn publish(&self, current: &Value) -> io::Result<()> {
     let (staged_file, temporary) = temporary.into_parts();
     #[cfg(not(windows))]
     let temporary = temporary.into_temp_path();
+    #[cfg(test)] tests::io_stage("replace");
     #[cfg(windows)]
     native::replace(temporary.as_ref(), &self.target, &staged_file)?;
     #[cfg(not(windows))]
     native::replace(temporary.as_ref(), &self.target)?;
     #[cfg(test)] tests::fault(tests::Stage::BeforeDirectorySync)?;
+    #[cfg(test)] tests::io_stage("sync_directory");
     native::sync_directory(&self.directory)?;
     Ok(())
 }
@@ -175,7 +181,10 @@ impl SessionError {
     pub(crate) fn status(&self) -> u16 {self.status}
 }
 impl From<io::Error> for SessionError {
-    fn from(_: io::Error) -> Self {Self {code:"settings_persistence_failed",status:507}}
+    fn from(_error: io::Error) -> Self {
+        #[cfg(test)] tests::record_io(&_error);
+        Self {code:"settings_persistence_failed",status:507}
+    }
 }
 
 pub(crate) struct SessionCommit {
@@ -376,6 +385,7 @@ mod native {
                 // Unsupported filesystems/OSes and deny-DELETE readers fail;
                 // there is no target deletion, truncation or retry loop.
                 fs::rename(from, to)?;
+                #[cfg(test)] tests::io_stage("sync_published");
                 #[cfg(test)] tests::fault(tests::Stage::BeforePublishedFileSync)?;
                 // This is the original staged object, still held across the
                 // rename. A sync error is post-publication uncertainty and

@@ -15,6 +15,7 @@ const imgState = {
 };
 let imgLoadEpoch = 0;
 let imgInsertPending = false;
+let imgTarget = null;
 window.ReadMDModal.setGuard('img-modal', () => !imgInsertPending);
 
 function syncImgAvailability() {
@@ -34,7 +35,8 @@ function updateImgHistoryButtons() { $('img-undo').disabled=!imgState.history.le
 function openImgModal() {
   if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!state.dir) { showToast(_t('toast.imgLocalOnly') || '图片编辑仅支持本地 Markdown 文件'); return; }
+  imgTarget = imageEditTarget();
+  if (!imgTarget) { showToast(_t('toast.imgEnterEditFirst')); return; }
   $('img-modal').classList.remove('hidden');
   ++imgLoadEpoch;
   imgState.img = null;
@@ -47,6 +49,7 @@ function closeImgModal(force) {
   if (imgInsertPending && force !== true) return;
   ++imgLoadEpoch;
   window.ReadMDModal.close('img-modal');
+  imgTarget = null;
   imgState.img = null;
   imgState.drag = null;
   if (cmView) cmView.focus();
@@ -356,7 +359,8 @@ function insertImgUrl() {
   const url = $('img-url-input').value.trim();
   if (!url) { showToast(_t('toast.imgEnterUrl') || '请输入图片 URL'); return; }
   if (!cmView) { showToast(_t('toast.imgEnterEditFirst') || '请先进入编辑模式'); return; }
-  cmInsertImage(url);
+  if (!imgTarget?.current()) { showToast(_t('error.review_stale_generation')); return; }
+  cmInsertImage(url, imgTarget);
   closeImgModal();
   showToast(_t('toast.imgUrlInserted') || '已插入图片 URL');
 }
@@ -367,12 +371,12 @@ function registerStagedImage(asset, tab = getActiveTab()) {
   if (getActiveTab() === tab) state.webAssets = tab.webAssets;
 }
 
-function cmInsertImage(rel) {
-  if (!cmView) return;
+function cmInsertImage(rel, target) {
+  if (!target?.current()) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const sel = cmView.state.selection.main;
-  const insert = '![' + (_t('editor.image') || '图片') + '](' + rel + ')';
-  cmView.dispatch({ changes: { from: sel.from, to: sel.to, insert }, selection: { anchor: sel.from + insert.length } });
+  const href = rel.replace(/[()<>\s\\]/gu, ch => Array.from(new TextEncoder().encode(ch), b => '%' + b.toString(16).toUpperCase().padStart(2, '0')).join(''));
+  const insert = '![' + (_t('editor.image') || '图片') + '](' + href + ')';
+  cmView.dispatch({ changes: { from: target.from, to: target.to, insert }, selection: { anchor: target.from + insert.length }, userEvent: 'input.image' });
   cmView.focus();
 }
 
@@ -400,9 +404,8 @@ async function exportAndInsertImg() {
 async function exportAndInsertImgOnce() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!imgState.img) return;
-  const target = { view: cmView, tabId: state.activeTabId, dir: state.dir, file: state.file, doc: cmView.state.doc.toString() };
-  const targetUnchanged = () => cmView === target.view && state.activeTabId === target.tabId &&
-    state.dir === target.dir && state.file === target.file && cmView.state.doc.toString() === target.doc;
+  const target = imgTarget;
+  if (!target?.current()) { showToast(_t('toast.imgExportFail')); return; }
   const r = imgRect();
   const srcX = (imgState.crop.x - r.x) / imgState.fitScale;
   const srcY = (imgState.crop.y - r.y) / imgState.fitScale;
@@ -434,7 +437,7 @@ async function exportAndInsertImgOnce() {
     fr.onerror = () => res('');
     fr.readAsDataURL(blob);
   });
-  if (!b64 || !targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
+  if (!b64 || !target.current()) { showToast(_t('toast.imgExportFail')); return; }
   busy(true);
   try {
     const resp = await apiFetch('/api/image/save', {
@@ -443,9 +446,9 @@ async function exportAndInsertImgOnce() {
     });
     const d = await resp.json();
     if (!resp.ok || !d.ok) throw new Error(d.error || _t('toast.unknownError'));
-    if (!targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
-    registerStagedImage(d.asset);
-    cmInsertImage(d.rel);
+    if (!target.current()) { showToast(_t('toast.imgExportFail')); return; }
+    registerStagedImage(d.asset, target.tab);
+    cmInsertImage(d.rel, target);
     closeImgModal(true);
     showToast(_t('toast.imgInsertedRel', { rel: d.rel }) || ('图片已插入（' + d.rel + '）'));
   } catch (e) {

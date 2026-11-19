@@ -14,10 +14,17 @@ pub(crate) struct GeometryContext {
     pub marker: String,
     pub paragraphs: Vec<ParagraphRequest>,
     pub note_count: usize,
+    pub table_count: usize,
 }
 impl GeometryContext {
     pub(super) fn new() -> Self {
-        Self { marker: format!("readmd-p04-{}:", uuid::Uuid::new_v4().simple()), paragraphs: Vec::new(), note_count: 0 }
+        Self { marker: format!("readmd-p04-{}:", uuid::Uuid::new_v4().simple()), paragraphs: Vec::new(), note_count: 0, table_count: 0 }
+    }
+
+    pub(super) fn table_guard(&mut self) -> String {
+        self.table_count += 1;
+        let details = serde_json::json!({"coordinateSpace":"pdfTableTracks","tableIndex":self.table_count});
+        string(&format!("{}{details}", self.marker))
     }
 
     /// Observe final native entry locations without changing their layout.
@@ -63,6 +70,16 @@ impl GeometryContext {
             let json = message.strip_prefix("panicked with: ")?.strip_prefix(&self.marker)?;
             if json.len() > 4096 { return None; }
             let value = serde_json::from_str::<Value>(json).ok()?;
+            if value["coordinateSpace"] == "pdfTableTracks" {
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct TableDetails { coordinate_space: String, table_index: usize }
+                let details = serde_json::from_str::<TableDetails>(json).ok()?;
+                if details.coordinate_space != "pdfTableTracks"
+                    || !(1..=self.table_count).contains(&details.table_index) { return None; }
+                diagnostic = Some(crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY.to_owned());
+                continue;
+            }
             if value["coordinateSpace"] == "pdfFootnoteStartPage" {
                 #[derive(serde::Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]

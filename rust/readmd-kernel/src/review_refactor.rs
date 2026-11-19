@@ -480,6 +480,7 @@ fn project_document(
     file: &RefactorFile,
     operation_id: &str,
 ) -> Result<(), &'static str> {
+    let history_projections=resource_history::for_refactor(tx,document,&file.edits)?;
     let checkpoint = document.checkpoint.clone();
     if !file.edits.is_empty() {
         let prior_review_revision = document.review_revision;
@@ -515,6 +516,7 @@ fn project_document(
     if document.content != normalize(&file.after) {
         return Err("review_save_conflict");
     }
+    resource_history::attach(document,&history_projections)?;
     document.path = file.target_path.clone();
     document.disk_revision = file.after_disk_revision.clone();
     document.encoding = file.encoding.clone();

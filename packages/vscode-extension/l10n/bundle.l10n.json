@@ -207,5 +207,10 @@
   "openApiLocalChanges": "The generated region contains manual edits. Move your notes outside it before updating.",
   "openApiInvalidRegion": "The generated region markers are damaged. Restore them from document history.",
   "openApiBudget": "The specification, document or open reviews exceed the processing limit.",
-  "openApiFailed": "API documentation could not be generated. Check the OpenAPI 3.0/3.1 JSON or YAML source and ReadMD Core."
+  "openApiFailed": "API documentation could not be generated. Check the OpenAPI 3.0/3.1 JSON or YAML source and ReadMD Core.",
+  "openApiMetadataSummary": "Generated API record · Operations: {operations} · Referenced files: {references}. View raw text to inspect.",
+  "openApiViewRaw": "View raw text",
+  "openApiViewSummary": "Show readable diff",
+  "openApiMetadataPrevious": "Previous API record · Operations: {operations} · Referenced files: {references}. View raw text to inspect.",
+  "openApiMetadataUpdated": "Updated API record · Operations: {operations} · Referenced files: {references}. View raw text to inspect."
 }

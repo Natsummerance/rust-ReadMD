@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { packageNames, publishedRelease, releaseLink, updateReleaseHtml, featureStatusText } from '../public/assets/release-contract.mjs';
+import { syncRelease } from './published-release.mjs';
 const snapshot = JSON.parse(fs.readFileSync(new URL('../published-release.json', import.meta.url), 'utf8'));
 const fixture = (tag='V0.0.5') => ({tag_name:tag, draft:false, prerelease:false, published_at:'2026-10-08T12:00:00Z',
   assets:packageNames(tag.slice(1)).map(name=>({name,size:1024,state:'uploaded',browser_download_url:`https://github.com/Natsummerance/rust-ReadMD/releases/download/${tag}/${name}`}))});
@@ -34,6 +38,7 @@ for(const lang of ['','zh-cn/','zh-tw/','ja/']) test('localized download markup 
   const r=publishedRelease(fixture());const out=updateReleaseHtml(source,r,{download:true});
   assert.match(out,/<title>[^<]*V0\.0\.5/);assert.match(out,/"softwareVersion": "0\.0\.5"/);
   assert.match(out,/2026-10-08<\/time>/);assert.doesNotMatch(out,/V0\.0\.4/);
+  assert.match(out,/<code>readmd-mcp-server-0\.0\.5\.zip<\/code>/);
   assert.deepEqual([...out.matchAll(/class="([^"]+)"/g)].map(m=>m[1]),[...source.matchAll(/class="([^"]+)"/g)].map(m=>m[1]));
   const urls=[...out.matchAll(/href="(https:\/\/github.com\/[^\"]+\/releases\/download\/[^\"]+)"/g)].map(m=>m[1]);
   assert.deepEqual(new Set(urls),new Set(r.assets.map(a=>a.url)));
@@ -43,6 +48,46 @@ test('historical release prose is preserved while old binary links are upgraded'
   const html='<html><body>v2.3.9 <a href="https://github.com/Natsummerance/readMD/releases/download/v2.3.9/ReadMD.exe">Old</a></body></html>';
   const out=updateReleaseHtml(html,publishedRelease(fixture()),{historical:true});
   assert.match(out,/v2\.3\.9/);assert.match(out,/download\/V0\.0\.5\/ReadMD-windows-x64.zip/);
+});
+test('historical article identity and citations remain independent of current download navigation',()=>{
+  for(const prefix of ['','zh-cn/','zh-tw/','ja/']){
+    const source=fs.readFileSync(new URL('../public/'+prefix+'release-notes/index.html',import.meta.url),'utf8');
+    const output=updateReleaseHtml(source,publishedRelease(fixture('V0.0.6')),{historical:true});
+    assert.match(output,/"artifactSection": "v0\.0\.5"/);
+    assert.equal((output.match(new RegExp('class="button-primary[^\"]*" href="/'+prefix+'download/"','g'))||[]).length,2);
+  }
+  const citation='<a href="https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.5">V0.0.5 release evidence</a>';
+  assert.ok(updateReleaseHtml(citation,publishedRelease(fixture('V0.0.6')),{historical:true}).includes(citation));
+});
+test('offline publication check is read-only, ignores candidate VERSION, and preserves localized CSP hashes',async()=>{
+  const cache=fileURLToPath(new URL('../../.cache/',import.meta.url));fs.mkdirSync(cache,{recursive:true});
+  const root=fs.mkdtempSync(path.join(cache,'website-publication-check-'));
+  const write=(rel,value)=>{const file=path.join(root,rel);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,value);};
+  try{
+    const r=publishedRelease(fixture('V0.0.6'));
+    write('VERSION','0.0.7\n');write('release.json',JSON.stringify({stable:r.version}));write('published-release.json',JSON.stringify(r));
+    const headers="/*\n  Content-Security-Policy: script-src 'self' 'sha256-retain-existing-policy'\n";
+    write('public/_headers',headers);write('public/version.json','{}\n');
+    for(const prefix of ['','zh-cn/','zh-tw/','ja/'])write('public/'+prefix+'index.html',`<html><head><title>ReadMD V0.0.5</title><script type="application/ld+json">{"@type":"SoftwareApplication","softwareVersion":"0.0.5","name":"${prefix||'en'}"}</script></head><body></body></html>`);
+    await assert.rejects(syncRelease({siteRoot:root,folders:['public'],check:true}),/out of sync with offline V0\.0\.6/);
+    assert.equal(fs.readFileSync(path.join(root,'public/_headers'),'utf8'),headers);
+    assert.equal(fs.readFileSync(path.join(root,'public/version.json'),'utf8'),'{}\n');
+    assert.ok(fs.readFileSync(path.join(root,'public/index.html'),'utf8').includes('"softwareVersion":"0.0.5"'));
+    await syncRelease({siteRoot:root,folders:['public']});
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root,'public/version.json'),'utf8')).version,'0.0.6');
+    const updated=fs.readFileSync(path.join(root,'public/_headers'),'utf8');assert.ok(updated.includes('sha256-retain-existing-policy'));
+    for(const prefix of ['','zh-cn/','zh-tw/','ja/']){
+      const html=fs.readFileSync(path.join(root,'public',prefix,'index.html'),'utf8');
+      const block=/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)[1];
+      const hash='sha256-'+crypto.createHash('sha256').update(block).digest('base64');assert.ok(updated.includes(hash),prefix||'en');
+    }
+    await syncRelease({siteRoot:root,folders:['public'],check:true});
+    write('public/_headers',headers);
+    await assert.rejects(syncRelease({siteRoot:root,folders:['public'],check:true}),/public\/_headers/);
+    assert.equal(fs.readFileSync(path.join(root,'public/_headers'),'utf8'),headers);
+    write('public/_headers',"/*\n  Content-Security-Policy: script-src *\n");
+    await assert.rejects(syncRelease({siteRoot:root,folders:['public'],check:true}),/script-src self policy/);
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
 test('stale visible title is repaired even when structured metadata was already updated',()=>{
   const html='<html><head><title>Download ReadMD | v2.3.9</title><script type="application/ld+json">{"@type":"SoftwareApplication","softwareVersion":"0.0.4"}</script></head><body>Stable · v2.3.9</body></html>';

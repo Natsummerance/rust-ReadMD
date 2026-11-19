@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { repository, validateCatalog, verifyLocalPack, verifyPublishedAsset } from './lib/capability-publication.mjs';
+import { repository, onlineReleaseCatalog, verifyLocalPack, verifyPublishedAsset } from './lib/capability-publication.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function main() {
@@ -15,8 +15,8 @@ async function main() {
     else throw Error('Usage: node tools/publish-capability-packs.mjs --packs DIRECTORY [--publish]');
   }
   if (!folder) throw Error('A directory containing catalog-named .readmd-pack files is required');
-  const catalogBytes = fs.readFileSync(path.join(root, 'assets/capabilities/catalog.json'));
-  const catalog = validateCatalog(JSON.parse(catalogBytes));
+  const catalog = onlineReleaseCatalog(JSON.parse(fs.readFileSync(path.join(root, 'assets/capabilities/catalog.json'))));
+  const catalogBytes = Buffer.from(JSON.stringify(catalog,null,2)+'\n');
   const artifacts = [], files = { 'catalog.json': catalogBytes, LICENSE: fs.readFileSync(path.join(root, 'LICENSE')) };
   for (const entry of catalog.packs) {
     const name = entry.url.split('/').pop();

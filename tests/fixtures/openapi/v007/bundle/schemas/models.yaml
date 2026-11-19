@@ -1,0 +1,11 @@
+Record:
+  type: object
+  required: [id, label]
+  properties:
+    id: {type: string}
+    label: {$ref: '../defs/scalar.yaml#/Label'}
+Audit:
+  type: object
+  additionalProperties: false
+  properties:
+    event: {type: string, enum: [created, updated]}

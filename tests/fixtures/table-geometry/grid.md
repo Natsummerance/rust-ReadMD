@@ -1,0 +1,5 @@
+| GRIDLEFT | GRIDMID | GRIDRIGHT |
+| :--- | :---: | ---: |
+| GORIGIN {colspan=2 rowspan=2 align=left} | GCOVERTOP | GNEIGHBORA |
+| GCOVERLOW | GCOVEREND | GNEIGHBORB |
+| GLEFTEND | GMIDEND | GRIGHTEND |

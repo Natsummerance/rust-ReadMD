@@ -75,10 +75,34 @@ export function signTarget(target,{env=process.env}={}) {
     if(lock.id!=='resvg'||lock.version!=='0.48.1'||lock.sha256!==digest(file)||lock.size!==fs.statSync(file).size)throw Error('Managed SVG worker failed integrity before signing');
     return {file,manifest,lock};
   });
+  const officeWorkers=items.binaries.filter(file=>/\/office\/runtime\/bin\/readmd-office-render$/.test(file)).map(file=>{
+    const directory=path.dirname(path.dirname(file)),manifest=path.join(directory,'runtime.json');
+    const lock=JSON.parse(fs.readFileSync(manifest,'utf8'));
+    if(lock.schema!==1||lock.engine!=='office-layout'||lock.executable!=='bin/readmd-office-render'||lock.sha256!==digest(file)
+      ||!Array.isArray(lock.files)||lock.files.length>10000)throw Error('Bundled Office worker failed integrity before signing');
+    const names=new Set();
+    for(const entry of lock.files) {
+      if(typeof entry.path!=='string'||/[\\:\0\r\n]/.test(entry.path)||entry.path.startsWith('/')||entry.path.split('/').some(p=>!p||p==='.'||p==='..')||names.has(entry.path))throw Error('Unsafe Office runtime path');
+      names.add(entry.path);
+      const input=path.join(directory,entry.path),stat=fs.lstatSync(input);
+      if(!stat.isFile()||stat.size!==entry.size||digest(input)!==entry.sha256)throw Error('Bundled Office runtime file failed integrity before signing');
+    }
+    if(!names.has(lock.executable))throw Error('Office worker missing from its inventory');
+    return {file,manifest,lock,directory};
+  });
   for(const binary of items.binaries)signOne(binary,options);
   for(const worker of workers){
     worker.lock.sha256=digest(worker.file);worker.lock.size=fs.statSync(worker.file).size;
     worker.lock.codeSignatureMode=options.mode;
+    const temporary=worker.manifest+'.sign-'+crypto.randomUUID()+'.tmp';
+    try{fs.writeFileSync(temporary,JSON.stringify(worker.lock,null,2)+'\n',{flag:'wx'});fs.renameSync(temporary,worker.manifest);}
+    finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}
+  }
+  for(const worker of officeWorkers) {
+    worker.lock.sha256=digest(worker.file);worker.lock.code_signature_mode=options.mode;
+    for(const entry of worker.lock.files) {
+      const file=path.join(worker.directory,entry.path);entry.size=fs.statSync(file).size;entry.sha256=digest(file);
+    }
     const temporary=worker.manifest+'.sign-'+crypto.randomUUID()+'.tmp';
     try{fs.writeFileSync(temporary,JSON.stringify(worker.lock,null,2)+'\n',{flag:'wx'});fs.renameSync(temporary,worker.manifest);}
     finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}

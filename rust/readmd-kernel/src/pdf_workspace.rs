@@ -15,6 +15,8 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
+#[path = "pdf_ink.rs"]
+mod ink_placement;
 
 const LIMIT: u64 = 256 * 1024 * 1024;
 const DLL_SHA256: &str = "79d4676b656cfb1abcea88f9ade3b4b0826c5200382db5f4ec72a636c598c118";
@@ -71,6 +73,12 @@ fn error(code: &'static str) -> ApiError {
         code,
     )
 }
+fn ink_source(value:&Value)->ApiResult<Value>{
+    let svg=value.as_str().filter(|s|s.len()<=768*1024).ok_or_else(||error("pdf_limit"))?;
+    let stroke=crate::ink::pdf_stroke(svg).map_err(error)?;
+    ink_placement::placement(&json!({"stroke":stroke,"transform":[0.,0.,1.,0.,0.,-1.]})).map_err(error)?;
+    Ok(stroke)
+}
 fn read(path: &Path) -> ApiResult<Vec<u8>> {
     let file = fs::File::open(path).map_err(|_| error("pdf_open_failed"))?;
     if file.metadata().map_err(|_| error("pdf_open_failed"))?.len() > LIMIT {
@@ -102,13 +110,7 @@ fn fonts(directory: &Path) -> Value {
     }
     Value::Object(fonts)
 }
-fn resources(app: &App) -> ApiResult<(PathBuf, PathBuf)> {
-    if std::env::var_os("READMD_PDF_WORKER").is_none() && std::env::var_os("READMD_PDFIUM_LIB").is_none() {
-        // Platform-specific names and hashes come from the app's local pack
-        // lock. A missing platform lock fails closed; it never searches PATH.
-        return crate::capability_packs::pdfium_resources(&app.paths.data_dir,&app.paths.assets_dir)
-            .map_err(|_|error("pdf_engine_unavailable"));
-    }
+fn override_resources(app: &App) -> ApiResult<(PathBuf, PathBuf)> {
     let exe = std::env::current_exe().map_err(|_| error("pdf_engine_unavailable"))?;
     let worker = std::env::var_os("READMD_PDF_WORKER")
         .map(PathBuf::from)
@@ -151,7 +153,6 @@ fn resources(app: &App) -> ApiResult<(PathBuf, PathBuf)> {
     Ok((worker, library))
 }
 fn worker(app: &App, mut input: Value, dir: &Path) -> ApiResult<Value> {
-    let _resources=if std::env::var_os("READMD_PDF_WORKER").is_none()&&std::env::var_os("READMD_PDFIUM_LIB").is_none(){Some(crate::capability_packs::lease(&app.paths.data_dir,&app.paths.assets_dir,"pdfium").map_err(|_|error("pdf_engine_unavailable"))?)}else{None};
     // A replacement font is needed only for explicit replacement operations.
     // Hold the audited pack for the entire replay/save; no system fallback.
     let needs_fonts = input["operations"].as_array().is_some_and(|ops| ops.iter().any(|op|
@@ -162,8 +163,15 @@ fn worker(app: &App, mut input: Value, dir: &Path) -> ApiResult<Value> {
         input["fonts"] = fonts(&lease.directory);
         Some(lease)
     } else { None };
-    let (executable,library)=resources(app)?;input["library"]=json!(library);
-    worker_with_resources(&executable,input,dir)
+    if std::env::var_os("READMD_PDF_WORKER").is_some() || std::env::var_os("READMD_PDFIUM_LIB").is_some() {
+        let (worker, library) = override_resources(app)?;
+        input["library"] = json!(library);
+        return worker_with_resources(&worker, input, dir);
+    }
+    let runtime = crate::capability_packs::pdfium_resources(&app.paths.data_dir, &app.paths.assets_dir)
+        .map_err(|code| if code == "cancelled" { error("cancelled") } else { error("pdf_engine_unavailable") })?;
+    input["library"] = json!(runtime.library);
+    worker_with_resources(&runtime.worker, input, dir)
 }
 fn worker_with_resources(executable:&Path,input:Value,dir:&Path)->ApiResult<Value>{
     use std::sync::atomic::Ordering;
@@ -183,13 +191,20 @@ fn worker_with_resources(executable:&Path,input:Value,dir:&Path)->ApiResult<Valu
 /// Read-only page rendering for the same OCR service used by desktop and MCP.
 /// No session, copied PDF, sidecar or dependency on an OS PDF renderer.
 pub(crate) fn raster_for_ocr(paths:&crate::paths::AppPaths,path:&str,page:usize)->Result<(usize,Vec<u8>),String>{
-    use base64::Engine;
+    raster_pack_page(&paths.data_dir, &paths.assets_dir, Path::new(path), page)
+}
+
+pub(crate) fn raster_pack_page(data: &Path, assets: &Path, path: &Path, page: usize) -> Result<(usize, Vec<u8>), String> {
     if fs::metadata(path).map_or(true,|m|m.len()>LIMIT){return Err("ocr_failed".into());}
     if lopdf::Document::load(path).map_or(false,|d|d.is_encrypted()){return Err("pdf_read_only".into());}
-    let _resources=crate::capability_packs::lease(&paths.data_dir,&paths.assets_dir,"pdfium").map_err(|_|"pdf_engine_unavailable")?;
-    let (program,library)=crate::capability_packs::pdfium_resources(&paths.data_dir,&paths.assets_dir)?;
+    let runtime = crate::capability_packs::pdfium_resources(data, assets)?;
+    raster_with_runtime(&runtime, path, page)
+}
+
+pub(crate) fn raster_with_runtime(runtime: &crate::capability_packs::PdfiumResources, path: &Path, page: usize) -> Result<(usize, Vec<u8>), String> {
+    use base64::Engine;
     let dir=tempfile::Builder::new().prefix("readmd-pdf-ocr-").tempdir().map_err(|_|"ocr_failed")?;
-    let result=worker_with_resources(&program,json!({"action":"render","library":library,"pdf":path,"password":"","page":page,"width":2200,"operations":[]}),dir.path()).map_err(|e|e.code.to_string())?;
+    let result=worker_with_resources(&runtime.worker,json!({"action":"raster","library":runtime.library,"pdf":path,"password":"","page":page,"width":2200,"operations":[]}),dir.path()).map_err(|e|e.code.to_string())?;
     let count=result["pages"].as_u64().filter(|n|*n>0&&*n<=10000).ok_or("ocr_failed")? as usize;
     if page>=count{return Err("ocr_failed".into());}
     let bytes=base64::engine::general_purpose::STANDARD.decode(result["image"].as_str().ok_or("ocr_failed")?).map_err(|_|"ocr_failed")?;Ok((count,bytes))
@@ -774,6 +789,9 @@ fn handle(
         return Err(error("pdf_session_expired"));
     }
     if action == "close" {
+        if let Some(expected) = v.get("revision") {
+            if expected.as_u64() != Some(s.revision) { return Err(error("pdf_conflict")); }
+        }
         if v["discard"].as_bool().unwrap_or(false) || s.operations == s.saved {
             if let Some(dir) = s.draft.as_ref() {
                 remove_draft(app, dir);
@@ -791,6 +809,10 @@ fn handle(
     }
     s.touched = Instant::now();
     match action {
+        "prepare_ink" => {
+            let stroke=ink_source(&v["svg"])?;
+            ok_json(json!({"ok":true,"width":stroke["width"],"height":stroke["height"]}))
+        }
         "render" => {
             let result = worker(app, request(&s, v, &s.operations), s.directory.path())?;
             ok_json(decorate(&mut s, id, result))
@@ -803,6 +825,11 @@ fn handle(
                     return Err(error("pdf_invalid_operation"));
                 }
                 let mut operation = v["operation"].clone();
+                if operation["kind"] == "ink" {
+                    if operation.as_object().unwrap().keys().any(|k|!matches!(k.as_str(),"kind"|"page"|"svg"|"transform"|"stroke")){return Err(error("pdf_invalid_operation"));}
+                    operation["stroke"]=ink_source(&operation["svg"])?;
+                    ink_placement::placement(&operation).map_err(error)?;
+                }
                 if matches!(operation["kind"].as_str(), Some("text" | "remove")) {
                     let page = operation["page"].as_u64().ok_or_else(|| error("pdf_invalid_operation"))?;
                     let object = operation["object"].as_u64().ok_or_else(|| error("pdf_invalid_operation"))?;
@@ -985,6 +1012,33 @@ mod tests {
         let (_, loaded) = read_draft(&app, root.file_name().unwrap().to_str().unwrap()).unwrap();
         assert_eq!(loaded["created"], 123);
         assert_eq!(loaded["revision"], 2);
+        let body=json!({"action":"render","document":{"schema":1,"width":120,"height":80,"layers":[{"name":"ink","visible":true,"opacity":100,"strokes":[{"width":8,"color":"#1267fe","points":[[10,20,1],[90,40,1]]},{"width":8,"color":"#1267fe","points":[[20,60,1],[90,60,1]]}]}]}});
+        let app=Arc::new(app);
+        let shared=crate::server::call_in_process(&app,"POST","/api/drawing",Some(&body));
+        assert_eq!(shared.0,200);
+        let operation=json!({"kind":"ink","page":0,"svg":shared.1["svg"],"stroke":ink_source(&shared.1["svg"]).unwrap(),"transform":[30.,200.,1.,0.,0.,-1.]});
+        persist_draft(&app,&mut s,std::slice::from_ref(&operation),&[]).unwrap();
+        let (_,kept)=read_draft(&app,root.file_name().unwrap().to_str().unwrap()).unwrap();
+        assert_eq!(kept["operations"][0],operation);
+        assert_eq!(kept["operations"][0]["svg"],shared.1["svg"]);
+        assert_eq!(kept["operations"].as_array().unwrap().len(),1,"All paths belong to one undo operation");
+        assert_eq!(kept["operations"][0]["stroke"]["strokes"].as_array().unwrap().len(),2);
+        // The same journal transaction parks/restores the entire group in redo;
+        // it never joins endpoints or splits one user action into two edits.
+        persist_draft(&app,&mut s,&[],std::slice::from_ref(&operation)).unwrap();
+        let (_,undone)=read_draft(&app,root.file_name().unwrap().to_str().unwrap()).unwrap();
+        assert_eq!(undone["operations"],json!([]));assert_eq!(undone["redo"],json!([operation]));
+        persist_draft(&app,&mut s,std::slice::from_ref(&operation),&[]).unwrap();
+        let mut legacy_body=body.clone();legacy_body["document"]["layers"][0]["strokes"].as_array_mut().unwrap().pop();
+        let legacy_svg=crate::server::call_in_process(&app,"POST","/api/drawing",Some(&legacy_body)).1["svg"].clone();
+        let mut legacy=operation.clone();legacy["svg"]=legacy_svg.clone();legacy["stroke"]=ink_source(&legacy_svg).unwrap();
+        let old_points=legacy["stroke"].as_object_mut().unwrap().remove("strokes").unwrap().as_array().unwrap()[0].clone();
+        legacy["stroke"]["points"]=old_points;
+        persist_draft(&app,&mut s,std::slice::from_ref(&legacy),&[]).unwrap();
+        let (_,old_kept)=read_draft(&app,root.file_name().unwrap().to_str().unwrap()).unwrap();
+        assert_eq!(old_kept["operations"][0],legacy,"Legacy recovery data is read back without migration or rewriting");
+        assert_eq!(ink_placement::placement(&old_kept["operations"][0]).unwrap().strokes.len(),1);
+        assert_eq!(fs::read_dir(root.join("assets")).unwrap().count(),1,"Ink adds no bitmap asset to the pre-existing fixture asset");
         fs::write(root.join("unknown.txt"), b"keep").unwrap();
         remove_draft(&app, &root);
         assert!(root.join("unknown.txt").is_file());

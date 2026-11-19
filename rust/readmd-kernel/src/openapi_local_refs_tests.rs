@@ -205,6 +205,145 @@ fn external_path_items_report_both_callsite_and_definition() {
 }
 
 #[test]
+fn local_path_item_chains_keep_sibling_operations_and_actual_definitions() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "paths/read.yaml",
+        "get: {summary: Read dependency, responses: {'200': {description: Read from disk}}}\n",
+    );
+    let source = json!({"openapi":"3.1.1","info":{"title":"Local paths","version":"1"},
+    "paths":{"/notes":{"$ref":"#/components/pathItems/Joined","post":{"summary":"Write locally","responses":{"204":{"description":"Written"}}}}},
+    "components":{"pathItems":{
+        "Joined":{"$ref":"#/components/pathItems/Read","delete":{"responses":{"204":{"description":"Deleted"}}}},
+        "Read":{"$ref":"paths/read.yaml"}
+    }}});
+    let out = fixture.project(&source, "# Author 😀\r\n");
+    let maps = out["source_map"].as_array().unwrap();
+    assert_eq!(
+        maps.len(),
+        3,
+        "GET, POST and DELETE must all reach the guide"
+    );
+    for (method, file, target) in [
+        ("get", "paths/read.yaml", "/get"),
+        ("post", "api.json", "/paths/~1notes/post"),
+        ("delete", "api.json", "/components/pathItems/Joined/delete"),
+    ] {
+        let entry = maps.iter().find(|entry| entry["method"] == method).unwrap();
+        assert_eq!(entry["pointer"], format!("/paths/~1notes/{method}"));
+        assert_eq!(entry["definition"]["source"], file);
+        assert_eq!(entry["definition"]["pointer"], target);
+        let text = out["result"]["content"].as_str().unwrap();
+        let from =
+            document_transaction::byte_offset(text, entry["from"].as_u64().unwrap() as usize)
+                .unwrap();
+        assert!(text[from..].starts_with(&format!("## {}", method.to_uppercase())));
+    }
+    assert_eq!(out["warnings"], json!([]));
+    assert_eq!(out["references"][0]["source"], "paths/read.yaml");
+    let text = out["result"]["content"].as_str().unwrap();
+    assert_eq!(fixture.project(&source, text)["result"]["content"], text);
+}
+
+#[test]
+fn same_file_path_items_keep_siblings_in_both_service_input_modes() {
+    let fixture = Fixture::new();
+    for version in ["3.0.4", "3.1.1"] {
+        let source = json!({"openapi":version,"info":{"title":"Reusable paths","version":"1"},
+            "paths":{"/notes":{"$ref":"#/x-shared","post":{"responses":{"204":{"description":"Write locally"}}}}},
+            "x-shared":{"get":{"responses":{"200":{"description":"Read shared"}}}}});
+        let file = fixture.project(&source, "");
+        let inline = project_with_identity(
+            &source.to_string(),
+            "api.json",
+            "fixture/api.json",
+            "",
+            &document_transaction::revision(""),
+            &json!({}),
+        )
+        .unwrap();
+        assert_eq!(file, inline);
+        assert_eq!(file["source_map"].as_array().unwrap().len(), 2);
+        assert!(file["result"]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Write locally"));
+        assert_eq!(
+            file["source_map"][0]["definition"]["pointer"],
+            "/x-shared/get"
+        );
+    }
+}
+
+#[test]
+fn local_path_item_operation_collisions_are_preserved_and_diagnosed() {
+    let fixture = Fixture::new();
+    let source = json!({"openapi":"3.1.1","info":{"title":"Conflicting paths","version":"1"},
+        "paths":{"/notes":{"$ref":"#/components/pathItems/Read","get":{"responses":{"200":{"description":"Local operation"}}}}},
+        "components":{"pathItems":{"Read":{"get":{"responses":{"200":{"description":"Shared operation"}}}}}}});
+    let out = fixture.project(&source, "");
+    assert!(out["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| warning["code"] == "external_reference"
+            && warning["pointer"] == "/paths/~1notes"));
+    let entry = &out["source_map"][0];
+    let text = out["result"]["content"].as_str().unwrap();
+    let offset = |key: &str| {
+        document_transaction::byte_offset(text, entry[key].as_u64().unwrap() as usize).unwrap()
+    };
+    assert!(text[offset("from")..offset("to")].contains("Local operation"));
+    assert!(!text[offset("from")..offset("to")].contains("Shared operation"));
+    assert!(text.contains("#/components/pathItems/Read"));
+}
+
+#[test]
+fn same_file_pointer_fragments_reject_invalid_escapes_before_lookup() {
+    let fixture = Fixture::new();
+    for reference in ["#/x-shared/a~2b", "#/x-shared/a%QQb", "#/x-shared/a%FFb"] {
+        let source = json!({"openapi":"3.1.1","info":{"title":"Pointers","version":"1"},
+            "paths":{"/notes":{"get":{"responses":{"200":{"$ref":reference}}}}},
+            "x-shared":{"a~2b":{"description":"MUST NOT RESOLVE"},"a%QQb":{"description":"MUST NOT RESOLVE"}}});
+        let out = fixture.project(&source, "");
+        assert!(out["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["pointer"] == "/paths/~1notes/get/responses/200"));
+        let text = out["result"]["content"].as_str().unwrap();
+        let entry = &out["source_map"][0];
+        let offset = |key: &str| {
+            document_transaction::byte_offset(text, entry[key].as_u64().unwrap() as usize).unwrap()
+        };
+        assert!(!text[offset("from")..offset("to")].contains("MUST NOT RESOLVE"));
+        assert!(text[offset("from")..offset("to")].contains(reference));
+    }
+}
+
+#[test]
+fn same_file_pointer_fragments_decode_uri_and_pointer_escapes_once() {
+    let fixture = Fixture::new();
+    for (reference, target) in [
+        ("#/x-shared/a~1b~0c", "a/b~c"),
+        ("#%2Fx-shared%2Fa~1b~0c", "a/b~c"),
+        ("#/x-shared/literal%2520name", "literal%20name"),
+        ("#/x-shared/%E7%A0%94%E7%A9%B6", "研究"),
+    ] {
+        let mut source = document(reference);
+        source["x-shared"][target] = json!({"description":"Decoded response"});
+        let out = fixture.project(&source, "");
+        assert_eq!(out["warnings"], json!([]), "{reference}");
+        let text = out["result"]["content"].as_str().unwrap();
+        let entry = &out["source_map"][0];
+        let offset = |key: &str| {
+            document_transaction::byte_offset(text, entry[key].as_u64().unwrap() as usize).unwrap()
+        };
+        assert!(text[offset("from")..offset("to")].contains("Decoded response"));
+    }
+}
+
+#[test]
 fn overlapping_external_path_item_operations_are_preserved_and_diagnosed() {
     let fixture = Fixture::new();
     fixture.write(

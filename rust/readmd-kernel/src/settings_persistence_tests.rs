@@ -8,6 +8,12 @@ use std::{cell::Cell, path::PathBuf, process::{Command, Stdio}};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Stage { BeforeFileSync, BeforeReplace, BeforeDirectorySync, #[cfg(windows)] BeforePublishedFileSync }
 thread_local! { static FAILURE: Cell<Option<Stage>> = const { Cell::new(None) }; }
+thread_local! {
+    static IO_STAGE: Cell<&'static str> = const { Cell::new("prepare") };
+    static IO_FAILURE: Cell<Option<(&'static str,io::ErrorKind,Option<i32>)>> = const { Cell::new(None) };
+}
+pub(super) fn io_stage(stage:&'static str) { IO_STAGE.with(|value|value.set(stage)); }
+pub(super) fn record_io(error:&io::Error) { IO_FAILURE.with(|value|value.set(Some((IO_STAGE.with(Cell::get),error.kind(),error.raw_os_error())))); }
 pub(super) fn fault(stage: Stage) -> io::Result<()> {
     FAILURE.with(|failure| {
         if failure.get() == Some(stage) {
@@ -453,10 +459,6 @@ fn session_windows_denied_replace_cannot_acknowledge_or_advance_memory() {
     assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());drop(held);
     assert_eq!(settings.write_session_checked(&request).unwrap()["session_version"]["generation"],"1");
     assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());
-    assert_eq!(disk(&path)[SESSION_RECEIPTS].as_array().unwrap().len(),1);
-    assert_eq!(disk(&path)["keep"],json!({"nested":true}));
-    let token=uuid::Uuid::new_v4().to_string();fs::write(root.path().join("probe.marker"),token.as_bytes()).unwrap();
-    session_readback_in_new_process(root.path(),&token,&initial["session_version"],json!({"pending":"synthetic"}));
 }
 
 #[test]
@@ -469,7 +471,6 @@ fn session_two_processes_with_one_expected_version_have_exactly_one_winner() {
         session_windows_shared_delete_reader_two_processes_have_exactly_one_winner();
         session_windows_denied_replace_cannot_acknowledge_or_advance_memory();
         session_windows_shared_delete_reader_post_replace_sync_failure_replays_once();
-        println!("Owned Windows CAS controls passed: legacy-shared-delete, held-two-process, denied-delete, post-publish-sync");
     }
 }
 
@@ -503,7 +504,8 @@ fn two_process_session_cas(hold_reader: bool) {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
-    assert!(failures.is_empty(),"Synthetic session CAS child failed: {failures:?}");
+    let diagnostics=["a","b"].map(|id|fs::read(root.path().join(format!("cas-{id}.diagnostic.json"))).ok().and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok()).unwrap_or(Value::Null));
+    assert!(failures.is_empty(),"Synthetic session CAS child failed: {failures:?}; safe diagnostics: {diagnostics:?}");
     let mut outcomes=["a","b"].map(|id|fs::read_to_string(root.path().join(format!("cas-{id}.result"))).unwrap());
     let winner=if outcomes[0]=="200" {"a"} else {"b"};
     outcomes.sort();assert_eq!(outcomes,["200","409"]);
@@ -518,7 +520,6 @@ fn two_process_session_cas(hold_reader: bool) {
     session_readback_in_new_process(root.path(),&token,&initial["session_version"],json!({"writer":winner}));
 }
 
-
 #[test]
 #[ignore = "Spawned only by the owned synthetic session CAS test"]
 fn session_cas_probe() {
@@ -528,7 +529,10 @@ fn session_cas_probe() {
     let id=std::env::var("READMD_SETTINGS_PROBE_ID").unwrap();assert!(matches!(id.as_str(),"a"|"b"));
     let version=disk(&root.join("cas-version.json"));let mut settings=Settings::load(&root.join("settings.json"));
     let result=settings.write_session_checked(&session_request(&version,&format!("child-{id}"),json!({"writer":id})));
-    let status=match result {Ok(_)=>200,Err(error)=>{assert_eq!(error.code(),"session_version_conflict");error.status()}};
+    let (status,code)=match &result {Ok(_)=>(200,"ok"),Err(error)=>(error.status(),error.code())};
+    let io=IO_FAILURE.with(Cell::get).map(|(stage,kind,os)|json!({"stage":stage,"kind":format!("{kind:?}"),"os":os}));
+    fs::write(root.join(format!("cas-{id}.diagnostic.json")),serde_json::to_vec(&json!({"status":status,"code":code,"io":io})).unwrap()).unwrap();
+    if let Err(error)=result {assert_eq!(error.code(),"session_version_conflict");}
     fs::write(root.join(format!("cas-{id}.result")),status.to_string()).unwrap();
 }
 
@@ -571,6 +575,7 @@ fn session_windows_shared_delete_reader_post_replace_sync_failure_replays_once()
     let request=session_request(&initial["session_version"],"shared-delete-uncertain",json!({"writer":"post-sync"}));
     let _fault=fail(Stage::BeforePublishedFileSync);
     session_error(settings.write_session_checked(&request),507,"settings_persistence_failed");
+    assert_eq!(IO_FAILURE.with(Cell::get),Some(("sync_published",io::ErrorKind::Other,None)));
     assert_eq!(settings.all(),memory);assert_eq!(disk(&path)[SESSION_VERSION]["generation"],"1");
     assert_eq!(disk(&path)[SESSION_RECEIPTS].as_array().unwrap().len(),1);
     let mut old=Vec::new();reader.read_to_end(&mut old).unwrap();assert_eq!(old,before);

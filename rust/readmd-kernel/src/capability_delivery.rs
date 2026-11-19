@@ -10,7 +10,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -60,6 +60,7 @@ fn catalog_at(assets: &Path) -> ApiResult<Value> {
         serde_json::from_slice(&fs::read(file).map_err(|_| failure("capability_catalog_invalid"))?)
             .map_err(|_| failure("capability_catalog_invalid"))?;
     if catalog["schema"] != 1 || catalog["repository"] != REPOSITORY || !catalog["packs"].is_array()
+        || catalog.get("offlinePacks").is_some_and(|entries| !entries.is_array())
     {
         return Err(failure("capability_catalog_invalid"));
     }
@@ -67,17 +68,20 @@ fn catalog_at(assets: &Path) -> ApiResult<Value> {
 }
 pub(crate) fn checked_entry(assets: &Path, id: &str) -> ApiResult<Value> {
     let catalog = catalog_at(assets)?;
-    let entry = catalog["packs"]
+    let mut entries = catalog["packs"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|p| {
+        .chain(catalog["offlinePacks"].as_array().into_iter().flatten())
+        .filter(|p| {
             p["id"] == id
                 && (p["platform"] == crate::capability_packs::platform()
                     || p["platform"] == "universal")
-        })
+        });
+    let entry = entries.next()
         .ok_or_else(|| failure("capability_pack_unavailable"))?
         .clone();
+    if entries.next().is_some() { return Err(failure("capability_catalog_invalid")); }
     validate_entry(&entry)?;
     let lock = crate::capability_packs::resource_lock(assets, id)
         .map_err(|_| failure("capability_catalog_invalid"))?;
@@ -113,6 +117,21 @@ pub(crate) fn checked_entry(assets: &Path, id: &str) -> ApiResult<Value> {
 }
 fn validate_entry(entry: &Value) -> ApiResult<()> {
     let sha = entry["sha256"].as_str().unwrap_or("");
+    let offline = entry["delivery"] == "offline-only";
+    let bundled = entry["delivery"] == "bundled";
+    let media = matches!(entry["id"].as_str(),
+        Some(crate::whisper_cpp::WHISPER_ID | crate::whisper_cpp::DECODER_ID));
+    if entry.get("delivery").is_some() && !offline && !bundled { return Err(failure("capability_catalog_invalid")); }
+    if (media && !offline)
+        || (offline && ((!media && !matches!(entry["id"].as_str(), Some("node" | "typst"))) || entry["format"] != "stream-v2" || entry.get("url").is_some()))
+    {
+        return Err(failure("capability_catalog_invalid"));
+    }
+    if bundled && (entry["id"] != "pdfium" || entry["version"] != "7881"
+        || !matches!(entry["platform"].as_str(), Some("windows-x64" | "linux-x64" | "linux-arm64" | "macos-x64" | "macos-arm64"))
+        || !matches!(entry["format"].as_str(), None | Some("json-v1")) || entry.get("url").is_some()) {
+        return Err(failure("capability_catalog_invalid"));
+    }
     let url = entry["url"].as_str().unwrap_or("");
     let prefix = format!("https://github.com/{REPOSITORY}/releases/download/");
     let tail = url.strip_prefix(&prefix).unwrap_or("");
@@ -129,7 +148,8 @@ fn validate_entry(entry: &Value) -> ApiResult<()> {
     };
     if !matches!(
         entry["id"].as_str(),
-        Some("pdfium" | "typst" | "ocr" | "fonts" | "latex")
+        Some("pdfium" | "typst" | "ocr" | "fonts" | "latex" | "node"
+            | crate::whisper_cpp::WHISPER_ID | crate::whisper_cpp::DECODER_ID)
     ) || !entry["version"].as_str().is_some_and(|s| {
         !s.is_empty()
             && s.bytes()
@@ -140,7 +160,7 @@ fn validate_entry(entry: &Value) -> ApiResult<()> {
             .as_u64()
             .filter(|n| *n > 0 && *n <= maximum)
             .is_none()
-        || tail.split('/').count() != 2
+        || (!offline && !bundled && (tail.split('/').count() != 2
         || tail.split('/').any(|s| {
             s.is_empty()
                 || s == "."
@@ -149,7 +169,7 @@ fn validate_entry(entry: &Value) -> ApiResult<()> {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
         })
-        || !tail.ends_with(".readmd-pack")
+        || !tail.ends_with(".readmd-pack")))
     {
         return Err(failure("capability_catalog_invalid"));
     }
@@ -241,28 +261,57 @@ fn download(app: &Arc<App>, entry: &Value, id: &str, _transfer: crate::capabilit
     let total = entry["downloadBytes"]
         .as_u64()
         .ok_or("capability_catalog_invalid")?;
-    // The same proxy logic as application updates; no credential-bearing URL
-    // is accepted from the caller or recorded in events/errors.
-    let response = crate::updater::update_agent_with_read_timeout(
-        Duration::from_secs(600),
-        5,
-        Duration::from_secs(2),
-    )
-    .get(entry["url"].as_str().ok_or("capability_catalog_invalid")?)
-    .call()
-    .map_err(|_| "capability_download_failed")?;
-    let host = response
-        .get_url()
-        .strip_prefix("https://")
-        .and_then(|url| url.split('/').next());
-    if !matches!(
-        host,
-        Some(
-            "github.com" | "release-assets.githubusercontent.com" | "objects.githubusercontent.com"
-        )
-    ) {
-        return Err("capability_download_failed".into());
+    if entry["delivery"] == "bundled" {
+        let source = bundled_pdfium(&app.paths.assets_dir, entry)?;
+        let file = fs::File::open(source).map_err(|_| "capability_pack_unavailable")?;
+        if !file.metadata().is_ok_and(|m| m.is_file() && m.len() == total) {
+            return Err("capability_download_integrity".into());
+        }
+        // Hash and stage the exact archive bytes in an owned file before
+        // passing them through the same manifest check and engine probe.
+        let verified = receive_bytes(app, entry, id, total, Instant::now() + Duration::from_secs(120), file)?;
+        return install(app, verified.path(), "pdfium", id);
     }
+    let url = entry["url"].as_str().ok_or("capability_catalog_invalid")?;
+    let budget = Duration::from_secs(600);
+    let agent = crate::updater::update_agent_with_read_timeout(budget, 0, Duration::from_secs(2));
+    let deadline = Instant::now() + budget;
+    let mut last_error = "capability_download_failed";
+    for candidate in crate::package_download::ranked(url, false, Some(total)) {
+        if is_cancelled(id) { return Err("cancelled".into()); }
+        update(id, |job| job.received = 0);
+        let Ok(response) = crate::package_download::response(&agent, &candidate, deadline, None) else { continue; };
+        match receive_pack(app, entry, id, total, deadline, response) {
+            Ok(file) => return install(app, file.path(), entry["id"].as_str().unwrap_or(""), id),
+            Err(code @ ("capability_download_failed" | "capability_download_integrity")) => last_error = code,
+            Err(code) => return Err(code.into()),
+        }
+    }
+    Err(last_error.into())
+}
+
+fn bundled_pdfium(assets: &Path, entry: &Value) -> Result<PathBuf, &'static str> {
+    let platform = entry["platform"].as_str().ok_or("capability_catalog_invalid")?;
+    let name = format!("ReadMD-PDFium-{platform}.readmd-pack");
+    let primary = assets.join("capabilities/bundled").join(&name);
+    let regular = |path: &Path| match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_file() => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        _ => Err("capability_pack_invalid"),
+    };
+    if regular(&primary)? { return Ok(primary); }
+    if platform.starts_with("linux-") {
+        if let Some(parent) = assets.parent() {
+            let legacy = parent.join(name);
+            if regular(&legacy)? { return Ok(legacy); }
+        }
+    }
+    Err("capability_pack_unavailable")
+}
+
+fn receive_pack(
+    app: &Arc<App>, entry: &Value, id: &str, total: u64, deadline: Instant, response: ureq::Response,
+) -> Result<tempfile::NamedTempFile, &'static str> {
     if response
         .header("Content-Length")
         .and_then(|v| v.parse::<u64>().ok())
@@ -270,14 +319,17 @@ fn download(app: &Arc<App>, entry: &Value, id: &str, _transfer: crate::capabilit
     {
         return Err("capability_download_integrity".into());
     }
+    receive_bytes(app, entry, id, total, deadline, response.into_reader())
+}
+fn receive_bytes(
+    app: &Arc<App>, entry: &Value, id: &str, total: u64, deadline: Instant, mut reader: impl Read,
+) -> Result<tempfile::NamedTempFile, &'static str> {
     let temporary = app.paths.data_dir.join("capabilities/downloads");
     fs::create_dir_all(&temporary).map_err(|_| "capability_install_failed")?;
     let mut file =
         tempfile::NamedTempFile::new_in(&temporary).map_err(|_| "capability_install_failed")?;
-    let mut reader = response.into_reader();
     let mut digest = Sha256::new();
     let mut received = 0u64;
-    let deadline = Instant::now() + Duration::from_secs(600);
     let mut buffer = [0u8; 65536];
     loop {
         if is_cancelled(id) {
@@ -309,9 +361,7 @@ fn download(app: &Arc<App>, entry: &Value, id: &str, _transfer: crate::capabilit
     file.as_file_mut()
         .sync_all()
         .map_err(|_| "capability_install_failed")?;
-    // Extraction and real probing remain cancellable. Only the short atomic
-    // commit closes cancellation, under the same job lock as the UI request.
-    install(app, file.path(), entry["id"].as_str().unwrap_or(""), id)
+    Ok(file)
 }
 fn start_uninstall(app: &Arc<App>, v: &Value) -> ApiResult<Response> {
     let owned = scope(app);
@@ -380,6 +430,7 @@ pub fn endpoint(app: &Arc<App>, v: &Value) -> ApiResult<Response> {
             .as_array()
             .unwrap()
             .iter()
+            .chain(catalog["offlinePacks"].as_array().into_iter().flatten())
             .filter(|p| {
                 p["platform"] == crate::capability_packs::platform() || p["platform"] == "universal"
             })
@@ -421,6 +472,9 @@ pub fn endpoint(app: &Arc<App>, v: &Value) -> ApiResult<Response> {
     }
     let engine = v["id"].as_str().unwrap_or("");
     let entry = checked_entry(&app.paths.assets_dir, engine)?;
+    if action == "download" && entry["delivery"] == "offline-only" {
+        return Err(failure("capability_pack_unavailable"));
+    }
     {
         let map = jobs().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(job) = map
@@ -481,7 +535,7 @@ pub fn endpoint(app: &Arc<App>, v: &Value) -> ApiResult<Response> {
         id: uuid::Uuid::new_v4().to_string(),
         engine: engine.into(),
         scope: owned,
-        phase: if imported.is_some() {
+        phase: if imported.is_some() || entry["delivery"] == "bundled" {
             "extracting"
         } else {
             "downloading"
@@ -552,13 +606,33 @@ pub fn install_cli(id: &str, assets: Option<&Path>) -> Result<(), String> {
     if crate::capability_packs::ready(&app, id) {
         return Ok(());
     }
+    install_sync(&app, id, &entry)
+}
+
+// Office reading uses the bundled, hash-checked archive on first use. An
+// installed or damaged user-managed package is never silently replaced.
+pub(crate) fn office_pdfium(app: &Arc<App>) -> Result<crate::capability_packs::PdfiumResources, String> {
+    let resources = || crate::capability_packs::pdfium_resources(&app.paths.data_dir, &app.paths.assets_dir);
+    if let Ok(runtime) = resources() { return Ok(runtime); }
+    static FIRST_OPEN: Mutex<()> = Mutex::new(());
+    let _install = FIRST_OPEN.lock().unwrap_or_else(|e| e.into_inner());
+    if crate::speech::cancelled() { return Err("cancelled".into()); }
+    if crate::capability_packs::directory(app).exists() { return resources(); }
+    let entry = checked_entry(&app.paths.assets_dir, "pdfium").map_err(|e| e.code)?;
+    if entry["delivery"] != "bundled" { return Err("pdf_engine_unavailable".into()); }
+    install_sync(app, "pdfium", &entry)?;
+    resources()
+}
+
+fn install_sync(app: &Arc<App>, id: &str, entry: &Value) -> Result<(), String> {
+    if entry["delivery"] == "offline-only" { return Err("capability_pack_unavailable".into()); }
     let transfer=crate::capability_process::reserve_transfer(&app.paths.data_dir,
         entry["downloadBytes"].as_u64().unwrap()).map_err(|e|e.code)?;
     let job = Job {
         id: uuid::Uuid::new_v4().to_string(),
         engine: id.into(),
-        scope: scope(&app),
-        phase: "downloading",
+        scope: scope(app),
+        phase: if entry["delivery"] == "bundled" { "extracting" } else { "downloading" },
         received: 0,
         total: entry["downloadBytes"].as_u64().unwrap(),
         progress: None,
@@ -571,7 +645,7 @@ pub fn install_cli(id: &str, assets: Option<&Path>) -> Result<(), String> {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .insert(id.clone(), job);
-    let result = download(&app, &entry, &id, transfer);
+    let result = download(app, entry, &id, transfer);
     jobs().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
     result
 }
@@ -610,16 +684,84 @@ mod tests {
         }
     }
     #[test]
+    fn offline_node_delivery_keeps_digest_gates_and_cannot_become_a_network_source() {
+        let valid = json!({"id":"node","version":"24.22.2","delivery":"offline-only","format":"stream-v2",
+            "sha256":"a".repeat(64),"manifestSha256":"b".repeat(64),"downloadBytes":100});
+        assert!(validate_entry(&valid).is_ok());
+        for (key, value) in [("url",json!("https://example.com/node")),("id",json!("fonts")),
+            ("format",json!("json-v1")),("delivery",json!("anything")),("manifestSha256",json!("")),("downloadBytes",json!(0))] {
+            let mut invalid = valid.clone(); invalid[key] = value;
+            assert!(validate_entry(&invalid).is_err(), "{key}");
+        }
+    }
+    #[test]
+    fn bundled_pdfium_uses_the_packaged_file_or_the_legacy_linux_location() {
+        let root = tempfile::tempdir().unwrap();
+        let assets = root.path().join("assets");
+        let bundled = assets.join("capabilities/bundled");
+        fs::create_dir_all(&bundled).unwrap();
+        let entry = json!({"id":"pdfium","version":"7881","platform":"linux-x64","delivery":"bundled",
+            "sha256":"a".repeat(64),"downloadBytes":100});
+        assert!(validate_entry(&entry).is_ok());
+        assert!(bundled_pdfium(&assets, &entry).is_err());
+        let name = "ReadMD-PDFium-linux-x64.readmd-pack";
+        let legacy = root.path().join(name);
+        fs::write(&legacy, b"legacy placement").unwrap();
+        assert_eq!(bundled_pdfium(&assets, &entry).unwrap(), legacy);
+        let canonical = bundled.join(name);
+        fs::write(&canonical, b"canonical placement").unwrap();
+        assert_eq!(bundled_pdfium(&assets, &entry).unwrap(), canonical);
+        for (key, value) in [("url", json!("https://github.com/Natsummerance/tool-ReadMD/releases/download/Packs/pdfium.readmd-pack")),
+            ("platform", json!("../elsewhere")), ("version", json!("other")), ("sha256", json!(""))] {
+            let mut invalid = entry.clone(); invalid[key] = value;
+            assert!(validate_entry(&invalid).is_err(), "{key}");
+        }
+    }
+    /// An optional real engine check using a verified release assets tree.
+    /// Never prepares a package, builds an executable, or touches app data.
+    #[test]
+    #[ignore = "requires a prepared native PDFium release bundle"]
+    fn bundled_pdfium_real_install_probes_and_binds_the_current_worker() {
+        let assets = std::env::var_os("READMD_TEST_BUNDLED_PDFIUM_ASSETS").expect("release assets path");
+        let assets = Path::new(&assets);
+        let data = tempfile::tempdir().unwrap();
+        let docs = data.path().join("documents");
+        fs::create_dir(&docs).unwrap();
+        let app = Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(data.path(), &docs, assets)).unwrap());
+        let entry = checked_entry(assets, "pdfium").unwrap();
+        assert_eq!(entry["delivery"], "bundled");
+        assert!(entry.get("url").is_none());
+        let body = |response: Response| serde_json::from_slice::<Value>(&response.body).unwrap();
+        let started = body(endpoint(&app, &json!({"action":"download","id":"pdfium"})).unwrap());
+        let id = started["job"].as_str().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(45);
+        loop {
+            let job = body(endpoint(&app,&json!({"action":"download_status","job":id})).unwrap());
+            match job["phase"].as_str().unwrap() {
+                "ready" => break,
+                "error" | "cancelled" => panic!("{job}"),
+                _ => assert!(Instant::now() < deadline, "bundled installation stalled"),
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        jobs().lock().unwrap().remove(id);
+        let runtime = crate::capability_packs::pdfium_resources(data.path(), assets).unwrap();
+        assert!(runtime.worker.is_file() && runtime.library.is_file());
+    }
+    #[test]
     fn catalog_describes_only_reviewed_platform_bytes() {
         let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let catalog = catalog_at(&assets).unwrap();
-        for entry in catalog["packs"].as_array().unwrap() {
+        for entry in catalog["packs"].as_array().unwrap().iter().chain(catalog["offlinePacks"].as_array().into_iter().flatten()) {
             validate_entry(entry).unwrap();
             assert!(entry["installedBytes"].as_u64().unwrap() > 0);
         }
         if cfg!(all(windows, target_arch = "x86_64")) {
             assert!(checked_entry(&assets, "typst").is_ok());
             assert!(checked_entry(&assets, "pdfium").is_ok());
+        }
+        if crate::capability_packs::platform() != "unsupported" {
+            assert!(checked_entry(&assets, "node").is_ok(), "Node catalog must match the existing ordered manifest protocol");
         }
         assert!(checked_entry(&assets, "unknown").is_err());
     }

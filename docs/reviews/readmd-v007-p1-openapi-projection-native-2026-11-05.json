@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-11-05",
+  "scope": "Readable OpenAPI review projection in an actual installed native VS Code Extension Host",
+  "uiSourceCommit": "457a1fc98982e58295375ef6e7f2afb12c829eab",
+  "kernelProducerCommit": "7a6ca78e31361ff542000a3a09d0f37707aa1673",
+  "kernelBinarySha256": "83c41846abc34667e0af1a5fb9022ac700da53173edef6aeac7d18ec8ee86174",
+  "unchangedRustSubtreeVerified": true,
+  "bootSha256": "b2fcad09bd8964a60bea5a115e8b08f4d5d9e29f56f5d4f8df1fb7551907c1a3",
+  "indexSha256": "947f0bec95edb1a471d9ee7f7c8e380b00a02d71f851b2e97e974b3898a698cb",
+  "vscode": {
+    "version": "1.143.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "nativeExtensionHost": true,
+    "locale": "en-US",
+    "theme": "dark"
+  },
+  "extensionSourceSha256": "f0625fda72e448f6e6aa6024c88f94f55187093d18237923e8448fa5209f349c",
+  "extensionCompiledSha256": "605d4bb794bcd72f7b08dac1d72555a1f9d774dd0c803616c4430eefb432c085",
+  "preparedOutputBinding": "Existing schema1 receipt has no Git HEAD; all current inputs, 23 output objects including receipt, and native driver files were freshly byte-verified against clean 457a. Not a claim of new 457a TypeScript compilation.",
+  "controller": {
+    "passed": true,
+    "reportSha256": "6567b4cf12bcf679b1bc11630075623dca64d718810acb549939e2cb6d76fbfe",
+    "bindingUnchanged": true,
+    "nativeBehaviors": 8,
+    "projectionChecks": 3,
+    "codeNormalExit": {
+      "code": 0,
+      "signal": null
+    },
+    "driverNormalExit": {
+      "code": 0,
+      "signal": null
+    },
+    "ownedPidsGroupAndListenerAbsent": true,
+    "cleanupSkippedSignalsAfterNormalExit": true,
+    "additionalSignals": 0
+  },
+  "checks": [
+    "shared real MCP resolves the fixed complex bundle; four fixed operations, external definitions, unique headings/component boundaries and independent UTF-16 prefix delta 4 agree",
+    "native diff Cancel leaves the document and disk unchanged",
+    "native Accept is one undoable edit; disk changes only on Save",
+    "actual VS Code save, editor close/reopen and one native undo/redo preserve the explicit undoStop group; this is separate from Rust durable history",
+    "identical specification is idempotent and does not dirty the editor",
+    "dependency-only source change during the actual diff cannot be applied",
+    "concurrent author edits survive a stale Accept",
+    "manual edits inside the generated region are preserved and updates refused"
+  ],
+  "projectionChecks": [
+    {
+      "id": "readable-raw-roundtrip",
+      "passed": true,
+      "phase": "cancel",
+      "readonlyProviderPair": true,
+      "targetUnchangedDuringToggle": true,
+      "rawTransactionApplyExact": true
+    },
+    {
+      "id": "raw-accept-exact-transaction",
+      "passed": true,
+      "phase": "accept",
+      "readonlyProviderPair": true,
+      "targetUnchangedDuringToggle": true,
+      "rawTransactionApplyExact": true
+    },
+    {
+      "id": "metadata-only-visible",
+      "passed": true,
+      "phase": "metadata-only",
+      "readonlyProviderPair": true,
+      "targetUnchangedDuringToggle": true,
+      "rawTransactionApplyExact": true
+    }
+  ],
+  "visual": {
+    "scopePassed": true,
+    "independentReviewSha256": "a47921dadb2b53c8c97515890864077f6b217e975735c9356dda616b3e3c2e0a",
+    "frames": [
+      {
+        "path": "cancel.png",
+        "bytes": 132697,
+        "sha256": "01149788edd1790c8142da32946aeeae5b86ceb7918e65765ef4bec7d7efa175",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "cancel.raw.png",
+        "bytes": 261018,
+        "sha256": "0b836d808e001bb9fcb4140b972c65219d99147a92a19df2f70a8ba5bf43dcf0",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "cancel.summary-again.png",
+        "bytes": 132229,
+        "sha256": "b0dbe90bf56cd78ca5ec82da7398898c5ce4acdd188281b2fd356bacf43d1c87",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "accept.png",
+        "bytes": 140945,
+        "sha256": "3ce167ce00c345eca3aac8d2162baac590257049326759e840207b23092bceff",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "accept.raw.png",
+        "bytes": 269406,
+        "sha256": "5db1e2e8c84a4f5c29ac28a2d327f41208a9afd244f8f603b59326e355fd5e5e",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "metadata-only.png",
+        "bytes": 133194,
+        "sha256": "61ade9c2d3d2ca25a7991569d81d847fc79ef7b3dac1d50b40223d76e23517f2",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "metadata-only.raw.png",
+        "bytes": 427491,
+        "sha256": "675b543c45f23389cf04ac6eba9bd43d60d1ed888e43560617f9bf8ab817af95",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "metadata-only.summary-again.png",
+        "bytes": 132665,
+        "sha256": "0ad8dccf0a279d26fa76baacaae33058bd79923d9122da8595485d64be885397",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "source-conflict.png",
+        "bytes": 132805,
+        "sha256": "dcb65876e80f55095b6244260b85494dc79217f0b7e5e92e3ff15701879b0833",
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "path": "document-conflict.png",
+        "bytes": 140757,
+        "sha256": "2d350f107eff9ba28fafd9a47c64cabe2b5f70f3ca02c317deb8c84c718dee80",
+        "width": 1440,
+        "height": 900
+      }
+    ],
+    "actualAnimationAndGeometrySettlementBeforeCapture": true,
+    "actionsInsideViewport": true,
+    "defaultEncodedMetadataDoesNotDominate": true,
+    "metadataOnlyPreviousUpdatedDistinguished": true,
+    "captureSurface": "Owned Electron renderer, not WindowServer or physical 4K",
+    "observations": [
+      "Default readable projection exposes business source without multiline encoded carrier dominating the viewport",
+      "Raw text is visible only after the explicit toggle; summary returns to readable business projection",
+      "Metadata-only readable projection distinguishes Previous and Updated with zero operation changes",
+      "Exact action toast and all buttons are inside the captured viewport; native animation settlement and scoped hit tests passed before capture",
+      "Existing older info/error toasts form separate stacked cards; no action overlap or bottom clipping in these ten settled frames"
+    ]
+  },
+  "originalFailedController": {
+    "uiSourceCommit": "1e39f5bd6e3bbe5f6978d76ae983b04a2397a4d6",
+    "reportSha256": "6b1493d21840c7bcdcf0a7fb6361e5035daf0b2a0aa041d0d18b401765e907a9",
+    "overallPassed": false,
+    "reason": "Unnecessary group signal after normal child exits returned EPERM; original report unchanged. New controller only skips signals after actual normal zero exits and scoped absence."
+  },
+  "remaining": [
+    "Editor close/reopen and native undo/redo are within one VS Code process, not fresh-process Rust durable undo",
+    "Read-only provider write denial was not separately exercised",
+    "Single-file parent-directory authorization is not certified by this run",
+    "Physical keyboard, OS IME, WindowServer, physical 4K, other themes/locales and Windows/Linux native Extension Host remain separate",
+    "Broader OpenAPI and whole P1/P2 contracts remain open"
+  ],
+  "modelsRequested": false,
+  "wholeV706Accepted": false,
+  "wholeP1Accepted": false,
+  "wholeP2Accepted": false,
+  "v007Released": false
+}

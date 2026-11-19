@@ -1,0 +1,185 @@
+{
+  "version": "0.0.7",
+  "date": "2026-11-19",
+  "os": "macOS 27.2 (26B123)",
+  "arch": "arm64",
+  "signing": "ad-hoc",
+  "notarized": false,
+  "binarySha256": "57b33ec274cb15e5c69f6b7895995cafe1c2cde089847603582f7b5fec6cef79",
+  "sourcePins": {
+    "assets/index.html": "e6894ccb28c54ff5222d100c8288520d2bca6fe99a8a1626a728c933abae9f4a",
+    "assets/readmd.boot.js": "a472cf0764a2ce7c5c4ac0badef1c60e5d25c7dd6702ffd9b77e9170886038b6",
+    "assets/css/ink.css": "52c1fc909fcf1ffe49eacdb3e3508721e18e3b36f6b23108ca0ea16772fc65a4",
+    "assets/css/reader.css": "8edc842011e8425fd0d7d62bfe35712f36d8ad0e34594dcbaec3a024dfc1ed7f",
+    "assets/css/table-geometry.css": "4bafe13c5e4bc8c3b042a0dc5fe731eae01c98bfbe4b637b8e17480a3ff1f5a7"
+  },
+  "packages": [
+    {
+      "name": "ReadMD-macos-arm64.zip",
+      "size": 119421744,
+      "sha256": "596d29a3b999a92b28126327f8c7080e81ba64b056ee25664f7c5bd83076defc"
+    },
+    {
+      "name": "ReadMD-macos-arm64.dmg",
+      "size": 140412809,
+      "sha256": "6bc52a36d047d6e1e64d1485d936692942c46ca18e877f8330414a215b29ee3e"
+    }
+  ],
+  "bundleFilesCompared": 2034,
+  "zipNative": [
+    {
+      "case": "frozen-upgrade-smoke",
+      "phases": [
+        {
+          "name": "cold",
+          "version": "0.0.6",
+          "nativeDocumentVisible": true,
+          "normalQuit": true,
+          "sessionPersisted": true,
+          "originalBytesUnchanged": true,
+          "windowScreenshotSha256": "4a237fe651e474deda760bc01a65aced8930bb8d4a5ee216718b74b742c18bdb"
+        },
+        {
+          "name": "reopen",
+          "version": "0.0.7",
+          "nativeDocumentVisible": true,
+          "normalQuit": true,
+          "sessionPersisted": true,
+          "originalBytesUnchanged": true,
+          "windowScreenshotSha256": "af2620720bd364d90179bd1a1b038bdc61e06d31514301a5606a428cfd429630"
+        }
+      ]
+    },
+    {
+      "case": "frozen-archive-retry",
+      "phases": [
+        {
+          "name": "cold",
+          "version": "0.0.7",
+          "nativeDocumentVisible": true,
+          "normalQuit": true,
+          "sessionPersisted": true,
+          "originalBytesUnchanged": true,
+          "windowScreenshotSha256": "4a237fe651e474deda760bc01a65aced8930bb8d4a5ee216718b74b742c18bdb"
+        },
+        {
+          "name": "reopen",
+          "version": "0.0.7",
+          "nativeDocumentVisible": true,
+          "normalQuit": true,
+          "sessionPersisted": true,
+          "originalBytesUnchanged": true,
+          "windowScreenshotSha256": "af2620720bd364d90179bd1a1b038bdc61e06d31514301a5606a428cfd429630"
+        }
+      ]
+    },
+    {
+      "case": "frozen-archive-repeat",
+      "phases": [
+        {
+          "name": "cold",
+          "version": "0.0.7",
+          "nativeDocumentVisible": true,
+          "normalQuit": true,
+          "sessionPersisted": true,
+          "originalBytesUnchanged": true,
+          "windowScreenshotSha256": "4a237fe651e474deda760bc01a65aced8930bb8d4a5ee216718b74b742c18bdb"
+        },
+        {
+          "name": "reopen",
+          "version": "0.0.7",
+          "nativeDocumentVisible": true,
+          "normalQuit": true,
+          "sessionPersisted": true,
+          "originalBytesUnchanged": true,
+          "windowScreenshotSha256": "af2620720bd364d90179bd1a1b038bdc61e06d31514301a5606a428cfd429630"
+        }
+      ]
+    }
+  ],
+  "qaBinarySha256": "1533ce9c15a8049dbc60f69e615eca8108be63114fddc909e9959027d14aa62e",
+  "qaNative": {
+    "close": {
+      "checks": 40,
+      "phases": 4
+    },
+    "workflow": {
+      "checks": 45,
+      "phases": 5
+    },
+    "session-recovery": {
+      "checks": 24,
+      "phases": 3
+    },
+    "protected-recovery": {
+      "checks": 35,
+      "phases": 4
+    },
+    "menu": {
+      "checks": 81,
+      "phases": 2
+    },
+    "export": {
+      "checks": 19,
+      "phases": 1,
+      "artifacts": [
+        {
+          "format": "pdf",
+          "bytes": 24949,
+          "sha256": "b49af085605a6746dfa708087ef2afdd3a9399961759e72a6caf7322987c8fbd",
+          "structuralCheck": true
+        },
+        {
+          "format": "docx",
+          "bytes": 30552,
+          "sha256": "f2c195a8e84c9512f3d2c621be8ab157e1eeb8ba75275463dc26edcaa1661845",
+          "structuralCheck": true
+        },
+        {
+          "format": "epub",
+          "bytes": 4818,
+          "sha256": "f472474ef90610cc90cf531b3ca67aca2b341ea840fefbf9745ba462f0922bc6",
+          "structuralCheck": true
+        },
+        {
+          "format": "html",
+          "bytes": 2173241,
+          "sha256": "c39a76d23a0535b0efd7e1186bd7cc14ec320be66f8f3f7fd2ff1604ee7cbfff",
+          "structuralCheck": true
+        },
+        {
+          "format": "tex",
+          "bytes": 5375,
+          "sha256": "765c3c1f7d45afd438c05aa86991cc151b3d3ef73571ea2b1e5a3d673677bcb4",
+          "structuralCheck": true
+        },
+        {
+          "format": "pptx",
+          "bytes": 32809,
+          "sha256": "a47b66d9b97495dabe1955c6f67711dab9fdc2a58d65fb6563b6b12e1c4c9902",
+          "editableSlides": 3,
+          "aspectRatio": "16:9",
+          "structuralCheck": true
+        }
+      ]
+    }
+  },
+  "i18nBrowser": {
+    "locales": 46,
+    "dictionaryKeysPerLocale": 3092,
+    "cancelsPreservedExactBytes": 46,
+    "acceptedSave": {
+      "encoding": "utf-8",
+      "bytesSha256": "60cb50a652a9c2a58ef3918cba9889509570cdfb090fbbf178f9a48370e836ae",
+      "exactContent": true,
+      "dirty": false
+    },
+    "pageErrors": []
+  },
+  "retainedFailures": [
+    "First frozen export QA launch timed out before providing a preview receipt.",
+    "First packaged native launch showed an empty window. macOS logged WebKit WebProcess launch failure and GPU helper exit. The same time interval included WebKit helper failures in a system process. Underlying OS cause unconfirmed.",
+    "Same archive and source bytes passed on repeat. System services and user processes were left running."
+  ],
+  "published": false
+}

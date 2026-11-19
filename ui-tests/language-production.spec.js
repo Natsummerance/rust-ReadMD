@@ -18,13 +18,13 @@ test('all shipped languages refresh editor state without losing the current docu
   for (const locale of locales) {
     await page.evaluate(async locale => i18n.setLanguage(locale, false), locale);
     await expect(page.locator('#edit-save')).toHaveText(await page.evaluate(() => i18n.t('editor.save')));
-    const previewTitle = await page.evaluate(() => i18n.t('editor.preview') + '：' + i18n.t('editor.previewRight'));
-    await expect.poll(async () => (await page.locator('#pv-trigger').getAttribute('title')).startsWith(previewTitle)).toBe(true);
-    if (page.viewportSize().width < 600) expect(await page.locator('#pv-trigger').getAttribute('title')).toContain(await page.evaluate(() => i18n.t('editor.narrowScreenBottom')));
+    await expect(page.locator('[data-pv="right"]')).toHaveAttribute('title', await page.evaluate(() => i18n.t('editor.previewRight')));
+    await expect(page.locator('[data-pv="right"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#btn-toc')).toHaveAttribute('aria-label', await page.evaluate(() => i18n.t('shell.sidebar')));
     await expect(page.locator('#document-recovery-status')).toHaveText(await page.evaluate(() => i18n.t('storage.draftKept')));
     expect(await page.evaluate(() => ({ text:getEditContent(), layout:state.pvLayout, language:i18n.currentLang }))).toEqual({ text:content, layout:'right', language:locale });
   }
   await page.evaluate(async () => i18n.setLanguage('zh-CN', false));
-  await expect(page.locator('#pv-trigger')).toHaveAttribute('title', /预览/);
-  await expect(page.locator('#pv-trigger')).not.toHaveAttribute('title', /Preview|Close Preview/);
+  await expect(page.locator('[data-pv="right"]')).toHaveAttribute('title', /预览/);
+  await expect(page.locator('[data-pv="right"]')).not.toHaveAttribute('title', /Preview|Close Preview/);
 });

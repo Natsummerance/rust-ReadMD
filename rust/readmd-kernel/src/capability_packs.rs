@@ -21,8 +21,10 @@ mod legacy;
 mod history;
 mod paths;
 mod space;
-#[cfg(all(test, target_os = "macos"))]
-mod space_macos_tests;
+#[cfg(all(test, any(windows, target_os = "macos", target_os = "linux")))]
+mod space_volume_tests;
+#[cfg(test)]
+mod status_read_tests;
 static INSTALL: Mutex<()> = Mutex::new(());
 // Resource scopes enter under the same lock as install/repair/uninstall, then
 // publish their busy lease before releasing it. A file-path lease must not
@@ -49,6 +51,14 @@ struct Spec {
     version: &'static str,
     platform: &'static str,
 }
+impl Spec {
+    fn lock_filename(self) -> String {
+        format!("{}-{}-{}.lock.json", self.id, self.version, self.platform)
+    }
+}
+pub(crate) fn resource_lock_filename(id: &str) -> Option<String> {
+    spec(id).ok().map(Spec::lock_filename)
+}
 pub(crate) fn platform() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => "windows-x64",
@@ -70,6 +80,21 @@ fn spec(id: &str) -> ApiResult<Spec> {
         "typst" if platform() != "unsupported" => Ok(Spec {
             id: "typst",
             version: "0.15.1",
+            platform: platform(),
+        }),
+        "node" if platform() != "unsupported" => Ok(Spec {
+            id: "node",
+            version: crate::code_chunk_runner::managed_node::VERSION,
+            platform: platform(),
+        }),
+        crate::whisper_cpp::WHISPER_ID if platform() != "unsupported" => Ok(Spec {
+            id: crate::whisper_cpp::WHISPER_ID,
+            version: crate::whisper_cpp::WHISPER_VERSION,
+            platform: platform(),
+        }),
+        crate::whisper_cpp::DECODER_ID if platform() != "unsupported" => Ok(Spec {
+            id: crate::whisper_cpp::DECODER_ID,
+            version: crate::whisper_cpp::DECODER_VERSION,
             platform: platform(),
         }),
         "ocr" if platform() != "unsupported" => Ok(Spec {
@@ -124,17 +149,14 @@ fn lock(app: &App) -> ApiResult<Value> {
     lock_for(&app.paths.assets_dir, spec(ID)?)
 }
 fn lock_for(assets: &Path, spec: Spec) -> ApiResult<Value> {
-    let file = assets.join(format!(
-        "capabilities/{}-{}-{}.lock.json",
-        spec.id, spec.version, spec.platform
-    ));
+    let file = assets.join("capabilities").join(spec.lock_filename());
     if fs::metadata(&file).map_err(|_| error())?.len()
         > crate::capability_archive::MAX_MANIFEST as u64
     {
         return Err(error());
     }
     let value: Value =
-        serde_json::from_slice(&fs::read(file).map_err(|_| error())?).map_err(|_| error())?;
+        serde_json::from_slice(&fs::read(&file).map_err(|_| error())?).map_err(|_| error())?;
     if !matches!(value["schema"].as_u64(), Some(1 | 2))
         || value["id"] != spec.id
         || value["version"] != spec.version
@@ -143,11 +165,13 @@ fn lock_for(assets: &Path, spec: Spec) -> ApiResult<Value> {
         return Err(error());
     }
     checked_files(&value)?;
+    if crate::whisper_cpp::is_media_pack(spec.id)
+        && !crate::whisper_cpp::valid_manifest(spec.id, &value)
+    {
+        return Err(error());
+    }
     if value["schema"] == 1
-        && fs::metadata(assets.join(format!(
-            "capabilities/{}-{}-{}.lock.json",
-            spec.id, spec.version, spec.platform
-        )))
+        && fs::metadata(&file)
         .map_err(|_| error())?
         .len()
             > 65536
@@ -461,6 +485,7 @@ fn validate_files_partition(dir:&Path,files:&[Value],lane:usize,lanes:usize,chec
         // shared directory set. The immutable manifest is borrowed throughout.
         let file = dir.join(name);
         let (reader,actual_size)=resource_file(&file)?;
+        #[cfg(test)] let reader=status_read_tests::observed_reader(&file,reader);
         let size = item["size"].as_u64().ok_or_else(error)?;
         if actual_size != size || item["sha256"].as_str() != Some(hash_reader(reader, size, check)?.as_str()) {
             return Err(error());
@@ -569,6 +594,60 @@ pub(crate) fn lease_reserved<T>(data: &Path, assets: &Path, id: &str, check: &(d
 fn busy_error(id:&str)->&'static str {
     match id { ID=>"pdf_busy","typst"=>"typst_busy","latex"=>"latex_busy",_=>"capability_install_busy" }
 }
+// A status reader pins the same OS resource as execution, without publishing
+// an execution lease that would make its own readiness check appear busy.
+// Worker admission is separate: one real probe uses one existing engine slot.
+struct StatusRead {
+    selected: Spec,
+    directory: PathBuf,
+    _process: crate::capability_process::Guard,
+    _probe_slot: Option<crate::capability_process::Guard>,
+    busy: Option<&'static str>,
+}
+impl StatusRead {
+    fn valid(&self, assets: &Path, expected: &Value) -> ApiResult<bool> {
+        // A different process may have left a blocking transaction between
+        // Exclusive and Shared. Both checks must use the pinned read scope.
+        Ok(!transactions_blocking(self.directory.parent().ok_or_else(error)?, assets, self.selected, expected)?
+            && validate(&self.directory, expected).is_ok())
+    }
+}
+fn status_read(
+    install: std::sync::MutexGuard<'static, ()>,
+    data: &Path,
+    selected: Spec,
+    process: crate::capability_process::Guard,
+    process_busy: bool,
+    busy: Option<&'static str>,
+) -> ApiResult<Option<StatusRead>> {
+    let process = if process_busy {
+        process
+    } else {
+        // Windows share modes cannot atomically downgrade a handle. Keep
+        // INSTALL through the transition; a writer in another process may
+        // win this gap, in which case no validation or probe is permitted.
+        drop(process);
+        let Some(shared) = crate::capability_process::try_acquire(
+            data, selected.id, crate::capability_process::Mode::Shared,
+        )? else { return Ok(None); };
+        shared
+    };
+    let mut busy = busy.or_else(|| process_busy.then_some(busy_error(selected.id)));
+    let probe_slot = if busy.is_none() && matches!(selected.id, "node" | "typst" | "ocr" | "latex") {
+        match crate::capability_process::try_worker_slot(data, selected.id)? {
+            Some(slot) => Some(slot),
+            None => {
+                busy = Some(busy_error(selected.id));
+                None
+            }
+        }
+    } else { None };
+    let reader = StatusRead { selected, directory:root_for(data,selected).join(selected.version), _process: process, _probe_slot: probe_slot, busy };
+    // Pin both resource identity and any probe admission before allowing
+    // another local reader or installer to enter. Never probe a bare path.
+    drop(install);
+    Ok(Some(reader))
+}
 fn local_busy_code(app: &App, id: &str) -> Option<&'static str> {
     let selected = spec(id).ok()?;
     let leased = leases()
@@ -584,6 +663,7 @@ fn local_busy_code(app: &App, id: &str) -> Option<&'static str> {
         "typst" => crate::typst_compile::busy(),
         "fonts" => crate::publication_fonts::busy(),
         "latex" => crate::latex_compile::busy(),
+        crate::whisper_cpp::WHISPER_ID => crate::whisper_cpp::busy(),
         _ => false,
     };
     if leased || active {
@@ -670,16 +750,20 @@ pub(crate) fn leased_font_resources_checked(data:&Path,assets:&Path,check:&(dyn 
         ),
     },lease))
 }
-pub(crate) fn pdfium_resources(data: &Path, assets: &Path) -> Result<(PathBuf, PathBuf), String> {
-    let selected = spec(ID).map_err(|_| "pdf_engine_unavailable")?;
-    let lock = lock_for(assets, selected).map_err(|_| "pdf_engine_unavailable")?;
-    prepare_legacy_access(data,assets,selected,&lock,&||Ok(())).map_err(|_|"pdf_engine_unavailable")?;
-    let _process=crate::capability_process::try_acquire(data,ID,crate::capability_process::Mode::Shared)
-        .ok().flatten().ok_or("pdf_engine_unavailable")?;
-    let dir = root_for(data, selected).join(selected.version);
-    validate(&dir, &lock).map_err(|_| "pdf_engine_unavailable")?;
+/// Keep the same verified pack pinned while its worker and library are used.
+pub(crate) struct PdfiumResources {
+    pub worker: PathBuf,
+    pub library: PathBuf,
+    _lease: ResourceLease,
+}
+pub(crate) fn pdfium_resources(data: &Path, assets: &Path) -> Result<PdfiumResources, String> {
+    let budget = crate::publication_budget::capture();
+    let lease = lease_checked(data, assets, ID, &|| budget.api()).map_err(|error| {
+        if budget.interrupted(&error.code) { error.code } else { "pdf_engine_unavailable".into() }
+    })?;
     let (worker, library) = pdfium_names(std::env::consts::OS).ok_or("pdf_engine_unavailable")?;
-    Ok((dir.join("bin").join(worker), dir.join("bin").join(library)))
+    let bin = lease.directory.join("bin");
+    Ok(PdfiumResources { worker: bin.join(worker), library: bin.join(library), _lease: lease })
 }
 pub(crate) fn pdfium_names(os: &str) -> Option<(&'static str, &'static str)> {
     match os {
@@ -696,12 +780,22 @@ fn probe(id: &str, directory: &Path, data: &Path) -> Result<(), String> {
         "ocr" => crate::ocr_portable::probe_directory(directory,data),
         "fonts" => crate::publication_fonts::probe_directory(directory),
         "latex" => crate::latex_compile::probe_directory(directory,data),
+        "node" => crate::code_chunk_runner::managed_node::probe_directory(directory,data),
+        crate::whisper_cpp::WHISPER_ID | crate::whisper_cpp::DECODER_ID =>
+            crate::whisper_cpp::probe_directory(id, directory, data),
         _ => crate::typst_compile::probe_directory(directory,data),
     }
 }
+fn probe_installed(id: &str, directory: &Path, data: &Path, assets: &Path, lock: &Value) -> Result<(), String> {
+    if crate::whisper_cpp::is_media_pack(id) {
+        crate::capability_delivery::checked_entry(assets, id).map_err(|error| error.code)?;
+        return crate::whisper_cpp::installed_probe(directory, lock);
+    }
+    probe(id, directory, data)
+}
 pub(crate) fn ready(app: &Arc<App>, id: &str) -> bool {
-    let _guard = resource_guard();
-    let Ok(Some(_process))=crate::capability_process::try_acquire(&app.paths.data_dir,id,crate::capability_process::Mode::Exclusive) else { return false; };
+    let guard = resource_guard();
+    let Ok(Some(process))=crate::capability_process::try_acquire(&app.paths.data_dir,id,crate::capability_process::Mode::Exclusive) else { return false; };
     if local_busy_code(app, id).is_some() {
         return false;
     }
@@ -713,11 +807,15 @@ pub(crate) fn ready(app: &Arc<App>, id: &str) -> bool {
     };
     if recover_locked(&app.paths.data_dir,&app.paths.assets_dir,selected,&lock,&||Ok(())).is_err() { return false; }
     if legacy::migrate(&app.paths.data_dir,selected,&lock,&||Ok(())).is_err() { return false; }
+    let Ok(Some(reader))=status_read(guard,&app.paths.data_dir,selected,process,false,None) else { return false; };
+    if reader.busy.is_some() { return false; }
     let target = root_for(&app.paths.data_dir, selected).join(selected.version);
-    if validate(&target, &lock).is_err() {
+    if !reader.valid(&app.paths.assets_dir,&lock).unwrap_or(false) {
         return false;
     }
-    probe(id, &target, &app.paths.data_dir).is_ok()
+    local_busy_code(app,id).is_none()
+        && probe_installed(id, &target, &app.paths.data_dir, &app.paths.assets_dir, &lock).is_ok()
+        && local_busy_code(app,id).is_none()
 }
 struct Removal {
     unknown: bool,
@@ -1041,8 +1139,9 @@ fn operate(
     let target = pack_root.join(selected.version);
     let expected = lock_for(&app.paths.assets_dir, selected)?;
     let is_pdf = selected.id == ID;
+    let is_media = crate::whisper_cpp::is_media_pack(selected.id);
     let set_pdf = |ready: bool| module_state(app, selected.id, ready);
-    let probe = |dir: &Path| probe(selected.id, dir, &app.paths.data_dir);
+    let installed_probe = || probe_installed(id, &target, &app.paths.data_dir, &app.paths.assets_dir, &expected);
     // All cooperating desktop, MCP and installer processes use this stable
     // per-capability lock. Status may inspect under a shared lease when a
     // reader is active, but must never probe through another writer.
@@ -1069,9 +1168,28 @@ fn operate(
         }
     }
     if action == "status" {
-        let busy = local_busy_code(app,id).or_else(||process_busy.then_some(busy_error(id)));
-        let valid = !transactions_blocking(&root_for(&app.paths.data_dir,selected),&app.paths.assets_dir,selected,&expected)? && validate(&target, &expected).is_ok();
-        let ready = valid && busy.is_none() && probe(&target).is_ok();
+        let initial_busy = local_busy_code(app,id);
+        let Some(reader)=status_read(_lock,&app.paths.data_dir,selected,_process,process_busy,initial_busy)? else {
+            return ok_json(json!({"ok":true,"id":selected.id,"version":selected.version,"platform":selected.platform,
+                "installed":false,"ready":false,"busy":true,"busy_code":busy_error(id),"present":target.exists()}));
+        };
+        // Recovery/migration used Exclusive. Validation and real probing now
+        // use the pinned read lease, so Run can enter Shared concurrently.
+        // Recheck blocking transactions after the cross-process transition.
+        // Media probes ran at installation. This check reads the successful
+        // receipt and verifies the installed inventory even when it is busy.
+        let valid = reader.valid(&app.paths.assets_dir,&expected)? && (!is_media || installed_probe().is_ok());
+        let busy_before_probe=reader.busy.or_else(||local_busy_code(app,id));
+        let probed=if valid && busy_before_probe.is_none() {
+            Some(if is_media { Ok(()) } else { installed_probe() })
+        } else { None };
+        let probe_busy=probed.as_ref().and_then(|result|result.as_ref().err()).filter(|code|
+            matches!(code.as_str(),"capability_install_busy"|"pdf_busy"|"ocr_busy"|"typst_busy"|"latex_busy"))
+            .map(|_|busy_error(id));
+        // This is an advisory hint, never authorization for a later writer.
+        // In-process execution can start after the initial busy observation.
+        let busy=busy_before_probe.or(probe_busy).or_else(||local_busy_code(app,id));
+        let ready = probed.is_some_and(|result|result.is_ok()) && busy.is_none();
         let installed = ready || (valid && busy.is_some());
         if !installed && busy.is_none() {
             set_pdf(false);
@@ -1104,14 +1222,17 @@ fn operate(
             }
         };
         set_pdf(false);
+        let cleanup_pending = preserved.cleanup_pending
+            || (is_media && !crate::whisper_cpp::clear_install_probe(&pack_root, &expected));
         return ok_json(
-            json!({"ok":true,"id":selected.id,"installed":false,"unknown_files_preserved":preserved.unknown,"cleanup_pending":preserved.cleanup_pending}),
+            json!({"ok":true,"id":selected.id,"installed":false,"unknown_files_preserved":preserved.unknown,"cleanup_pending":cleanup_pending}),
         );
     }
     if action != "install" {
         return Err(error());
     }
     let pack = pack.ok_or_else(error)?;
+    if is_media && matches!(&pack, Input::Json(_)) { return Err(error()); }
     hooks.check()?;
     // Hold profile-wide admission across extraction/probe/commit. Different
     // capability writers in another process must not both spend the same
@@ -1253,7 +1374,7 @@ fn operate(
     log::debug!(target:"readmd::capability::transaction", "staging validation");
     validate(staging.path(), &expected).map_err(|e| e.noted("stage", "validation"))?;
     (hooks.phase)("probing");
-    probe(staging.path()).map_err(|failure| {
+    probe(selected.id, staging.path(), &app.paths.data_dir).map_err(|failure| {
         if is_pdf {
             error()
         } else {
@@ -1272,11 +1393,12 @@ fn operate(
     // A valid byte set can still be unusable due to extra loader files. Probe
     // the actual existing directory before deciding that repair is unnecessary.
     let unchanged =
-        target.exists() && validate(&target, &expected).is_ok() && probe(&target).is_ok();
+        target.exists() && validate(&target, &expected).is_ok() && installed_probe().is_ok();
     hooks.check()?;
     shared_admission.verify()?;
     space::verify(&installation_space)?;
     (hooks.committing)()?;
+    if is_media { crate::whisper_cpp::record_install_probe(&pack_root, &expected)?; }
     if unchanged {
         let cleanup = staging.cleanup();
         set_pdf(true);

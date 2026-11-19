@@ -71,6 +71,7 @@ pub const AI_NOT_CONFIGURED: &str = "ai_not_configured";
 pub const AI_HTTP_ERROR: &str = "ai_http_error";
 pub const AI_NETWORK_ERROR: &str = "ai_network_error";
 pub const AI_INVALID_RESPONSE: &str = "ai_invalid_response";
+pub const AI_SESSION_SAVE_FAILED: &str = "ai_session_save_failed";
 pub const ZIP_CORRUPT: &str = "zip_corrupt";
 pub const ZIP_TOO_LARGE: &str = "zip_too_large";
 pub const ZIP_UNSUPPORTED: &str = "zip_unsupported";
@@ -134,6 +135,7 @@ pub const PUBLICATION_RUNNING_OVERLAP: &str = "publication_running_overlap";
 pub const PUBLICATION_LOCAL_INVALID: &str = "publication_local_style_invalid";
 pub const PUBLICATION_LINE_SPACING_UNSUPPORTED: &str = "publication_line_spacing_unsupported";
 pub const PUBLICATION_TRACKING_UNSUPPORTED: &str = "publication_tracking_unsupported";
+pub const PUBLICATION_TABLE_UNSUPPORTED: &str = "publication_table_unsupported";
 pub const PUBLICATION_BASELINE_UNSUPPORTED: &str = "publication_baseline_unsupported";
 pub const PUBLICATION_PARAGRAPH_DECORATION_UNSUPPORTED: &str = "publication_paragraph_decoration_unsupported";
 pub const EPUB_INVALID_OPTIONS: &str = "epub_invalid_options";
@@ -159,6 +161,7 @@ pub const WARN_DOCX_CITATION_INVALID: &str = "docx_citation_invalid";
 pub const WARN_DOCX_CITATION_CONFLICT: &str = "docx_citation_conflict";
 pub const WARN_DOCX_CITATION_RESOURCES_INVALID: &str = "docx_citation_resources_invalid";
 pub const WARN_PUBLICATION_LAYOUT_HEADING: &str = "publication_layout_heading_unsupported";
+pub const WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK: &str = "publication_table_track_size_fallback";
 pub const WARN_PUBLICATION_CONTINUOUS_COLUMNS_PARTIAL: &str = "publication_continuous_columns_partial";
 pub const WARN_PUBLICATION_FONT_SUBSTITUTED: &str = "publication_font_substituted";
 pub const WARN_PPTX_MATH_IMAGE: &str = "pptx_math_image";
@@ -327,7 +330,7 @@ pub const ERROR_CODES: &[&str] = &[
     REVIEW_AI_UNSUPPORTED,REVIEW_AI_INVALID_TOOL,REVIEW_AI_NO_CHANGES,REVIEW_AI_BUDGET,
     REVIEW_ASSET_RELOCATION_REQUIRED,
     AI_TASK_FAILED,EXPORT_SNAPSHOT_BUDGET,EXPORT_SNAPSHOT_CALL_CONFLICT,EXPORT_SNAPSHOT_COMMIT_CONFLICT,EXPORT_SNAPSHOT_COMMIT_IN_PROGRESS,EXPORT_SNAPSHOT_CONSENT_REQUIRED,EXPORT_SNAPSHOT_DYNAMIC_RESOURCE,EXPORT_SNAPSHOT_FIGURES_CONFLICT,EXPORT_SNAPSHOT_INVALID_REQUEST,EXPORT_SNAPSHOT_NO_COMMIT_INTENT,EXPORT_SNAPSHOT_NOT_FOUND,EXPORT_SNAPSHOT_OUTPUT_IS_SOURCE,EXPORT_SNAPSHOT_OUTPUT_UNVERIFIED,EXPORT_SNAPSHOT_PERSISTENCE_FAILED,EXPORT_SNAPSHOT_RENDER_FAILED,EXPORT_SNAPSHOT_RESOURCE_CHANGED,EXPORT_SNAPSHOT_RESOURCE_MISSING,EXPORT_SNAPSHOT_RESOURCE_PATH,EXPORT_SNAPSHOT_RUNTIME_CHANGED,EXPORT_SNAPSHOT_RUNTIME_UNAVAILABLE,EXPORT_SNAPSHOT_UNAVAILABLE,EXPORT_SNAPSHOT_UNSUPPORTED_SCHEMA,REVIEW_AI_INTERRUPTED,
-    AI_NOT_CONFIGURED,AI_HTTP_ERROR,AI_NETWORK_ERROR,AI_INVALID_RESPONSE,
+    AI_NOT_CONFIGURED,AI_HTTP_ERROR,AI_NETWORK_ERROR,AI_INVALID_RESPONSE,AI_SESSION_SAVE_FAILED,
     DOCX_CITATION_INVALID,DOCX_CITATION_CONFLICT,DOCX_CITATION_RESOURCES_INVALID,
     PUBLICATION_NUMBERING_INVALID,PUBLICATION_NUMBERING_BUDGET,PUBLICATION_NUMBERING_HIERARCHY,PUBLICATION_NUMBERING_CHAPTER_MISSING,
     DOCX_NUMBERING_INVALID,DOCX_NUMBERING_BUDGET,DOCX_NUMBERING_UNREPRESENTABLE,DOCX_NUMBERING_IMPORT_CONFLICT,
@@ -342,6 +345,7 @@ pub const ERROR_CODES: &[&str] = &[
     PUBLICATION_LAYOUT_GEOMETRY,PUBLICATION_NOTE_LAYOUT,PUBLICATION_FONTS_UNAVAILABLE,PUBLICATION_RUNNING_OVERLAP,
     PUBLICATION_LINE_SPACING_UNSUPPORTED,
     PUBLICATION_TRACKING_UNSUPPORTED,
+    PUBLICATION_TABLE_UNSUPPORTED,
     PUBLICATION_BASELINE_UNSUPPORTED,PUBLICATION_PARAGRAPH_DECORATION_UNSUPPORTED,EPUB_INVALID_OPTIONS,MATH_METADATA_STALE,MATH_METADATA_INVALID,MATH_DOCUMENT_DEFAULTS_CONFLICT,
     PUBLICATION_LOCAL_INVALID,PUBLICATION_LOCAL_VERSION,PUBLICATION_LOCAL_ORPHAN,PUBLICATION_LOCAL_DUPLICATE,PUBLICATION_LOCAL_TARGET,DOCX_NESTED_FOOTNOTE,DOCX_NOTES_INVALID,
     PDF_BUSY,PDF_CONFLICT,PDF_ENGINE_UNAVAILABLE,PDF_INVALID_OPERATION,PDF_INVALID_PAGE,
@@ -412,6 +416,7 @@ pub const WARN_CODES: &[&str] = &[
     WARN_PDF_ANCHOR_MISSING,
     WARN_PUBLICATION_LOCAL_UNSUPPORTED,
     WARN_PUBLICATION_LAYOUT_PAGED,WARN_PUBLICATION_LAYOUT_PARAGRAPH,WARN_PUBLICATION_LAYOUT_NOTES,WARN_PUBLICATION_LAYOUT_HEADING,
+    WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK,
     WARN_PUBLICATION_CONTINUOUS_COLUMNS_PARTIAL,
     WARN_PUBLICATION_FONT_SUBSTITUTED,
     WARN_PUBLICATION_METADATA_TITLE_FALLBACK,
@@ -475,7 +480,14 @@ const WARN_PREFIXES: &[(&str, &str, &str)] = &[
 pub fn warn_item(text: &str) -> Value {
     // Exact machine codes only. A lookalike suffix must not be accepted as a
     // known warning or interpolate arbitrary source into a translated message.
-    if [WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,WARN_MATH_RUN_STYLE_MATERIALIZED,WARN_MATH_REVISION_NOT_PRESERVED].contains(&text) || EQUATION_ARRAY_WARNINGS.contains(&text) {return json!({"code":text,"params":{},"text":text});}
+    if [
+        WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,
+        WARN_MATH_RUN_STYLE_MATERIALIZED,
+        WARN_MATH_REVISION_NOT_PRESERVED,
+        WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK,
+    ].contains(&text) || EQUATION_ARRAY_WARNINGS.contains(&text) {
+        return json!({"code":text,"params":{},"text":text});
+    }
     for (prefix, code, param) in WARN_PREFIXES {
         if let Some(rest) = text.strip_prefix(prefix) {
             let mut params = serde_json::Map::new();
@@ -548,6 +560,16 @@ mod tests {
             assert!(WARN_CODES.contains(code));assert_eq!(warn_item(code)["code"],*code);
             assert_eq!(warn_item(&format!("{code}_lookalike"))["code"],WARN_OTHER);
         }
+    }
+
+    #[test]
+    fn table_track_size_fallback_warning_is_typed_and_matches_exactly() {
+        let code = WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+        assert!(WARN_CODES.contains(&code));
+        let mut body = json!({"warns": [code]});
+        attach_warn_items(&mut body);
+        assert_eq!(body["warn_items"][0], json!({"code":code,"params":{},"text":code}));
+        assert_eq!(warn_item(&format!("{code}_lookalike"))["code"], WARN_OTHER);
     }
 
     #[test]

@@ -1,0 +1,264 @@
+{
+  "date": "2026-11-19",
+  "os": "macOS 27.2",
+  "arch": "arm64",
+  "scope": "local development candidate",
+  "released": false,
+  "application": {
+    "binarySha256": "e2dae6c2047ba049173012d5817f55b4be6a706195910b358777843227069a4a",
+    "bootSha256": "561e5aa5810c0d2e03be2c2ae71aab13bd0d8092a143c5a7aedde5307638b4df"
+  },
+  "officeReader": {
+    "firstFailures": [
+      "Eviction followed by byte-identical file replacement returned 200 instead of 409.",
+      "Repeated layout and page workspaces exhausted the per-profile reservation, blocking the second document with office_preview_failed."
+    ],
+    "strictCspReader": {
+      "kernel": "e2dae6c2047ba049173012d5817f55b4be6a706195910b358777843227069a4a",
+      "boot": "561e5aa5810c0d2e03be2c2ae71aab13bd0d8092a143c5a7aedde5307638b4df",
+      "platform": "darwin",
+      "arch": "arm64",
+      "results": [
+        {
+          "format": "docx",
+          "source": "2ffa3641c07ce08c0bc48f92b83a117826bcaeb82a023e55436738afdd3a92da",
+          "pdf": "b1ab5668e309486499aa38674d5c82f09180d44fafcdb428be9b72721f178b7f",
+          "pages": [
+            "c0a7bc238fb7ff40d282a9b809f4a82c282e2fcc46d919ed137ff66b438db933",
+            "1934f3064193a7b835ecb6c764b38bd396710e4da504d66314722ff0be659c6e"
+          ],
+          "firstTurnMs": 579,
+          "repeatTurnMs": [
+            50,
+            50
+          ]
+        },
+        {
+          "format": "pptx",
+          "source": "409d71e01939d1d0eae6af26fc6b116b4b56d1151291382d75a64fa554493a87",
+          "pdf": "2618d3832f67cbbc08a3be8499f6eeaece7a90b118561364ed7b869d3b51d0e2",
+          "pages": [
+            "84d5d295a92484b090688d17810610f817073998c7f0c91b6fc5f76762248624",
+            "ef348fee63c8f6d1d1fcd65c63dd0aead8255762001703b75b1410f8843fff7a"
+          ],
+          "firstTurnMs": 475,
+          "repeatTurnMs": [
+            53,
+            38
+          ]
+        }
+      ]
+    },
+    "nativeWindow": {
+      "host": "Cocoa / WKWebView",
+      "kernel": "65c9eb5bf9109f8f025bbbbb4cf2cbb87fb36cf45a6a15a1974cded0bc591e07",
+      "boot": "561e5aa5810c0d2e03be2c2ae71aab13bd0d8092a143c5a7aedde5307638b4df",
+      "checks": [
+        "opened_folder",
+        "source_row_0",
+        "reader_tab_0",
+        "pager_start_0",
+        "pager_end_0",
+        "page_fits_0",
+        "closed_0",
+        "source_row_1",
+        "reader_tab_1",
+        "pager_start_1",
+        "pager_end_1",
+        "page_fits_1",
+        "closed_1"
+      ],
+      "frames": [
+        "b17fc39a9545998cb44b564929051dceeba0cb615f40fa084449901412ea3d09",
+        "1a1d7351bf28d0effd3a94dfc6d245451d9fff395ce6054cf2ed43069ff855a6"
+      ]
+    },
+    "repeatTimingScope": "Two local two-page fixtures. Milliseconds from initiating a page-control click to the PNG response. Not a performance target or percentile."
+  },
+  "pdfChoice": {
+    "managedPack": true,
+    "nativeGuiCertified": false,
+    "kernelSha256": "e2dae6c2047ba049173012d5817f55b4be6a706195910b358777843227069a4a",
+    "workerSha256": "157469d68b236c83cdca6608f8241143b311d68b77173006066aa955148d8c5a",
+    "librarySha256": "1bc45b15466b34cef96641ce25c77a876e70010c6b114f909dda2f5325fc5bd7",
+    "packSha256": "243b2a626a180add90dd8df7c9fde752e17609bdd054ca9a436f8484fcc21401",
+    "bootSha256": "561e5aa5810c0d2e03be2c2ae71aab13bd0d8092a143c5a7aedde5307638b4df",
+    "checks": [
+      {
+        "name": "Fresh owned profile installs the staged, hash-pinned Mac PDFium pack and probes its actual worker",
+        "passed": true
+      },
+      {
+        "name": "Option index distinguishes duplicate display labels; both linked pages update while the third page and source file stay unchanged",
+        "passed": true
+      },
+      {
+        "name": "Actual workspace Undo/Redo replays the choice as one operation; an invalid option preserves revision, draft and original bytes",
+        "passed": true
+      },
+      {
+        "name": "Explicit save retains exact original recovery; independent pypdf confirms canonical export EXP2, both parent-linked widgets and regenerated AP, then PDFium reopens interactively",
+        "passed": true
+      },
+      {
+        "name": "Inherited read-only fields, editable combo text, list boxes and unrelated same-name widgets without a shared Parent reject writes without changing originals",
+        "passed": true
+      },
+      {
+        "name": "Real staged PDF panel presents source-owned labels in a select, submits option indices, and completes Apply, Undo, Redo and explicit Save against the managed service",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "publication": {
+    "cslTests": 74,
+    "fixturesSha256": {
+      "nocite.md": "e769117c9a104b357522ca2611e81d4801f762015da5d3f1189ace987b01494b",
+      "nocite.html": "8658c1e04f910fd61489be1b77d1491251f2a9134668e4d9ff690a22614b0cba",
+      "nocite.epub": "e06edb51abf44e9b58f15881a68ef3998277a8001682c9d2eb75ba2d4c6320ce",
+      "nocite.docx": "dd496c49d85723f2ba999e996272176ee023f1a4290b307a457eb0aac55118c9"
+    },
+    "typst": {
+      "schema": 1,
+      "id": "typst",
+      "version": "0.15.1",
+      "platform": "macos-arm64",
+      "sha256": "716ffc09f78c8f93f1f089fea7f60119f6aa76b4b406b607730cf59f232a0525",
+      "manifestSha256": "9dcffebf99b6da143e6755d60c93841b08bdcd3e4281d7bbe4d92dd933b87b77",
+      "binarySha256": "65c9eb5bf9109f8f025bbbbb4cf2cbb87fb36cf45a6a15a1974cded0bc591e07",
+      "install": true,
+      "engineProbe": true,
+      "engineOperation": true,
+      "sourceSha256": "a267b5098d5249efe9c5e6594b1be2055d5af4b683d71c73495ca8d4b465ae11",
+      "pdfSha256": "c6ba057286454c80dfa985a51d7569add614d40a25714bc2b3a7c9df5d61182a",
+      "pdfBytes": 60523,
+      "fonts": {
+        "sha256": "037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69",
+        "ready": true
+      },
+      "mediaPreserved": {
+        "whisper": true,
+        "media-ffmpeg": true
+      },
+      "syntheticMaterials": true,
+      "published": false
+    },
+    "academicPdfSamplesSha256": {
+      "Academic-Typst-Mac-CJK.pdf": "c6ba057286454c80dfa985a51d7569add614d40a25714bc2b3a7c9df5d61182a",
+      "Academic-Typst-Mac.pdf": "60d8578155b40282f0bd85528f8ee729c7cc34a5a5b7d7009d3546b6e2eea968"
+    }
+  },
+  "openapi": {
+    "rustTests": 32,
+    "nativeGuiCertified": false,
+    "extensionHostCertified": false,
+    "binarySha256": "e2dae6c2047ba049173012d5817f55b4be6a706195910b358777843227069a4a",
+    "checks": [
+      {
+        "name": "JSON/YAML dependencies use their own directory; UTF-16 maps identify root calls and real external definitions",
+        "passed": true
+      },
+      {
+        "name": "HTTP and real MCP stdio return the same projection, transaction, revisions and source maps",
+        "passed": true
+      },
+      {
+        "name": "One shared content transaction applies and its returned inverse restores the complete original before any save",
+        "passed": true
+      },
+      {
+        "name": "The existing Rust writer saves explicitly; actual disk bytes reopen and regenerate idempotently",
+        "passed": true
+      },
+      {
+        "name": "A dependency-only edit rejects the old preview over HTTP and MCP without touching the target",
+        "passed": true
+      },
+      {
+        "name": "Dependency updates produce operation changes, preserve outside prose and refuse to overwrite local generated-region edits",
+        "passed": true
+      },
+      {
+        "name": "A newly created missing dependency also invalidates the reviewed source receipt",
+        "passed": true
+      },
+      {
+        "name": "Canonical containment rejects parent, encoded-parent, native junction/symlink, URL, file URI and drive escapes",
+        "passed": true
+      },
+      {
+        "name": "Cycles retain a qualified reference and real oversized dependency bytes return the hard budget error",
+        "passed": true
+      },
+      {
+        "name": "OpenAPI 3.0 single-file projection, generated region and raw source revision remain byte-compatible",
+        "passed": true
+      },
+      {
+        "name": "Local Path Item aliases retain GET/POST/DELETE with true local/external definitions, preserve author prose and reject stale dependency receipts over HTTP and MCP",
+        "passed": true
+      },
+      {
+        "name": "Same-file 3.0/3.1 Path Item siblings agree over HTTP file/inline and MCP; URI decoding accepts encoded separators and refuses invalid percent/tilde escapes",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "ai": {
+    "firstFailure": {
+      "phase": "BOM and CR-only live upstream",
+      "name": "Error",
+      "code": null,
+      "message": "Deadline: CR-only event before upstream resumes"
+    },
+    "strictAuth": true,
+    "productionCsp": true,
+    "modelsRequested": false,
+    "binarySha256": "e2dae6c2047ba049173012d5817f55b4be6a706195910b358777843227069a4a",
+    "checks": [
+      "production CSP and real token; every trailing-slash alias rejects anonymous access before inference; malformed shape makes no provider request",
+      "a genuine upstream delta arrives before the fixture is allowed to send the rest; no early history commit, one provider request, exact Unicode and one final usage",
+      "A UTF-8 BOM and CR-only upstream dispatch the first delta immediately; mixed CRLF/LF completes and persists the exact turn.",
+      "nonstream providers emit one genuine delta without a repeated request; the original JSON endpoint remains compatible",
+      "bare upstream EOF, malformed frames, invalid UTF-8 and token exhaustion retain partial text without completion, usage or history writes",
+      "HTTP 400/403/429 remain distinguishable without echoing provider error bodies, connection or authorization; no successful history",
+      "JSON compatibility replies register the same task, stop both JSON and streamed provider reads, retire their slot, and cancel on downstream disconnect without persisting a partial turn",
+      "real cancellation before upstream headers and mid-stream responds below 200ms, closes the owned connection below two seconds, preserves history and permits the next request",
+      "closing the downstream reader without calling the cancellation route stops the owned upstream request and does not persist a partial answer",
+      "incognito replies in both SSE and JSON are usable without raw chat-history persistence; Markdown bytes remain unchanged",
+      "a second real process reopens the committed full turn only; failed, cancelled and incognito sessions and BOM/CRLF original remain intact"
+    ],
+    "passed": true,
+    "completionProtocolCases": 31
+  },
+  "managedMedia": {
+    "packages": [
+      {
+        "id": "media-ffmpeg",
+        "version": "9.0.2",
+        "bytes": 5372700,
+        "sha256": "1f5fbeee59af5ab023a11b8228bc7aab79fe71b46953b1f75f4d78d31be78feb",
+        "manifestSha256": "2966f342b6d74c7a2fbd0514d3b5f05a30a633608162816873313fc30fc54a7f"
+      },
+      {
+        "id": "whisper",
+        "version": "1.9.5",
+        "bytes": 57683133,
+        "sha256": "6fc2ccd5c2a89b51f85c97055683741996b9aca41c32a631668d87d13448ca10",
+        "manifestSha256": "d6df7ac7dea434f2fc30ab7e9d58f5fa4561cfaba015cad37c8f6243c843e5c2"
+      }
+    ],
+    "developerProfileInstalled": true,
+    "actualMediaFixtures": [
+      "AAC/MP4 dual-track routing and range playback",
+      "short silence, short speech and 11-second English speech; restart and uninstall"
+    ]
+  },
+  "remainingVerification": [
+    "native Windows and Linux candidate run",
+    "macOS Intel and prior OS versions",
+    "production AI and language matrix"
+  ]
+}

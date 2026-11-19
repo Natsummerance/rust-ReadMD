@@ -27,10 +27,10 @@
   const S = () => (typeof state !== 'undefined' ? state : {});
   const ctx = {
     hasDoc: () => { const s = S(); return (s.mode === 'file' || s.mode === 'virtual') && !!s.original; },
-    isFile: () => { const s = S(); return s.mode === 'file' && !!s.file; },
+    isFile: () => { const s = S(); return ['file', 'office-preview'].includes(s.mode) && !!s.file; },
     editing: () => !!S().editing,
     notWelcome: () => S().mode !== 'welcome',
-    paged: () => !!(S().pagination && S().pagination.enabled),
+    paged: () => S().mode !== 'office-preview' && !!(S().pagination && S().pagination.enabled),
   };
   const call = (name, ...args) => {
     const fn = window[name];
@@ -203,6 +203,10 @@
     { id: 'edit.link', group: 'edit', title: 'editor.link', icon: 'link', keywords: 'link url', when: ctx.editing, run: () => call('cmInsertSyntax', 'link') },
     { id: 'edit.heading', group: 'edit', title: 'editor.h2', icon: 'heading', keywords: 'heading title h2', when: ctx.editing, run: () => call('cmInsertSyntax', 'h2') },
     { id: 'edit.codeblock', group: 'edit', title: 'editor.codeBlock', icon: 'code', keywords: 'code block fence', when: ctx.editing, run: () => call('cmInsertSyntax', 'codeblock') },
+    { id: 'edit.ink', group: 'edit', title: 'ink.title', icon: 'brush', keywords: 'drawing pen sketch ink 绘图 手绘', when: ctx.editing, run: () => call('cmInsertSyntax', 'ink') },
+    { id: 'edit.selectChapter', group: 'edit', title: 'editor.selectChapter', icon: 'heading', keywords: 'select section chapter 选中本节', when: ctx.editing, run: () => call('cmInsertSyntax', 'chapter-select') },
+    { id: 'edit.chapterUp', group: 'edit', title: 'editor.chapterUp', icon: 'heading', keywords: 'section chapter reorder up 章节上移', when: ctx.editing, run: () => call('cmInsertSyntax', 'chapter-up') },
+    { id: 'edit.chapterDown', group: 'edit', title: 'editor.chapterDown', icon: 'heading', keywords: 'section chapter reorder down 章节下移', when: ctx.editing, run: () => call('cmInsertSyntax', 'chapter-down') },
     { id: 'edit.table', group: 'edit', title: 'cmd.insertTable', icon: 'table', keywords: 'table grid insert', when: ctx.editing, run: () => call('openTableModal') },
     { id: 'edit.formula', group: 'edit', title: 'cmd.insertFormula', icon: 'sigma', keywords: 'formula math latex equation', when: ctx.editing, run: () => call('openFormulaModal', 'inline') },
     { id: 'edit.previewRight', group: 'edit', title: 'editor.previewRight', icon: 'columns', keywords: 'preview split right side', when: ctx.editing, run: () => call('setPvLayout', 'right') },
@@ -733,60 +737,6 @@
   /* ============================================================
      Chrome enhancements (progressive: the chrome works without them)
      ============================================================ */
-  /* ---------- tab strip: sliding active indicator ---------- */
-  function bindIndicator(bar) {
-    if (!bar || bar.__rmIndicator) return;
-    bar.__rmIndicator = true;
-    bar.classList.add('rm-has-indicator');
-    const ind = document.createElement('span');
-    ind.className = 'rm-tab-indicator';
-    ind.setAttribute('aria-hidden', 'true');
-    let last = null;          // last geometry, replayed after renderTabsBar() rebuilds the strip
-    let reinserted = true;
-    const apply = g => {
-      ind.style.width = g.w + 'px';
-      ind.style.height = g.h + 'px';
-      ind.style.transform = `translate(${g.x}px, ${g.y}px)`;
-    };
-    const place = () => {
-      const active = bar.querySelector('.tab-item.active');
-      if (!active || !active.offsetParent) {
-        // No active tab: keep the strip truly empty (so :empty rules still apply).
-        bar.classList.remove('rm-ind-ready');
-        if (ind.isConnected) ind.remove();
-        last = null;
-        return;
-      }
-      if (!ind.isConnected) { bar.insertBefore(ind, bar.firstChild); reinserted = true; }
-      const g = { x: active.offsetLeft, y: active.offsetTop, w: active.offsetWidth, h: active.offsetHeight };
-      if (reinserted) {
-        // A freshly inserted node has no "before" style, so replay the old
-        // geometry without animation, then slide to the new one.
-        ind.classList.add('rm-no-anim');
-        apply(last || g);
-        void ind.offsetWidth;
-        ind.classList.remove('rm-no-anim');
-        reinserted = false;
-      }
-      apply(g);
-      last = g;
-      bar.classList.add('rm-ind-ready');
-    };
-    let queued = false;
-    const schedule = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; place(); }); };
-    new MutationObserver(records => {
-      // Ignore our own re-insertion.
-      // Ignore our own mutations (indicator re-insertion, its classes, the bar's ready flag).
-      const relevant = records.some(r => (r.type === 'childList'
-        ? [...r.addedNodes, ...r.removedNodes].some(n => n !== ind)
-        : r.target !== ind && r.target !== bar));
-      if (!relevant) return;
-      place(); // synchronous: no frame with a stale pill after a re-render
-    }).observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-    if (window.ResizeObserver) new ResizeObserver(schedule).observe(bar);
-    schedule();
-  }
-
   /* ---------- tab strip: edge fades when scrolled ---------- */
   function bindEdgeFade(bar) {
     if (!bar || bar.__rmFade) return;
@@ -810,7 +760,7 @@
 
   /* ---------- tooltips (label + shortcut chips) ---------- */
   let tip = null, tipTimer = 0, tipFor = null, tipWarm = 0;
-  const TIP_SCOPE = '#toolbar [title], #statusbar [title], #side-tabs [title]';
+  const TIP_SCOPE = '#toolbar [title], #side-rail button[title], #side-file-actions button[title], .side-file-commands button[title], #side-recent-clear[title], #status-summary[title], #edit-bar button[title], #cm-selection-toolbar button[title]';
   function ensureTip() {
     if (tip) return tip;
     tip = document.createElement('div');
@@ -893,8 +843,6 @@
     ['pointerdown', 'keydown', 'scroll', 'blur'].forEach(ev => window.addEventListener(ev, hideTip, true));
   }
 
-  bindIndicator(byId('doc-tabs-bar'));
-  bindIndicator(byId('doc-tabs-secondary-bar'));
   bindEdgeFade(byId('doc-tabs-bar'));
   bindTooltips();
 
