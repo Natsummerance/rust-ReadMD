@@ -96,7 +96,8 @@ export function packageOfficeRuntime({root,source,binary,metadata,dependencies,i
           if(!block?.includes('checksum = "'+item.crateSha256+'"')||vcs.git.sha1!==item.commit)throw Error('Dependency notice source differs from its pin');
           if(item.path.startsWith('/')||item.path.includes('\\')||item.path.split('/').some(part=>!part||part==='..'||part==='.'))throw Error('Unsafe dependency notice path');
           const input=path.join(root,'tools/office/third-party',item.path),bytes=fs.readFileSync(input);
-          if(bytes.length!==item.size||hash(bytes)!==item.sha256)throw Error('Pinned dependency notice changed');
+          if(bytes.length!==item.size||hash(bytes)!==item.sha256)
+            throw Error('Pinned dependency notice changed: '+item.path+' (expected '+item.size+' bytes, got '+bytes.length+'; preserve original checkout bytes)');
           const name='licenses/third-party/'+item.path;copy(input,name);names.push(name);
         }
         notices.push({name:pkg.name,version:pkg.version,license:pkg.license,notices:names,noticeSource:'pinned-dependency-repository',noticeUrls:extra.map(item=>item.url)});

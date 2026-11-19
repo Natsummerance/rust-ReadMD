@@ -72,6 +72,32 @@ fn docx_fixture(path: &Path, text: &str) {
 }
 
 #[test]
+fn worker_keeps_the_receipt_lease_and_replaces_a_record_held_by_a_progress_reader() {
+    let (_temp, app, source, _) = fixture();
+    let input = source.join("跨线程.txt");
+    fs::write(&input, b"Unchanged input").unwrap();
+    let (lease, dir, mut batch) = prepare_batch(&app, &json!({"paths":[input]})).unwrap();
+    let Observation::Regular(reader) = files::observe(&dir.join(RECORD_FILE), MAX_RECEIPT).unwrap()
+        else { panic!("initial receipt must be regular"); };
+    let old_bytes = reader.bytes().to_vec();
+    let worker_dir = dir.clone();
+    let batch = std::thread::spawn(move || {
+        lease.verify_profile(&worker_dir).unwrap();
+        assert_eq!(files::acquire(&worker_dir, Duration::ZERO).unwrap_err().kind, ErrorKind::Busy);
+        batch.items[0].result.status = "running".into();
+        persist(&lease, &worker_dir, &batch).unwrap();
+        batch
+    }).join().unwrap();
+    // A progress reader can retain the old snapshot while the worker publishes
+    // a complete replacement. Its handle must not turn a live batch into recovery.
+    assert_eq!(reader.bytes(), old_bytes);
+    drop(reader);
+    let stored = read_receipt(&dir, &batch.id).unwrap();
+    assert_eq!(stored.items[0].result.status, "running");
+    assert_eq!(fs::read(input).unwrap(), b"Unchanged input");
+}
+
+#[test]
 fn batch_http_outputs_open_after_app_restart_and_retry_keeps_completed_files() {
     let (temp, app, source, destination) = fixture();
     let selected = source.join("报告.txt");
@@ -95,8 +121,13 @@ fn batch_http_outputs_open_after_app_restart_and_retry_keeps_completed_files() {
     let first = finished(&app, job);
     let out = PathBuf::from(first["output_dir"].as_str().unwrap());
     assert_eq!(out.parent().unwrap(), destination);
-    assert_eq!(first["items"][0]["status"], "ok");
-    assert_eq!(first["items"][1]["status"], "ok");
+    for index in 0..2 {
+        assert_eq!(
+            first["items"][index]["status"], "ok",
+            "batch item {index}: error_code={}, engine={}",
+            first["items"][index]["error_code"], first["items"][index]["engine"]
+        );
+    }
     assert_eq!(first["items"][2]["error_code"], "file_not_found");
     assert_eq!(first["items"][0]["fidelity_report"]["schema"], 1);
     assert_eq!(

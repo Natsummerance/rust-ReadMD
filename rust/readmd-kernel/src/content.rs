@@ -169,6 +169,14 @@ pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         // foreign file that appeared after the identity check.
         tmp.persist_noclobber(path).map_err(|e| Error::from(e.error))?;
     } else {
+        #[cfg(windows)]
+        {
+            // A progress reader can still hold the replaced receipt. Retain
+            // this exact staged handle for the checked post-rename sync.
+            let (staged_file, temporary) = tmp.into_parts();
+            crate::atomic_replace::replace(temporary.as_ref(), path, &staged_file, || Ok(()))?;
+        }
+        #[cfg(not(windows))]
         tmp.persist(path).map_err(|e| Error::from(e.error))?;
     }
     Ok(())

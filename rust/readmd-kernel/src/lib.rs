@@ -40,6 +40,8 @@ pub mod code_chunk_runner;
 mod code_chunk_output;
 pub mod codecs;
 pub mod content;
+#[cfg(windows)]
+mod atomic_replace;
 pub mod document_history;
 pub mod document_transaction;
 pub mod document_operations;

@@ -348,11 +348,10 @@ mod native {
 #[cfg(windows)]
 mod native {
     use super::*;
-    use std::os::windows::{ffi::OsStrExt, fs::{MetadataExt, OpenOptionsExt}, io::AsRawHandle};
-    use windows::{core::PCWSTR, Win32::{Foundation::HANDLE, Storage::FileSystem::{
-        GetFileInformationByHandle, MoveFileExW, BY_HANDLE_FILE_INFORMATION,
-        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    }}};
+    use std::os::windows::{fs::{MetadataExt, OpenOptionsExt}, io::AsRawHandle};
+    use windows::Win32::{Foundation::HANDLE, Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    }};
     pub(super) fn try_lock(path: &Path) -> io::Result<Option<fs::File>> {
         match fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
             .share_mode(0).custom_flags(0x00200000).open(path) {
@@ -369,30 +368,11 @@ mod native {
     }
     pub(super) fn unlock(_file: &fs::File) {}
     pub(super) fn replace(from: &Path, to: &Path, staged_file: &fs::File) -> io::Result<()> {
-        let from_wide = from.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-        let to_wide = to.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-        match unsafe { MoveFileExW(PCWSTR(from_wide.as_ptr()), PCWSTR(to_wide.as_ptr()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                // Capture the API's error, not a later thread-local LastError.
-                let code = error.code().0;
-                if code != 0x80070005u32 as i32 {
-                    return Err(io::Error::from_raw_os_error(code & 0xffff));
-                }
-                // A target reader sharing DELETE can still deny legacy
-                // MoveFileEx replacement. Rust >= our 1.88 MSRV uses
-                // FileRenameInfoEx/POSIX on this precise ACCESS_DENIED case.
-                // Unsupported filesystems/OSes and deny-DELETE readers fail;
-                // there is no target deletion, truncation or retry loop.
-                fs::rename(from, to)?;
-                #[cfg(test)] tests::io_stage("sync_published");
-                #[cfg(test)] tests::fault(tests::Stage::BeforePublishedFileSync)?;
-                // This is the original staged object, still held across the
-                // rename. A sync error is post-publication uncertainty and
-                // must propagate; session replay settles it without advancing.
-                staged_file.sync_all()
-            }
-        }
+        crate::atomic_replace::replace(from, to, staged_file, || {
+            #[cfg(test)] tests::io_stage("sync_published");
+            #[cfg(test)] tests::fault(tests::Stage::BeforePublishedFileSync)?;
+            Ok(())
+        })
     }
     // The normal rename uses WRITE_THROUGH; its POSIX fallback checks the
     // original staged file's post-move sync. Neither certifies directory fsync
