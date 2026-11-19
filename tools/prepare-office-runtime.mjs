@@ -126,9 +126,13 @@ async function importSource(localSource,archiveDirectory) {
     const bytes=fs.readFileSync(archive);
     if(bytes.length!==fork.size||hash(bytes)!==fork.sha256)throw Error('Office fork archive changed');
     const prefix=fork.repository+'-'+fork.commit+'/';
-    validateOfficeArchive(run('tar',['-tzf',archive]).trim().split('\n'),run('tar',['-tvzf',archive]).trim().split('\n'),prefix);
+    // GNU tar from Git Bash interprets Windows drive letters in -f as a
+    // remote archive. Run from the archive directory with a relative name.
+    const archiveOptions={cwd:path.dirname(archive)};
+    validateOfficeArchive(run('tar',['-tzf',name],archiveOptions).trim().split('\n'),run('tar',['-tvzf',name],archiveOptions).trim().split('\n'),prefix);
     const dest=path.join(source,'forks',fork.repository);fs.mkdirSync(dest);
-    run('tar',['-xzf',archive,'-C',dest,'--strip-components=1']);
+    const relativeArchive=path.relative(dest,archive).split(path.sep).join('/');
+    run('tar',['-xzf',relativeArchive,'--strip-components=1'],{cwd:dest});
   }
   const crate=path.join(source,'crates/ibis-office-app');
   fs.appendFileSync(path.join(crate,'Cargo.toml'),'\n[[bin]]\nname = "readmd-office-render"\npath = "src/readmd_worker.rs"\n');

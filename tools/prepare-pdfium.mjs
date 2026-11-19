@@ -44,7 +44,9 @@ fs.mkdirSync(folder);
 try {
   const archive = path.join(folder, 'input.tgz');
   fs.writeFileSync(archive, bytes, {flag: 'wx'});
-  execFileSync('tar', ['-xzf', archive, '-C', folder], {stdio: 'inherit'});
+  // Git Bash may resolve GNU tar on Windows; a drive letter in -f would
+  // be parsed as a remote host. Keep the archive and destination relative.
+  execFileSync('tar', ['-xzf', 'input.tgz'], {cwd: folder, stdio: 'inherit'});
   fs.unlinkSync(archive);
   assert(fs.lstatSync(path.join(folder, library)).isFile(), 'Pinned PDFium library missing');
 } catch (error) {
