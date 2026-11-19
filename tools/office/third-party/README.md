@@ -62,3 +62,7 @@ worker 只接受 `--input ABSOLUTE.docx|pptx --output ABSOLUTE.pdf`。PDF 必须
 Carlito 和图标由上游源码内嵌。Word 艺术边框 ZIP 保留在 `Resources/artborders`，对应上游的 `bin/../Resources` 查找路径。系统字体仍取决于本机安装；Windows/Linux 和 Intel Mac 的实际排版验收须分别留证，跨编译成功不代表在目标机器完成了运行测试。
 
 原样保留上游 LICENSE、NOTICE、COMMERCIAL-LICENSE、TRADEMARK、第三方通知以及依赖许可证。产品界面按用户提供的双方复用约定处理；构建脚本不改写原通知，也不另写许可证。
+
+Windows 依赖中的 `accesskit_windows 0.34.0`、`zune-core 0.4.12` 和 `zune-jpeg 0.4.21` 的 crate 归档没有附带独立许可文件。`notices.lock.json` 将补充文件同时绑定到该 crate 的 Cargo.lock 校验值和 `.cargo_vcs_info.json` 提交；正文保留对应提交的官方原字节。两份 zune 依赖采用其声明允许的 Zlib 许可，保留各自发布提交的 `LICENSE-ZLIB`，不以新版 crate 或通用模板替代。
+
+`officeDependencyNoticePlan` 与正式打包共用许可选择和校验逻辑，可在没有目标平台二进制时检查 `cargo metadata --filter-platform TARGET` 配合 `cargo tree -p ibis-office-app --target TARGET --edges normal,build --prefix none` 得到的实际依赖闭包。它先汇总全部缺失项，通过后才写打包目录；未启用的 optional 依赖不由 metadata 的原始边列表推断成已交付依赖。

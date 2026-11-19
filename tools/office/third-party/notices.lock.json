@@ -10,6 +10,26 @@
       "crateSha256": "106c2b961215864d1c2e703ee63269c25c4e80a577ffb2c1017b9c17dcdf83a1",
       "size": 1023,
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "package": "zune-core",
+      "version": "0.4.12",
+      "path": "notices/zune-core-0.4.12/LICENSE-ZLIB",
+      "url": "https://raw.githubusercontent.com/etemesi254/zune-image/f8fbb123d5ed04441e8324a555bfcda0cb1bd28f/LICENSE-ZLIB",
+      "commit": "f8fbb123d5ed04441e8324a555bfcda0cb1bd28f",
+      "crateSha256": "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a",
+      "size": 818,
+      "sha256": "7fa429541e55b1509909e058f2d21a37467e4958ec713b357f6e0cf9dc4ee352"
+    },
+    {
+      "package": "zune-jpeg",
+      "version": "0.4.21",
+      "path": "notices/zune-jpeg-0.4.21/LICENSE-ZLIB",
+      "url": "https://raw.githubusercontent.com/etemesi254/zune-image/fa2c767a01d7d9373911d0bf63e0588553d67e0e/LICENSE-ZLIB",
+      "commit": "fa2c767a01d7d9373911d0bf63e0588553d67e0e",
+      "crateSha256": "29ce2c8a9384ad323cf564b67da86e21d3cfdff87908bc1223ed5c99bc792713",
+      "size": 818,
+      "sha256": "7fa429541e55b1509909e058f2d21a37467e4958ec713b357f6e0cf9dc4ee352"
     }
   ]
 }

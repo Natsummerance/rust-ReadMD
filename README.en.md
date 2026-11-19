@@ -103,7 +103,7 @@ On macOS the usual path is `/Applications/ReadMD.app/Contents/MacOS/ReadMD`. On 
 
 ## Validation and source
 
-V0.0.7 completed **244 native checks in six groups on macOS ARM64**: closing and recovery, six export formats, cold launch/reopening from the final ZIP, and migration of an isolated V0.0.6 session. The archived production binary also completed the 46-language save-encoding flow with zero page exceptions. The [Mac report](docs/reviews/readmd-v007-macos-rc-2026-11-19.md) retains an initial WebKit cold-launch failure and successful same-package reruns. These checks have a defined scope; application interoperability and physical coverage on each system are recorded separately.
+A V0.0.7 release candidate completed **244 native checks in six groups on macOS ARM64**: closing and recovery, six export formats, cold launch/reopening from its packaged ZIP, and migration of an isolated V0.0.6 session. The archived production binary also completed the 46-language save-encoding flow with zero page exceptions. The [Mac report](docs/reviews/readmd-v007-macos-rc-2026-11-19.md) retains an initial WebKit cold-launch failure and successful same-package reruns. These checks have a defined scope; application interoperability and physical coverage on each system are recorded separately.
 
 The [release workflow](.github/workflows/release.yml) configures four desktop targets and integration packages, with shared quality checks and all builds required before publication. See the [platform matrix](release/platform-matrix.json) and [feature reports](docs/reviews).
 

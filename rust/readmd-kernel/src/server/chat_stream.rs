@@ -6,12 +6,22 @@ use std::time::Instant;
 
 pub(super) struct Peer {
     pub(super) lost: Arc<AtomicBool>, finished: Arc<AtomicBool>, worker: Option<std::thread::JoinHandle<()>>,
+    restore_blocking: Option<TcpStream>,
 }
 impl Peer {
     pub(super) fn watch(socket: &TcpStream) -> ApiResult<Self> {
+        Self::watch_mode(socket,false)
+    }
+    pub(super) fn watch_stream(socket: &TcpStream) -> ApiResult<Self> {
+        Self::watch_mode(socket,true)
+    }
+    fn watch_mode(socket: &TcpStream,nonblocking:bool) -> ApiResult<Self> {
         let socket=socket.try_clone().map_err(|_|ApiError::new(409,"cancelled"))?;
-        socket.set_nonblocking(false).and_then(|_|socket.set_read_timeout(Some(Duration::from_millis(50))))
-            .map_err(|_|ApiError::new(409,"cancelled"))?;
+        let restore_blocking=if nonblocking {Some(socket.try_clone().map_err(|_|ApiError::new(409,"cancelled"))?)} else {None};
+        socket.set_nonblocking(nonblocking).map_err(|_|ApiError::new(409,"cancelled"))?;
+        if !nonblocking {
+            socket.set_read_timeout(Some(Duration::from_millis(50))).map_err(|_|ApiError::new(409,"cancelled"))?;
+        }
         let lost=Arc::new(AtomicBool::new(false));let finished=Arc::new(AtomicBool::new(false));
         let lost_flag=lost.clone();let stop=finished.clone();
         let worker=std::thread::Builder::new().name("readmd-chat-peer".into()).spawn(move||{
@@ -19,28 +29,47 @@ impl Peer {
             while !stop.load(Ordering::Acquire) {
                 match socket.peek(&mut byte) {
                     Ok(0) => { lost_flag.store(true,Ordering::Release);break; },
-                    Ok(_) => std::thread::sleep(Duration::from_millis(10)),
-                    Err(error) if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::Interrupted) => (),
+                    Ok(_) => std::thread::park_timeout(Duration::from_millis(10)),
+                    Err(error) if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::Interrupted) => {
+                        if nonblocking {std::thread::park_timeout(Duration::from_millis(5));}
+                    },
                     Err(_) => { lost_flag.store(true,Ordering::Release);break; },
                 }
             }
-        }).map_err(|_|ApiError::new(503,"review_ai_budget"))?;
-        Ok(Self{lost,finished,worker:Some(worker)})
+        });
+        match worker {
+            Ok(worker)=>Ok(Self{lost,finished,worker:Some(worker),restore_blocking}),
+            Err(_)=>{
+                if let Some(socket)=restore_blocking {let _=socket.set_nonblocking(false);}
+                Err(ApiError::new(503,"review_ai_budget"))
+            },
+        }
     }
 }
 impl Drop for Peer {
-    fn drop(&mut self) { self.finished.store(true,Ordering::Release);if let Some(worker)=self.worker.take(){let _=worker.join();} }
+    fn drop(&mut self) {
+        self.finished.store(true,Ordering::Release);
+        if let Some(worker)=self.worker.take(){worker.thread().unpark();let _=worker.join();}
+        if let Some(socket)=self.restore_blocking.take(){let _=socket.set_nonblocking(false);}
+    }
 }
 
 pub(super) fn write_event_bytes(writer:&mut TcpStream,mut bytes:&[u8],cancelled:&dyn Fn()->bool,budget:Duration)->ApiResult<()> {
     let deadline=Instant::now()+budget;
-    writer.set_write_timeout(Some(Duration::from_millis(50))).map_err(|_|ApiError::new(409,"cancelled"))?;
+    // Stream peers share this mode with their watcher and restore blocking on
+    // drop. Nonblocking attempts keep cancellation checks independent of
+    // socket timeout granularity.
+    writer.set_nonblocking(true).map_err(|_|ApiError::new(409,"cancelled"))?;
     while !bytes.is_empty() {
         if cancelled()||Instant::now()>=deadline{return Err(ApiError::new(409,"cancelled"));}
         match writer.write(bytes) {
             Ok(0)=>return Err(ApiError::new(409,"cancelled")),
             Ok(count)=>bytes=&bytes[count..],
-            Err(error)if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::Interrupted)=>(),
+            Err(error)if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::Interrupted)=>{
+                #[cfg(test)]
+                if error.kind()!=std::io::ErrorKind::Interrupted { tests::note_blocked_write(); }
+                std::thread::park_timeout(Duration::from_millis(5).min(deadline.saturating_duration_since(Instant::now())));
+            },
             Err(_)=>return Err(ApiError::new(409,"cancelled")),
         }
     }
@@ -48,7 +77,7 @@ pub(super) fn write_event_bytes(writer:&mut TcpStream,mut bytes:&[u8],cancelled:
 }
 
 pub(super) fn serve(app:&Arc<App>,req:&Request,writer:&mut TcpStream) {
-    let peer=match Peer::watch(writer) {Ok(peer)=>peer,Err(error)=>{let _=write_response(writer,&error_response(error),false,false);return;}};
+    let peer=match Peer::watch_stream(writer) {Ok(peer)=>peer,Err(error)=>{let _=write_response(writer,&error_response(error),false,false);return;}};
     let started=std::cell::Cell::new(false);
     let outcome;
     {
@@ -225,6 +254,14 @@ fn terminal(value:&Value)->Result<bool,String>{
 #[cfg(test)]
 mod tests {
     use super::*;
+    thread_local! {
+        static BLOCKED_WRITE: std::cell::RefCell<Option<std::sync::mpsc::Sender<()>>> = const { std::cell::RefCell::new(None) };
+    }
+    pub(super) fn note_blocked_write() {
+        BLOCKED_WRITE.with(|slot| {
+            if let Some(sender)=slot.borrow_mut().take() { let _=sender.send(()); }
+        });
+    }
     struct Lines(std::collections::VecDeque<String>);
     impl LineStream for Lines {fn next_line(&mut self)->Result<Option<String>,String>{Ok(self.0.pop_front())}}
     fn lines(values:&[&str])->StrictLines{StrictLines{inner:Box::new(Lines(values.iter().flat_map(|s|[format!("{}\n",s.trim_end_matches('\n')),"\n".into()]).collect())),terminal:false,buffer:String::new(),has_data:false,ended:false}}
@@ -256,6 +293,65 @@ mod tests {
             socket.write_all(response.as_bytes()).unwrap();
         });
         (format!("http://{address}/chat"),host)
+    }
+    fn pending_sse_response()->(String,std::sync::mpsc::Sender<()>,std::thread::JoinHandle<()>) {
+        let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=listener.local_addr().unwrap();
+        let(stop_tx,stop_rx)=std::sync::mpsc::channel();
+        let host=std::thread::spawn(move||{
+            let stopped=||!matches!(stop_rx.try_recv(),Err(std::sync::mpsc::TryRecvError::Empty));
+            let deadline=Instant::now()+Duration::from_secs(3);listener.set_nonblocking(true).unwrap();
+            let mut socket=loop {
+                if stopped(){return;}
+                match listener.accept(){
+                    Ok((socket,_))=>break socket,
+                    Err(error)if error.kind()==std::io::ErrorKind::WouldBlock=>{
+                        assert!(Instant::now()<deadline,"pending provider was never opened");
+                        std::thread::sleep(Duration::from_millis(5));
+                    },
+                    Err(error)=>panic!("pending provider accept: {error}"),
+                }
+            };
+            socket.set_read_timeout(Some(Duration::from_millis(50))).unwrap();
+            socket.set_write_timeout(Some(Duration::from_millis(50))).unwrap();
+            let mut request=Vec::new();let mut bytes=[0u8;4096];
+            loop {
+                if stopped(){return;}
+                assert!(Instant::now()<deadline,"pending provider request was incomplete");
+                match std::io::Read::read(&mut socket,&mut bytes){
+                    Ok(0)=>return,
+                    Ok(count)=>request.extend_from_slice(&bytes[..count]),
+                    Err(error)if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::Interrupted)=>continue,
+                    Err(_)=>return,
+                }
+                assert!(request.len()<65536);
+                if let Some(end)=request.windows(4).position(|value|value==b"\r\n\r\n"){
+                    let head=std::str::from_utf8(&request[..end]).unwrap();
+                    let length=head.lines().find_map(|line|line.split_once(':').filter(|(name,_)|name.eq_ignore_ascii_case("content-length")).and_then(|(_,value)|value.trim().parse::<usize>().ok())).unwrap();
+                    if request.len()>=end+4+length{break;}
+                }
+            }
+            let send=|socket:&mut TcpStream,mut bytes:&[u8]|{
+                while !bytes.is_empty(){
+                    if stopped(){return false;}
+                    assert!(Instant::now()<deadline,"pending provider write did not settle");
+                    match socket.write(bytes){
+                        Ok(0)=>return false,
+                        Ok(count)=>bytes=&bytes[count..],
+                        Err(error)if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::Interrupted)=>(),
+                        Err(_)=>return false,
+                    }
+                }
+                true
+            };
+            if !send(&mut socket,b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"){return;}
+            let delta=json!({"choices":[{"delta":{"content":"段".repeat(25_000)}}]});
+            let frame=format!("data: {delta}\n\n");
+            for _ in 0..36 {if !send(&mut socket,frame.as_bytes()){return;}}
+            // No terminal frame or EOF may authorize commit while cancellation
+            // is being measured. The test releases this endpoint only afterward.
+            let _=stop_rx.recv_timeout(Duration::from_secs(3));
+        });
+        (format!("http://{address}/chat"),stop_tx,host)
     }
     fn socket_lines(mime:&str,body:&str)->Result<Box<dyn LineStream>,HttpError>{
         let(url,host)=socket_response(mime,body);let transport=crate::review_transport::ReviewTransport::new_owned(Arc::new(||false));
@@ -345,24 +441,107 @@ mod tests {
         assert_eq!(crate::cancel::cancel(id),crate::cancel::CancelState::Unknown);
     }
     #[test]
+    fn stream_peer_restores_http_mode_and_json_requests_keep_alive(){
+        use std::io::{BufRead,Read};
+        let dir=tempfile::tempdir().unwrap();let assets=dir.path().join("assets");std::fs::create_dir(&assets).unwrap();
+        let app=Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(&dir.path().join("data"),dir.path(),&assets)).unwrap());
+        let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=listener.local_addr().unwrap();
+        let mut client=TcpStream::connect(address).unwrap();client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let(socket,_)=listener.accept().unwrap();let(ready_tx,ready_rx)=std::sync::mpsc::channel();
+        let host=std::thread::spawn(move||{
+            let peer=Peer::watch_stream(&socket).unwrap();drop(peer);
+            ready_tx.send(()).unwrap();handle_connection(socket,app);
+        });
+        ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let mut reader=std::io::BufReader::new(client.try_clone().unwrap());
+        let response=|reader:&mut std::io::BufReader<TcpStream>|{
+            let mut headers=String::new();let mut length=None;
+            loop{
+                let mut line=String::new();assert_ne!(reader.read_line(&mut line).unwrap(),0);
+                if let Some((name,value))=line.split_once(':'){
+                    if name.eq_ignore_ascii_case("content-length"){length=Some(value.trim().parse::<usize>().unwrap());}
+                }
+                headers.push_str(&line);if line=="\r\n"{break;}
+            }
+            let length=length.unwrap();assert!(length<65536);let mut body=vec![0u8;length];reader.read_exact(&mut body).unwrap();headers
+        };
+        // The guarded JSON route creates its ordinary Peer even when auth
+        // rejects this synthetic request; no provider or model is contacted.
+        client.write_all(format!("POST /api/ai/chat HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\n{{}}").as_bytes()).unwrap();
+        assert!(response(&mut reader).contains("Connection: keep-alive\r\n"));
+        client.write_all(format!("GET /api/version HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n").as_bytes()).unwrap();
+        assert!(response(&mut reader).contains("Connection: close\r\n"));host.join().unwrap();
+    }
+    #[test]
     fn cancellation_retires_a_slow_downstream_writer_without_waiting_for_socket_close(){
         let _serial=crate::review_transport::TEST_SERIAL.lock().unwrap_or_else(|e|e.into_inner());
         let dir=std::env::temp_dir().join(format!("readmd-chat-backpressure-{}",uuid::Uuid::new_v4()));
         std::fs::create_dir_all(dir.join("assets")).unwrap();std::fs::write(dir.join("assets/index.html"),"<head><title>fixture</title></head>").unwrap();
         let app=Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(&dir.join("data"),&dir,&dir.join("assets"))).unwrap());
         let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let client=TcpStream::connect(listener.local_addr().unwrap()).unwrap();let(mut writer,_)=listener.accept().unwrap();
-        writer.set_write_timeout(Some(Duration::from_millis(100))).unwrap();let bytes=[b'x';65536];let mut sent=0;
-        // Fill real TCP buffers while the client deliberately does not read.
-        loop {match writer.write(&bytes){Ok(n)=>{sent+=n;assert!(sent<64*1024*1024);},Err(error)if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut)=>break,Err(error)=>panic!("fixture fill: {error}")}}
-        writer.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            // Bound the fixture's buffers before traffic starts. A failed
+            // large prefill did not prove that a later small start frame
+            // would stay blocked while TCP acknowledgements reopened space.
+            let capacity=4096i32;
+            for (socket,option) in [(&client,libc::SO_RCVBUF),(&writer,libc::SO_SNDBUF)] {
+                assert_eq!(unsafe {libc::setsockopt(socket.as_raw_fd(),libc::SOL_SOCKET,option,
+                    (&capacity as *const i32).cast(),std::mem::size_of_val(&capacity) as libc::socklen_t)},0);
+            }
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawSocket;
+            // Test-only Winsock calls avoid adding a networking feature or
+            // dependency to the application. SOCKET is an unsigned pointer.
+            #[link(name="ws2_32")]
+            unsafe extern "system" {
+                fn setsockopt(socket:usize,level:i32,option:i32,value:*const i8,length:i32)->i32;
+                fn getsockopt(socket:usize,level:i32,option:i32,value:*mut i8,length:*mut i32)->i32;
+                fn WSAGetLastError()->i32;
+            }
+            const SOL_SOCKET:i32=0xffff;
+            const SO_SNDBUF:i32=0x1001;
+            const SO_RCVBUF:i32=0x1002;
+            let capacity=4096i32;
+            for (socket,option) in [(&client,SO_RCVBUF),(&writer,SO_SNDBUF)] {
+                let socket=socket.as_raw_socket() as usize;
+                assert_eq!(unsafe {setsockopt(socket,SOL_SOCKET,option,
+                    (&capacity as *const i32).cast(),std::mem::size_of_val(&capacity) as i32)},0,
+                    "Winsock buffer setup failed: {}",unsafe {WSAGetLastError()});
+                let mut actual=0i32;let mut length=std::mem::size_of_val(&actual) as i32;
+                assert_eq!(unsafe {getsockopt(socket,SOL_SOCKET,option,
+                    (&mut actual as *mut i32).cast(),&mut length)},0,
+                    "Winsock buffer readback failed: {}",unsafe {WSAGetLastError()});
+                assert_eq!(length,std::mem::size_of_val(&actual) as i32);
+                assert!(actual>0&&actual<=64*1024,"fixture socket buffer remained too large: {actual}");
+            }
+        }
+        // The real SSE endpoint stays in progress even if Windows accepts an
+        // entire first write. A blocked done frame after commit must never
+        // masquerade as the cancellable downstream writer under test.
+        let(url,stop_provider,provider)=pending_sse_response();
         let id=format!("chat-backpressure-{}",uuid::Uuid::new_v4());
-        let body=json!({"base_url":"http://127.0.0.1:1/v1","api_key":"fixture","model":"fixture","messages":[{"role":"user","content":"hi"}],"task_id":id});
+        let session=format!("chat-backpressure-history-{}",uuid::Uuid::new_v4());
+        let body=json!({"base_url":url,"endpoint_mode":"full_url","api_key":"fixture","model":"fixture","messages":[{"role":"user","content":"hi"}],"task_id":id,"session":session});
         let req=Request{method:"POST".into(),path:"/api/ai/chat".into(),query:HashMap::new(),headers:HashMap::new(),body:serde_json::to_vec(&body).unwrap()};
-        let(finished_tx,finished_rx)=std::sync::mpsc::channel();let worker=std::thread::spawn(move||{serve(&app,&req,&mut writer);finished_tx.send(()).unwrap();});
-        let deadline=std::time::Instant::now()+Duration::from_secs(3);
-        while crate::cancel::cancel(&id)==crate::cancel::CancelState::Unknown{assert!(std::time::Instant::now()<deadline);std::thread::sleep(Duration::from_millis(5));}
+        let(blocked_tx,blocked_rx)=std::sync::mpsc::channel();
+        let(finished_tx,finished_rx)=std::sync::mpsc::channel();let worker_app=app.clone();
+        let worker=std::thread::spawn(move||{
+            BLOCKED_WRITE.with(|slot|*slot.borrow_mut()=Some(blocked_tx));
+            serve(&worker_app,&req,&mut writer);finished_tx.send(()).unwrap();
+        });
+        let blocked=blocked_rx.recv_timeout(Duration::from_secs(3)).is_ok();
+        let cancellation=crate::cancel::cancel(&id);
         let retired_before_close=finished_rx.recv_timeout(Duration::from_millis(200)).is_ok();
-        drop(client);worker.join().unwrap();std::fs::remove_dir_all(dir).unwrap();
+        drop(client);worker.join().unwrap();let _=stop_provider.send(());provider.join().unwrap();
+        let history=app.store.chat_history(&session,10).unwrap();drop(app);std::fs::remove_dir_all(dir).unwrap();
+        assert!(blocked,"the fixture never observed an actual downstream write timeout; cancellation={cancellation:?}");
+        assert_eq!(cancellation,crate::cancel::CancelState::Cancelling);
+        assert!(history.is_empty(),"a cancelled downstream write persisted a chat turn");
+        assert_eq!(crate::cancel::cancel(&id),crate::cancel::CancelState::Unknown);
         assert!(retired_before_close,"a cancelled SSE write stayed blocked on a downstream socket for more than 200ms");
     }
 }

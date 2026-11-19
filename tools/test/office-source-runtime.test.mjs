@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
 import {execFileSync} from 'node:child_process';
 import {validateOfficeArchive} from '../prepare-office-runtime.mjs';
+import {officeDependencyNoticePlan} from '../build-office-runtime.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const pins=JSON.parse(fs.readFileSync(path.join(root,'tools/office/third-party/source.lock.json'),'utf8'));
@@ -23,16 +24,55 @@ test('supplemental Office notices retain the exact locked repository bytes',()=>
   }
 });
 
-test('Windows auto-CRLF checkout preserves hash-bound Office manifests and license notices',()=>{
+test('Windows auto-CRLF checkout preserves hash-bound Office manifests and license notices',t=>{
   const prefix='tools/office/third-party/';
   const notices=JSON.parse(fs.readFileSync(path.join(root,prefix,'notices.lock.json'),'utf8'));
-  for(const name of ['source.lock.json','notices.lock.json',...notices.files.map(item=>item.path)]) {
-    const file=prefix+name;
-    const blob=execFileSync('git',['show','HEAD:'+file],{cwd:root,windowsHide:true});
-    const checkout=execFileSync('git',['-c','core.autocrlf=true','-c','core.eol=crlf','cat-file','--filters','HEAD:'+file],{cwd:root,windowsHide:true});
-    assert.deepEqual(checkout,blob,file+' must survive Windows checkout without newline conversion');
-    assert.deepEqual(fs.readFileSync(path.join(root,file)),blob,file+' must retain its repository bytes');
-  }
+  const cache=path.join(root,'.cache');fs.mkdirSync(cache,{recursive:true});
+  const checkout=fs.mkdtempSync(path.join(cache,'office-notice-checkout-'));
+  t.after(()=>fs.rmSync(checkout,{recursive:true,force:true}));
+  const files=['source.lock.json','notices.lock.json',...notices.files.map(item=>item.path)].map(name=>prefix+name);
+  const originals=new Map(files.map(file=>[file,fs.readFileSync(path.join(root,file))]));
+  fs.copyFileSync(path.join(root,'.gitattributes'),path.join(checkout,'.gitattributes'));
+  for(const [file,bytes] of originals){const target=path.join(checkout,file);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,bytes);}
+  const git=args=>execFileSync('git',args,{cwd:checkout,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  git(['init','--quiet','--template=']);
+  git(['-c','core.autocrlf=false','-c','core.safecrlf=false','add','-f','--','.gitattributes',...files]);
+  for(const file of files)fs.unlinkSync(path.join(checkout,file));
+  git(['-c','core.autocrlf=true','-c','core.eol=crlf','checkout-index','--all','--force']);
+  for(const [file,bytes] of originals)assert.deepEqual(fs.readFileSync(path.join(checkout,file)),bytes,file+' must survive a Windows-style checkout');
+});
+
+function noticeFixture(t) {
+  const cache=path.join(root,'.cache');fs.mkdirSync(cache,{recursive:true});
+  const fixture=fs.mkdtempSync(path.join(cache,'office-notice-fixture-'));
+  t.after(()=>fs.rmSync(fixture,{recursive:true,force:true}));
+  const source=path.join(fixture,'upstream'),thirdParty=path.join(fixture,'tools/office/third-party');
+  fs.mkdirSync(thirdParty,{recursive:true});
+  for(const platform of ['macos','linux']){const file=path.join(source,'crates/ibis-office-app',platform,'license.md');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'No inherited package rows.\n');}
+  fs.writeFileSync(path.join(source,'Cargo.lock'),'');fs.writeFileSync(path.join(thirdParty,'notices.lock.json'),JSON.stringify({schema:1,files:[]}));
+  const packages=['first','second'].map(name=>{const base=path.join(fixture,'registry',name);fs.mkdirSync(base,{recursive:true});fs.writeFileSync(path.join(base,'Cargo.toml'),'');return {name,version:'1.0.0',license:'MIT',manifest_path:path.join(base,'Cargo.toml')};});
+  return {root:fixture,source,metadata:{packages},dependencies:'first v1.0.0\nsecond v1.0.0\n',thirdParty};
+}
+
+test('Office notice preflight reports every missing selected package before any copy',t=>{
+  const fixture=noticeFixture(t);
+  assert.throws(()=>officeDependencyNoticePlan(fixture),/Missing dependency license notices: first 1\.0\.0, second 1\.0\.0/);
+  assert.throws(()=>officeDependencyNoticePlan({...fixture,metadata:{packages:[]}}),/Incomplete Office dependency metadata/);
+});
+
+test('supplemental notices require the original source commit, locked crate hash and exact text bytes',t=>{
+  const fixture=noticeFixture(t),pkg=fixture.metadata.packages[0],commit='a'.repeat(40),crateSha256='b'.repeat(64),bytes=Buffer.from('Original upstream notice.\n');
+  fs.writeFileSync(path.join(path.dirname(pkg.manifest_path),'.cargo_vcs_info.json'),JSON.stringify({git:{sha1:commit}}));
+  fs.writeFileSync(path.join(fixture.source,'Cargo.lock'),'[[package]]\nname = "first"\nversion = "1.0.0"\nchecksum = "'+crateSha256+'"\n');
+  const item={package:'first',version:'1.0.0',path:'notices/first/LICENSE-MIT',commit,crateSha256,size:bytes.length,sha256:hash(bytes),url:'https://example.invalid/first/LICENSE-MIT'};
+  const notice=path.join(fixture.thirdParty,item.path);fs.mkdirSync(path.dirname(notice),{recursive:true});fs.writeFileSync(notice,bytes);
+  const writePin=()=>fs.writeFileSync(path.join(fixture.thirdParty,'notices.lock.json'),JSON.stringify({schema:1,files:[item]}));writePin();
+  const input={...fixture,dependencies:'first v1.0.0\n'};
+  const plan=officeDependencyNoticePlan(input);assert.equal(plan.notices[0].noticeSource,'pinned-dependency-repository');assert.equal(plan.copies.length,1);
+  fs.writeFileSync(notice,bytes.toString().replaceAll('\n','\r\n'));
+  assert.throws(()=>officeDependencyNoticePlan(input),/Pinned dependency notice changed/);fs.writeFileSync(notice,bytes);
+  item.commit='c'.repeat(40);writePin();assert.throws(()=>officeDependencyNoticePlan(input),/source differs from its pin/);
+  item.commit=commit;item.crateSha256='d'.repeat(64);writePin();assert.throws(()=>officeDependencyNoticePlan(input),/source differs from its pin/);
 });
 
 test('Office source extraction refuses traversal, aliases and duplicate members',()=>{

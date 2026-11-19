@@ -20,6 +20,6 @@ OCR、Typst、出版字体、代码运行时和转写按实际平台能力包提
 
 ## Mac 本机验证
 
-macOS ARM64 完成六组共 **244 项原生检查**，包括关闭、保存冲突、草稿恢复、六格式导出、最终 ZIP 冷启动／重开与 V0.0.6 隔离会话升级。最终归档生产二进制完成 46 语言保存编码流程，页面异常为 0。[本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败和同包复测结果。Intel 包由独立构建目标生成，其原生操作证据与 ARM64 分开记录。
+V0.0.7 的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，包括关闭、保存冲突、草稿恢复、六格式导出、候选 ZIP 冷启动／重开与 V0.0.6 隔离会话升级。最终归档生产二进制完成 46 语言保存编码流程，页面异常为 0。[本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败和同包复测结果。Intel 包由独立构建目标生成，其原生操作证据与 ARM64 分开记录。
 
 [完整 V0.0.7 更新](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/release/release_notes.md) · [使用指南](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/README.md) · [问题反馈](https://github.com/Natsummerance/rust-ReadMD/issues)

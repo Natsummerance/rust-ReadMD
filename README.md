@@ -103,7 +103,7 @@ macOS 通常为 `/Applications/ReadMD.app/Contents/MacOS/ReadMD`；Windows 使�
 
 ## 验证与源码
 
-V0.0.7 在 macOS ARM64 完成六组共 **244 项原生检查**，包括关闭与恢复、六格式导出、最终 ZIP 冷启动／重开和 V0.0.6 隔离会话升级；另从归档中的生产二进制执行 46 语言的保存编码流程，页面异常为 0。[Mac 验证记录](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败及同包复测结果。这里的检查范围与跨应用兼容性、各系统实机覆盖分别记录。
+V0.0.7 的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，包括关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级；另从归档中的生产二进制执行 46 语言的保存编码流程，页面异常为 0。[Mac 验证记录](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败及同包复测结果。这里的检查范围与跨应用兼容性、各系统实机覆盖分别记录。
 
 [发行 CI](.github/workflows/release.yml)配置四个桌面目标与配套集成包，并在发布前等待共享质量检查和全部构建。各平台证据见[平台矩阵](release/platform-matrix.json)，详细功能记录见 [docs/reviews](docs/reviews)。
 

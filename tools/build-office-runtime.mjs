@@ -24,10 +24,64 @@ function filesUnder(base) {
   }
   visit(base);return files;
 }
+// Shared by native packaging and an offline dependency-closure preflight.
+// Produce the entire copy plan before writing an output directory, and report
+// every absent notice instead of stopping at the first platform-only crate.
+export function officeDependencyNoticePlan({root,source,metadata,dependencies}) {
+  const used=new Set([...dependencies.matchAll(/^([^\s]+) v([^\s]+)/gm)].map(match=>match[1]+'@'+match[2]));
+  const packages=metadata.packages.filter(pkg=>used.has(pkg.name+'@'+pkg.version));
+  if(!used.size||[...used].some(name=>!packages.some(pkg=>pkg.name+'@'+pkg.version===name)))throw Error('Incomplete Office dependency metadata');
+  const upstreamNotices=['macos','linux'].map(name=>{
+    const file=path.join(source,'crates/ibis-office-app',name,'license.md');
+    return {path:'licenses/source/crates/ibis-office-app/'+name+'/license.md',text:fs.readFileSync(file,'utf8')};
+  });
+  const supplemental=JSON.parse(fs.readFileSync(path.join(root,'tools/office/third-party/notices.lock.json'),'utf8'));
+  const blocks=fs.readFileSync(path.join(source,'Cargo.lock'),'utf8').split('[[package]]');
+  const notices=[],copies=new Map(),missing=[];
+  const addCopy=(input,name)=>{
+    if(!fs.lstatSync(input).isFile())throw Error('Dependency notice is not a regular file: '+name);
+    if(copies.has(name)&&hash(fs.readFileSync(copies.get(name)))!==hash(fs.readFileSync(input)))throw Error('Conflicting dependency notices: '+name);
+    copies.set(name,input);return name;
+  };
+  for(const pkg of packages) {
+    const base=path.dirname(pkg.manifest_path);
+    if(base===source||base.startsWith(source+path.sep)) {
+      notices.push({name:pkg.name,version:pkg.version,license:pkg.license,source:'pinned-upstream-tree'});continue;
+    }
+    let files=fs.readdirSync(base).filter(name=>/^(LICEN[SC]E|COPYING|NOTICE|UNLICENSE|OFL)/i.test(name)&&fs.lstatSync(path.join(base,name)).isFile()).map(name=>path.join(base,name));
+    const licenseFile=pkg.license_file?path.resolve(base,pkg.license_file):null;
+    if(licenseFile&&fs.existsSync(licenseFile)&&!files.includes(licenseFile))files.push(licenseFile);
+    if(files.length) {
+      const names=files.map(file=>addCopy(file,'licenses/crates/'+pkg.name+'-'+pkg.version+'/'+path.basename(file)));
+      notices.push({name:pkg.name,version:pkg.version,license:pkg.license,notices:names});continue;
+    }
+    const extra=supplemental.files.filter(item=>item.package===pkg.name&&item.version===pkg.version);
+    if(extra.length) {
+      const block=blocks.find(block=>block.startsWith('\nname = "'+pkg.name+'"\nversion = "'+pkg.version+'"\n'));
+      const vcs=JSON.parse(fs.readFileSync(path.join(base,'.cargo_vcs_info.json'),'utf8'));
+      const names=[];
+      for(const item of extra) {
+        if(!block?.includes('checksum = "'+item.crateSha256+'"')||vcs.git.sha1!==item.commit)throw Error('Dependency notice source differs from its pin: '+pkg.name+' '+pkg.version);
+        if(item.path.startsWith('/')||item.path.includes('\\')||item.path.split('/').some(part=>!part||part==='..'||part==='.'))throw Error('Unsafe dependency notice path');
+        const input=path.join(root,'tools/office/third-party',item.path),bytes=fs.readFileSync(input);
+        if(bytes.length!==item.size||hash(bytes)!==item.sha256)
+          throw Error('Pinned dependency notice changed: '+item.path+' (expected '+item.size+' bytes, got '+bytes.length+'; preserve original checkout bytes)');
+        names.push(addCopy(input,'licenses/third-party/'+item.path));
+      }
+      notices.push({name:pkg.name,version:pkg.version,license:pkg.license,notices:names,noticeSource:'pinned-dependency-repository',noticeUrls:extra.map(item=>item.url)});continue;
+    }
+    const official=upstreamNotices.filter(notice=>notice.text.includes('| '+pkg.name+' | '+pkg.version+' |'));
+    if(official.length)notices.push({name:pkg.name,version:pkg.version,license:pkg.license,notices:official.map(notice=>notice.path),noticeSource:'pinned-upstream-distribution'});
+    else missing.push(pkg.name+' '+pkg.version);
+  }
+  if(missing.length)throw Error('Missing dependency license notices: '+missing.sort().join(', '));
+  return {notices,copies:[...copies].map(([name,input])=>({name,input}))};
+}
 export function packageOfficeRuntime({root,source,binary,metadata,dependencies,identity,output,platform}) {
   const pinFile=path.join(root,'tools/office/third-party/source.lock.json');
   const pins=JSON.parse(fs.readFileSync(pinFile,'utf8'));
   if(identity.commit!==pins.commit||identity.pinSha256!==hash(fs.readFileSync(pinFile)))throw Error('Unreviewed Office source identity');
+  const {notices,copies}=officeDependencyNoticePlan({root,source,metadata,dependencies});
   const engine=fs.readFileSync(binary);
   if(engine.length<4096||engine.length>256*1024*1024)throw Error('Unexpected Office worker size');
   const failures=scanNativePaths(path.basename(binary),engine);
@@ -70,55 +124,7 @@ export function packageOfficeRuntime({root,source,binary,metadata,dependencies,i
     const dest='licenses/source/'+name;
     if(!fs.existsSync(path.join(output,dest)))copy(file,dest);
   }
-  const used=new Set([...dependencies.matchAll(/^([^\s]+) v([^\s]+)/gm)].map(match=>match[1]+'@'+match[2]));
-  const packages=metadata.packages.filter(pkg=>used.has(pkg.name+'@'+pkg.version));
-  const upstreamNotices=['macos','linux'].map(name=>{
-    const file=path.join(source,'crates/ibis-office-app',name,'license.md');
-    return {file,path:'licenses/source/crates/ibis-office-app/'+name+'/license.md',text:fs.readFileSync(file,'utf8')};
-  });
-  const supplemental=JSON.parse(fs.readFileSync(path.join(root,'tools/office/third-party/notices.lock.json'),'utf8'));
-  const notices=[];
-  for(const pkg of packages) {
-    const base=path.dirname(pkg.manifest_path);
-    if(base===source||base.startsWith(source+path.sep)) {
-      notices.push({name:pkg.name,version:pkg.version,license:pkg.license,source:'pinned-upstream-tree'});continue;
-    }
-    let files=fs.readdirSync(base).filter(name=>/^(LICEN[SC]E|COPYING|NOTICE|UNLICENSE|OFL)/i.test(name)&&fs.lstatSync(path.join(base,name)).isFile()).map(name=>path.join(base,name));
-    const licenseFile=pkg.license_file?path.resolve(base,pkg.license_file):null;
-    if(licenseFile&&fs.existsSync(licenseFile)&&!files.includes(licenseFile))files.push(licenseFile);
-    if(!files.length) {
-      const extra=supplemental.files.filter(item=>item.package===pkg.name&&item.version===pkg.version);
-      if(extra.length) {
-        const block=fs.readFileSync(path.join(source,'Cargo.lock'),'utf8').split('[[package]]').find(block=>block.startsWith('\nname = "'+pkg.name+'"\nversion = "'+pkg.version+'"\n'));
-        const vcs=JSON.parse(fs.readFileSync(path.join(base,'.cargo_vcs_info.json'),'utf8'));
-        const names=[];
-        for(const item of extra) {
-          if(!block?.includes('checksum = "'+item.crateSha256+'"')||vcs.git.sha1!==item.commit)throw Error('Dependency notice source differs from its pin');
-          if(item.path.startsWith('/')||item.path.includes('\\')||item.path.split('/').some(part=>!part||part==='..'||part==='.'))throw Error('Unsafe dependency notice path');
-          const input=path.join(root,'tools/office/third-party',item.path),bytes=fs.readFileSync(input);
-          if(bytes.length!==item.size||hash(bytes)!==item.sha256)
-            throw Error('Pinned dependency notice changed: '+item.path+' (expected '+item.size+' bytes, got '+bytes.length+'; preserve original checkout bytes)');
-          const name='licenses/third-party/'+item.path;copy(input,name);names.push(name);
-        }
-        notices.push({name:pkg.name,version:pkg.version,license:pkg.license,notices:names,noticeSource:'pinned-dependency-repository',noticeUrls:extra.map(item=>item.url)});
-        continue;
-      }
-      // Several published workspace crates omit standalone license files.
-      // Retain the exact upstream distribution notices, with the exact package
-      // and version listed, instead of manufacturing a generic license text.
-      const official=upstreamNotices.filter(notice=>notice.text.includes('| '+pkg.name+' | '+pkg.version+' |'));
-      if(!official.length)throw Error('Missing dependency license notice: '+pkg.name+' '+pkg.version);
-      notices.push({name:pkg.name,version:pkg.version,license:pkg.license,notices:official.map(notice=>notice.path),noticeSource:'pinned-upstream-distribution'});
-      continue;
-    }
-    const names=[];
-    for(const file of files) {
-      const name='licenses/crates/'+pkg.name+'-'+pkg.version+'/'+path.basename(file);
-      if(!fs.existsSync(path.join(output,name)))copy(file,name);
-      names.push(name);
-    }
-    notices.push({name:pkg.name,version:pkg.version,license:pkg.license,notices:names});
-  }
+  for(const {input,name} of copies)if(!fs.existsSync(path.join(output,name)))copy(input,name);
   fs.writeFileSync(path.join(output,'source.json'),JSON.stringify({
     schema:1,repository:pins.repository,tag:pins.tag,commit:pins.commit,sourceVersion:pins.sourceVersion,
     sourceLockSha256:identity.pinSha256,cargoLockSha256:hash(fs.readFileSync(path.join(source,'Cargo.lock'))),

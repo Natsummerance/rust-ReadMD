@@ -37,7 +37,7 @@ OCR、Typst、出版字体、代码运行时及音视频转写依实际平台能
 
 ## 验证记录
 
-macOS ARM64 完成六组共 **244 项原生检查**，涵盖关闭与恢复、六格式导出、最终 ZIP 冷启动／重开和 V0.0.6 隔离会话升级。归档内的生产二进制另通过 46 语言保存编码流程，页面异常为 0。[Mac 本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败，以及未改包后成功的同包复测结果。
+V0.0.7 的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，涵盖关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级。归档内的生产二进制另通过 46 语言保存编码流程，页面异常为 0。[Mac 本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败，以及未改包后成功的同包复测结果。
 
 发行 CI 配置 Windows x64、Linux x64、macOS ARM64／Intel 及 VSIX／MCP；正式发布需等待共享质量检查和全部构建。[平台矩阵](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/release/platform-matrix.json)与[功能验证目录](https://github.com/Natsummerance/rust-ReadMD/tree/V0.0.7/docs/reviews)分别记录构建、原生操作及跨应用证据。
 
@@ -47,7 +47,7 @@ macOS ARM64 完成六组共 **244 项原生检查**，涵盖关闭与恢复、�
 
 V0.0.7 adds page-first PDF reading, read-only DOCX/PPTX layout views, merged-cell table editing, safer closing and recovery, manual resolution of shared suggestions, SVG drawing, multi-file OpenAPI updates and opt-in VS Code inline AI completion. Desktop, VSIX and MCP configuration packages share version `0.0.7`.
 
-Downloads target Windows x64, Linux x64 and macOS Apple Silicon/Intel. Desktop bundles include matching Office and PDFium resources. Larger OCR, typesetting, font and media capabilities depend on platform packs; independent FFmpeg/Whisper packs are separate from these release assets. Mac packages use free ad hoc signing and are not Apple-notarized. The macOS ARM64 cycle completed 244 native checks; build coverage and native/platform interoperability evidence are recorded separately in the links above.
+Downloads target Windows x64, Linux x64 and macOS Apple Silicon/Intel. Desktop bundles include matching Office and PDFium resources. Larger OCR, typesetting, font and media capabilities depend on platform packs; independent FFmpeg/Whisper packs are separate from these release assets. Mac packages use free ad hoc signing and are not Apple-notarized. The locally packaged macOS ARM64 candidate completed 244 native checks; build coverage and native/platform interoperability evidence are recorded separately in the links above.
 
 ---
 

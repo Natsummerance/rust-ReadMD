@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {nativeBuildEnvironment} from './native-build-env.mjs';
-import {packageOfficeRuntime} from './build-office-runtime.mjs';
+import {officeDependencyNoticePlan,packageOfficeRuntime} from './build-office-runtime.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const pinFile=path.join(root,'tools/office/third-party/source.lock.json');
@@ -192,9 +192,11 @@ async function main() {
   } else {
     if((platform.startsWith('macos-')&&process.platform!=='darwin')||(platform==='linux-x64'&&(process.platform!=='linux'||process.arch!=='x64'))||(platform==='windows-x64'&&(process.platform!=='win32'||process.arch!=='x64')))throw Error('Build the Office worker on its native desktop platform');
     const common=['--offline','--locked','--manifest-path',manifest];
-    run('cargo',['build',...common,'--release','-p','ibis-office-app','--bin','readmd-office-render','--target',target,'--jobs','2'],{cwd:source,env,capture:false});
     const metadata=JSON.parse(run('cargo',['metadata',...common,'--format-version','1','--filter-platform',target],{cwd:source,env}));
     const dependencies=run('cargo',['tree',...common,'-p','ibis-office-app','--target',target,'--edges','normal,build','--prefix','none'],{cwd:source,env});
+    // Check the target's complete source notices before the expensive offline build.
+    officeDependencyNoticePlan({root,source,metadata,dependencies});
+    run('cargo',['build',...common,'--release','-p','ibis-office-app','--bin','readmd-office-render','--target',target,'--jobs','2'],{cwd:source,env,capture:false});
     const binary=path.join(targetDirectory,target,'release','readmd-office-render'+(platform==='windows-x64'?'.exe':''));
     const output=ownedPath(options['--output']||path.join(root,'build/office-runtime',platform));
     console.log(JSON.stringify(packageOfficeRuntime({root,source,binary,metadata,dependencies,identity,output,platform})));

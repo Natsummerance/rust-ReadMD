@@ -4556,7 +4556,7 @@ fn serve_completion_stream(app: &Arc<App>, req: &Request, writer: &mut TcpStream
         Ok((id.to_string(),context.revision))
     })();
     let (task_id,context_revision)=match identity{Ok(value)=>value,Err(error)=>{let _=writer.set_nonblocking(true);let _=write_response(writer,&error_response(error),false,false);return;}};
-    let peer=match chat_stream::Peer::watch(writer){Ok(peer)=>peer,Err(error)=>{let _=writer.set_nonblocking(true);let _=write_response(writer,&error_response(error),false,false);return;}};
+    let peer=match chat_stream::Peer::watch_stream(writer){Ok(peer)=>peer,Err(error)=>{let _=writer.set_nonblocking(true);let _=write_response(writer,&error_response(error),false,false);return;}};
     let started = std::cell::Cell::new(false);
     let outcome;
     {
