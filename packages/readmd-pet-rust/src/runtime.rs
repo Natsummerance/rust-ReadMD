@@ -382,11 +382,19 @@ impl PetHost {
                     }
                     #[cfg(target_os = "macos")]
                     match refresh_visible_bounds(
-                        &window, backend.as_mut(), &webview, &mut state, &publisher,
+                        &window,
+                        backend.as_mut(),
+                        &webview,
+                        &mut state,
+                        &publisher,
                     ) {
-                        Ok(true) => sync_input_watcher(&input_watcher, backend.as_ref(), &window, &state),
-                        Ok(false) => {},
-                        Err(error) => write_health(&health, &state, "degraded", &format_error(&error)),
+                        Ok(true) => {
+                            sync_input_watcher(&input_watcher, backend.as_ref(), &window, &state)
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            write_health(&health, &state, "degraded", &format_error(&error))
+                        }
                     }
                     if health.consecutive_failures() >= HEALTH_FAILURE_WRITE_LIMIT {
                         // The app can no longer observe or control this host; it
@@ -622,7 +630,10 @@ fn publish_recovered_position(
     // The same acknowledgement guard used after a native drag prevents a
     // queued pre-disconnect snapshot from moving the rescued panel back out.
     state.pending_drag = Some((state.bounds, Instant::now()));
-    publish(publisher, serde_json::json!({"type":"bounds","bounds":state.bounds}))
+    publish(
+        publisher,
+        serde_json::json!({"type":"bounds","bounds":state.bounds}),
+    )
 }
 
 #[cfg(target_os = "macos")]

@@ -17,10 +17,7 @@ fn valid(rect: SnapshotBounds) -> bool {
 }
 
 fn intersects(a: SnapshotBounds, b: SnapshotBounds) -> bool {
-    a.x < b.x + b.width
-        && b.x < a.x + a.width
-        && a.y < b.y + b.height
-        && b.y < a.y + a.height
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
 /// Preserve every partly visible placement, including negative-coordinate
@@ -48,8 +45,12 @@ pub(super) fn recover_offscreen(
                 screen.frame
             };
             let placed = SnapshotBounds {
-                x: bounds.x.clamp(area.x, (area.x + area.width - bounds.width).max(area.x)),
-                y: bounds.y.clamp(area.y, (area.y + area.height - bounds.height).max(area.y)),
+                x: bounds
+                    .x
+                    .clamp(area.x, (area.x + area.width - bounds.width).max(area.x)),
+                y: bounds
+                    .y
+                    .clamp(area.y, (area.y + area.height - bounds.height).max(area.y)),
                 ..bounds
             };
             let distance = (placed.x - bounds.x).powi(2) + (placed.y - bounds.y).powi(2);
@@ -64,45 +65,81 @@ mod tests {
     use super::*;
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> SnapshotBounds {
-        SnapshotBounds { x, y, width, height }
+        SnapshotBounds {
+            x,
+            y,
+            width,
+            height,
+        }
     }
     fn screen(x: f64, y: f64, width: f64, height: f64) -> ScreenArea {
         let frame = rect(x, y, width, height);
-        ScreenArea { frame, visible: frame }
+        ScreenArea {
+            frame,
+            visible: frame,
+        }
     }
     fn pet(x: f64, y: f64) -> SnapshotBounds {
-        SnapshotBounds { x, y, ..SnapshotBounds::default() }
+        SnapshotBounds {
+            x,
+            y,
+            ..SnapshotBounds::default()
+        }
     }
 
     #[test]
     fn old_landscape_position_is_recovered_on_the_actual_portrait_screen() {
         let original = pet(1639.0, 309.0);
-        assert_eq!(recover_offscreen(original, &[screen(0.0, 0.0, 1200.0, 1920.0)], false), pet(880.0, 309.0));
+        assert_eq!(
+            recover_offscreen(original, &[screen(0.0, 0.0, 1200.0, 1920.0)], false),
+            pet(880.0, 309.0)
+        );
     }
 
     #[test]
     fn negative_and_above_primary_monitor_positions_remain_legal() {
-        let screens = [screen(0.0, 0.0, 1200.0, 1920.0), screen(-1600.0, 100.0, 1600.0, 900.0), screen(0.0, -1080.0, 1920.0, 1080.0)];
+        let screens = [
+            screen(0.0, 0.0, 1200.0, 1920.0),
+            screen(-1600.0, 100.0, 1600.0, 900.0),
+            screen(0.0, -1080.0, 1920.0, 1080.0),
+        ];
         for original in [pet(-1500.0, 200.0), pet(100.0, -1000.0)] {
             assert_eq!(recover_offscreen(original, &screens, false), original);
         }
         // Recovery follows the nearest real display, rather than the primary.
-        assert_eq!(recover_offscreen(pet(-2100.0, 200.0), &screens, false), pet(-1600.0, 200.0));
+        assert_eq!(
+            recover_offscreen(pet(-2100.0, 200.0), &screens, false),
+            pet(-1600.0, 200.0)
+        );
     }
 
     #[test]
     fn a_single_visible_pixel_on_any_edge_preserves_the_requested_position() {
         let screens = [screen(0.0, 0.0, 1200.0, 1920.0)];
-        for original in [pet(-319.0, 300.0), pet(1199.0, 300.0), pet(100.0, -419.0), pet(100.0, 1919.0)] {
+        for original in [
+            pet(-319.0, 300.0),
+            pet(1199.0, 300.0),
+            pet(100.0, -419.0),
+            pet(100.0, 1919.0),
+        ] {
             assert_eq!(recover_offscreen(original, &screens, false), original);
         }
-        assert_eq!(recover_offscreen(pet(1200.0, 300.0), &screens, false), pet(880.0, 300.0));
+        assert_eq!(
+            recover_offscreen(pet(1200.0, 300.0), &screens, false),
+            pet(880.0, 300.0)
+        );
     }
 
     #[test]
     fn screen_gaps_are_not_mistaken_for_the_union_bounding_box() {
-        let screens = [screen(0.0, 0.0, 1000.0, 1000.0), screen(2000.0, 0.0, 1000.0, 1000.0)];
-        assert_eq!(recover_offscreen(pet(1200.0, 200.0), &screens, false), pet(680.0, 200.0));
+        let screens = [
+            screen(0.0, 0.0, 1000.0, 1000.0),
+            screen(2000.0, 0.0, 1000.0, 1000.0),
+        ];
+        assert_eq!(
+            recover_offscreen(pet(1200.0, 200.0), &screens, false),
+            pet(680.0, 200.0)
+        );
     }
 
     #[test]
@@ -113,9 +150,15 @@ mod tests {
         }];
         let original = pet(1639.0, 1900.0);
         assert_eq!(recover_offscreen(original, &screens, true), original);
-        assert_eq!(recover_offscreen(original, &screens, false), pet(830.0, 1444.0));
+        assert_eq!(
+            recover_offscreen(original, &screens, false),
+            pet(830.0, 1444.0)
+        );
         let large = rect(2000.0, 2000.0, 600.0, 800.0);
-        assert_eq!(recover_offscreen(large, &[screen(0.0, 0.0, 320.0, 300.0)], false), rect(0.0, 0.0, 600.0, 800.0));
+        assert_eq!(
+            recover_offscreen(large, &[screen(0.0, 0.0, 320.0, 300.0)], false),
+            rect(0.0, 0.0, 600.0, 800.0)
+        );
     }
 
     #[test]
@@ -123,11 +166,20 @@ mod tests {
         let portrait = screen(0.0, 0.0, 1200.0, 1920.0);
         let right = screen(1200.0, 0.0, 1920.0, 1080.0);
         let original = pet(1639.0, 309.0);
-        assert_eq!(recover_offscreen(original, &[portrait, right], false), original);
+        assert_eq!(
+            recover_offscreen(original, &[portrait, right], false),
+            original
+        );
         let recovered = recover_offscreen(original, &[portrait], false);
         assert_eq!(recovered, pet(880.0, 309.0));
-        assert_eq!(recover_offscreen(recovered, &[portrait, right], false), recovered);
+        assert_eq!(
+            recover_offscreen(recovered, &[portrait, right], false),
+            recovered
+        );
         assert_eq!(recover_offscreen(original, &[], false), original);
-        assert_eq!(recover_offscreen(original, &[screen(0.0, 0.0, 0.0, 0.0)], false), original);
+        assert_eq!(
+            recover_offscreen(original, &[screen(0.0, 0.0, 0.0, 0.0)], false),
+            original
+        );
     }
 }

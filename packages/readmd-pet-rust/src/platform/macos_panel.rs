@@ -1,11 +1,11 @@
 //! A real NSPanel owns the companion surface. A Tao NSWindow does not acquire
 //! NSPanel's non-activation behavior by changing its style mask after creation.
 //! The existing Tao event loop, WRY renderer and shared host state are reused.
+use super::macos_placement::{recover_offscreen, ScreenArea};
 use crate::{
     error::{HostError, HostResult},
     protocol::SnapshotBounds,
 };
-use super::macos_placement::{recover_offscreen, ScreenArea};
 use objc2::{define_class, msg_send, rc::Retained, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSBackingStoreType, NSColor, NSFloatingWindowLevel, NSNormalWindowLevel, NSPanel, NSScreen,
@@ -108,20 +108,25 @@ impl Window {
             let frame = screen.frame();
             frame.origin.y + frame.size.height
         });
-        let areas = screens.iter().map(|screen| ScreenArea {
-            frame: logical_bounds(screen.frame(), top),
-            visible: logical_bounds(screen.visibleFrame(), top),
-        }).collect();
+        let areas = screens
+            .iter()
+            .map(|screen| ScreenArea {
+                frame: logical_bounds(screen.frame(), top),
+                visible: logical_bounds(screen.visibleFrame(), top),
+            })
+            .collect();
         (top, areas)
     }
     fn bounds_with_top(&self, top: f64) -> SnapshotBounds {
         logical_bounds(self.panel.frame(), top)
     }
     pub(crate) fn bounds(&self) -> SnapshotBounds {
-        let top = NSScreen::screens(self.panel.mtm()).firstObject().map_or(0.0, |screen| {
-            let frame = screen.frame();
-            frame.origin.y + frame.size.height
-        });
+        let top = NSScreen::screens(self.panel.mtm())
+            .firstObject()
+            .map_or(0.0, |screen| {
+                let frame = screen.frame();
+                frame.origin.y + frame.size.height
+            });
         self.bounds_with_top(top)
     }
     pub(crate) fn recover_offscreen_bounds(&self) -> Option<SnapshotBounds> {
@@ -197,16 +202,40 @@ mod tests {
     #[test]
     fn appkit_above_and_negative_monitors_use_the_shared_top_left_origin() {
         let above = NSRect::new(NSPoint::new(0.0, 1920.0), NSSize::new(1920.0, 1080.0));
-        assert_eq!(logical_bounds(above, 1920.0), SnapshotBounds { x: 0.0, y: -1080.0, width: 1920.0, height: 1080.0 });
+        assert_eq!(
+            logical_bounds(above, 1920.0),
+            SnapshotBounds {
+                x: 0.0,
+                y: -1080.0,
+                width: 1920.0,
+                height: 1080.0
+            }
+        );
         let left = NSRect::new(NSPoint::new(-1600.0, 920.0), NSSize::new(1600.0, 900.0));
-        assert_eq!(logical_bounds(left, 1920.0), SnapshotBounds { x: -1600.0, y: 100.0, width: 1600.0, height: 900.0 });
+        assert_eq!(
+            logical_bounds(left, 1920.0),
+            SnapshotBounds {
+                x: -1600.0,
+                y: 100.0,
+                width: 1600.0,
+                height: 900.0
+            }
+        );
     }
 
     #[test]
     fn appkit_window_round_trip_preserves_logical_points_and_fractional_positions() {
         for bounds in [
-            SnapshotBounds { x: 880.0, y: 309.0, ..SnapshotBounds::default() },
-            SnapshotBounds { x: -1550.5, y: -800.25, ..SnapshotBounds::default() },
+            SnapshotBounds {
+                x: 880.0,
+                y: 309.0,
+                ..SnapshotBounds::default()
+            },
+            SnapshotBounds {
+                x: -1550.5,
+                y: -800.25,
+                ..SnapshotBounds::default()
+            },
         ] {
             assert_eq!(logical_bounds(native_frame(bounds, 1920.0), 1920.0), bounds);
         }

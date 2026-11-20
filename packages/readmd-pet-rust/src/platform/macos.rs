@@ -53,7 +53,9 @@ impl PlatformBackend for MacOsBackend {
     }
     fn refresh_bounds(&mut self, window: &Window) -> HostResult<Option<SnapshotBounds>> {
         if native_drag_active()
-            || self.last_screen_check.is_some_and(|last| last.elapsed() < Duration::from_secs(1))
+            || self
+                .last_screen_check
+                .is_some_and(|last| last.elapsed() < Duration::from_secs(1))
         {
             return Ok(None);
         }
