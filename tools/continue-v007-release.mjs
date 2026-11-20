@@ -12,13 +12,13 @@ export function publishedCopy(text, {source, run, petRun, locale = 'zh-CN'}) {
   const release = 'https://github.com/Natsummerance/rust-ReadMD/actions/runs/' + run;
   const pet = 'https://github.com/Natsummerance/rust-ReadMD/actions/runs/' + petRun;
   const copy = {
-    'zh-CN': `本轮 Vega-Lite 图表修复已自动发布。全部十份桌面／集成包来自同一完整源码 [\`${source}\`](${tree})；[发行 CI](${release}) 与 [PET 三系统检查](${pet}) 均通过。应用保持 0.0.7，随包伴读组件为 1.0.2。`,
-    en: `The Vega-Lite chart fix is published. All ten desktop/integration assets come from [\`${source}\`](${tree}); the [release CI](${release}) and [three-platform PET checks](${pet}) passed. The app remains 0.0.7 and bundles companion 1.0.2.`,
-    'zh-TW': `本輪 Vega-Lite 圖表修復已自動發行。全部十份桌面／整合套件來自同一完整原始碼 [\`${source}\`](${tree})；[發行 CI](${release}) 與 [PET 三系統檢查](${pet}) 均通過。應用程式維持 0.0.7，隨包伴讀元件為 1.0.2。`,
-    ja: `Vega-Lite グラフの修正を公開しました。全10ファイルは同じソース [\`${source}\`](${tree}) から生成し、[リリース CI](${release}) と [PET の3システム検査](${pet}) が通過しました。アプリは 0.0.7、同梱コンパニオンは 1.0.2 です。`,
+    'zh-CN': `本轮图表阅读界面与 AI 修复已自动发布。全部十份桌面／集成包来自同一完整源码 [\`${source}\`](${tree})；[发行 CI](${release}) 与 [PET 三系统检查](${pet}) 均通过。应用保持 0.0.7，随包伴读组件为 1.0.2。`,
+    en: `The inline chart UI and AI repair refresh is published. All ten desktop/integration assets come from [\`${source}\`](${tree}); the [release CI](${release}) and [three-platform PET checks](${pet}) passed. The app remains 0.0.7 and bundles companion 1.0.2.`,
+    'zh-TW': `本輪圖表閱讀介面與 AI 修復已自動發行。全部十份桌面／整合套件來自同一完整原始碼 [\`${source}\`](${tree})；[發行 CI](${release}) 與 [PET 三系統檢查](${pet}) 均通過。應用程式維持 0.0.7，隨包伴讀元件為 1.0.2。`,
+    ja: `グラフ閲覧 UI と AI 修正の更新を公開しました。全10ファイルは同じソース [\`${source}\`](${tree}) から生成し、[リリース CI](${release}) と [PET の3システム検査](${pet}) が通過しました。アプリは 0.0.7、同梱コンパニオンは 1.0.2 です。`,
   };
   return text.replace(/<!-- readmd-autopublish:start -->[\s\S]*?<!-- readmd-autopublish:end -->/, start + '\n' + (copy[locale] || copy['zh-CN']) + '\n' + end)
-    .replace('Vega-Lite 图表修复（自动发布中）', 'Vega-Lite 图表修复（已自动发布）');
+    .replace('图表阅读与 AI 修复（自动发布中）', '图表阅读与 AI 修复（已自动发布）');
 }
 async function main() {
   const source = process.env.CANDIDATE_COMMIT, run = Number(process.env.CANDIDATE_RUN), petRun = Number(process.env.CANDIDATE_PET_RUN), token = process.env.GH_TOKEN;
@@ -84,7 +84,7 @@ async function main() {
   if (tree.length) {
     const commit = await api('GET', '/git/commits/' + parent);
     const updatedTree = await api('POST', '/git/trees', {base_tree: commit.tree.sha, tree});
-    const updated = await api('POST', '/git/commits', {message: 'Record completed V0.0.7 Vega-Lite refresh and actual downloads [skip ci]', tree: updatedTree.sha, parents: [parent], author: {name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com'}});
+    const updated = await api('POST', '/git/commits', {message: 'Record completed V0.0.7 inline chart and AI refresh [skip ci]', tree: updatedTree.sha, parents: [parent], author: {name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com'}});
     await api('PATCH', '/git/refs/heads/main', {sha: updated.sha, force: false});
     documentationCommit = updated.sha;
   }
