@@ -570,7 +570,7 @@ fn language(source: &str) -> &str {
     }
     "en"
 }
-fn prefix(locale: &str, kind: &str) -> String {
+pub(crate) fn prefix(locale: &str, kind: &str) -> String {
     static LABELS: OnceLock<Value> = OnceLock::new();
     let labels = LABELS.get_or_init(|| serde_json::from_str(include_str!("../../../assets/data/publication-labels.json")).expect("publication labels"));
     let locale = locale.replace('_', "-");

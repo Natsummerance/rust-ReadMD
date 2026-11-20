@@ -3,7 +3,7 @@
 globalThis.ReadMDExportHtmlLayout = (() => {
   const layouts = new Set(['reading', 'docs', 'magazine']);
 
-  function mount(root, layout, { links = true, contentsLabel, tableLabel, tone = 'light' } = {}) {
+  function mount(root, layout, { links = true, contentsLabel = 'Contents', tableLabel = 'Table', tone = 'light' } = {}) {
     if (!root || !layouts.has(layout)) return;
     const doc = root.ownerDocument;
     // A preview can reuse its host. Keep the source DOM while changing layout.
@@ -12,7 +12,6 @@ globalThis.ReadMDExportHtmlLayout = (() => {
       const article = previous.querySelector('.readmd-layout-article');
       if (article) root.replaceChildren(...article.childNodes);
     }
-    const chinese = /^zh/i.test(doc.documentElement.lang);
     const wrap = doc.createElement('div');
     wrap.className = 'readmd-html-layout';
     wrap.dataset.layout = layout;
@@ -28,7 +27,7 @@ globalThis.ReadMDExportHtmlLayout = (() => {
       const scroll = doc.createElement('div');
       scroll.className = 'readmd-layout-table';
       scroll.setAttribute('role', 'region');
-      scroll.setAttribute('aria-label', table.caption?.textContent?.trim() || tableLabel || (chinese ? '表格' : 'Table'));
+      scroll.setAttribute('aria-label', table.caption?.textContent?.trim() || tableLabel);
       scroll.tabIndex = 0;
       table.before(scroll);
       scroll.appendChild(table);
@@ -39,10 +38,9 @@ globalThis.ReadMDExportHtmlLayout = (() => {
       if (headings.length) {
         const navigation = doc.createElement('nav');
         navigation.className = 'readmd-layout-nav';
-        const label = contentsLabel || (chinese ? '目录' : 'Contents');
-        navigation.setAttribute('aria-label', label);
+        navigation.setAttribute('aria-label', contentsLabel);
         const title = doc.createElement('strong');
-        title.textContent = label;
+        title.textContent = contentsLabel;
         const list = doc.createElement('ul');
         // Reserve authored IDs in later headings and body content too.
         const owners = new Map();

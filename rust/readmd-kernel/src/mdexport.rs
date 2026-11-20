@@ -1178,6 +1178,19 @@ pub fn export_html(
     } else {
         std::borrow::Cow::Borrowed(EXPORT_TEMPLATE)
     };
+    let template = if let Some(layout) = layout {
+        let locale = language.as_deref().unwrap_or("zh-CN");
+        let mut navigation = crate::publication_navigation::Request::default();
+        crate::publication_navigation::localize(&mut navigation, locale);
+        let contents = json_dump_escaped(&crate::publication_navigation::label(&navigation, "toc"));
+        let table = json_dump_escaped(&crate::cross_references::prefix(locale, "table"));
+        let tone = match options["htmlTheme"].as_str() { Some("dark") => "dark", Some("sepia") => "sepia", _ => "light" };
+        let body = format!(r#"<body data-readmd-html-layout="{layout}" data-readmd-html-tone="{tone}">"#);
+        let mount = format!("  ReadMDExportHtmlLayout.mount(root, document.body.dataset.readmdHtmlLayout, {{ tone: document.body.dataset.readmdHtmlTone, contentsLabel: {contents}, tableLabel: {table} }});\n  var highlights = ");
+        std::borrow::Cow::Owned(template.replacen("<body>", &body, 1).replacen("  var highlights = ", &mount, 1))
+    } else {
+        template
+    };
     let mut html = template
         .replacen("<html lang=\"zh-CN\">",&format!("<html lang=\"{}\">",esc_attr(language.as_deref().unwrap_or("zh-CN"))),1)
         .replace("__TITLE__", &esc_attr(&title))
@@ -1187,11 +1200,6 @@ pub fn export_html(
         .replace("__MARKED__", &marked_js)
         .replace("__MATHJAX__", &mathjax_js)
         .replace("__MD__", &md_esc);
-    if let Some(layout) = layout {
-        let tone = match options["htmlTheme"].as_str() { Some("dark") => "dark", Some("sepia") => "sepia", _ => "light" };
-        html = html.replacen("<body>", &format!("<body data-readmd-html-layout=\"{layout}\" data-readmd-html-tone=\"{tone}\">"), 1);
-        html = html.replacen("  var highlights = ", "  ReadMDExportHtmlLayout.mount(root, document.body.dataset.readmdHtmlLayout, { tone: document.body.dataset.readmdHtmlTone });\n  var highlights = ", 1);
-    }
     if let Some(footnotes)=footnotes{
         // The original source stays available for offline copy/recovery. Only
         // real typed notes select this pre-rendered path; plain HTML retains

@@ -68,7 +68,7 @@ function renderHtmlArticlePreview(data, presetName) {
         if (small || !link.getAttribute('href')?.startsWith('#')) link.removeAttribute('href');
       }
       if (data.authorText?.runs.length) window.ReadMDAuthorText?.apply(root, data.authorText);
-      ReadMDExportHtmlLayout.mount(root, opts.htmlLayout, {links: !small, contentsLabel: i18n.t('tabs.toc'), tone: opts.htmlTheme});
+      ReadMDExportHtmlLayout.mount(root, opts.htmlLayout, {links: !small, contentsLabel: i18n.t('tabs.toc'), tableLabel: i18n.t('editor.table'), tone: opts.htmlTheme});
       if (data.tableTracks) window.ReadMDTableView?.observe(root, root, (opts.table?.widthPct || 100) / 100);
       renderMath(root);
       awaitHtmlPreviewSurface(host, root, generation);
