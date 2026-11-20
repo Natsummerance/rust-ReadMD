@@ -15,11 +15,15 @@
 
 - **发行收尾**：修复 Windows 旧进度回执读取时的新回执提交，保留重试中已完成的输出；SSE 流式聊天在接收端读取停滞时可取消所属写入与连接。Office 运行时按实际依赖闭包补齐并校验锁定版本的第三方许可通知。
 
-## 2026-11-20 桌宠恢复修复（自动发布中）
+## 2026-11-20 Vega-Lite 图表修复（自动发布中）
 
 <!-- readmd-autopublish:start -->
-桌宠恢复源码 [`0b3535f219c66ae455186344294a6976925a164f`](https://github.com/Natsummerance/rust-ReadMD/tree/0b3535f219c66ae455186344294a6976925a164f) 已冻结，自动续发绑定发行 CI 44676245719 与 PET 三系统 CI 44676248896。只有两者均成功后，GitHub 才会沿用既有事务统一替换十份包、更新实际下载快照并部署官网。当前正式文件以 Release 资产与 SHA256SUMS 为准。
+Vega-Lite 图表修复源码已公开：[`e0443ec3bc80a5dd853a81edd696e95db5516265`](https://github.com/Natsummerance/rust-ReadMD/tree/e0443ec3bc80a5dd853a81edd696e95db5516265)。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744958483) 与 [PET 三系统检查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744976370) 均通过后，GitHub 自动续作统一替换全部十份桌面／集成包和校验清单，再同步实际下载快照与官网；当前正式文件以 Release 资产与 SHA256SUMS 为准。
 <!-- readmd-autopublish:end -->
+
+阅读视图恢复 Vega／Vega-Lite 图表的离线矢量显示，使用随包解释器，无需系统 Node。本机已验证无 Node PATH 下三张图表均正常显示。
+
+## 2026-11-20 桌宠恢复源码（包含在本轮构建中）
 
 App 保持 0.0.7，随包伴读组件升级至 1.0.2。Mac 桌宠完全离屏时自动找回可见位置并保存，已有安装可升级；启动失败说明跟随已选语言。本机同产品源码的签名候选已验证旧版升级、离屏找回、重开与原生冷启动。正式四平台包由绑定的发行 CI 生成并接受已有发布验收。
 

@@ -52,7 +52,7 @@ This same-version update adds five native PPTX designs: **Confluence, Lightfield
 The previous layout publication’s 10 desktop/integration assets are built from [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c). [Matching source ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [Release CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015). The original `V0.0.7` tag stays at its first-publication commit; use these fixed links for this refresh’s source.
 
 <!-- readmd-autopublish:start -->
-Pet recovery source is available at [`0b3535f219c66ae455186344294a6976925a164f`](https://github.com/Natsummerance/rust-ReadMD/tree/0b3535f219c66ae455186344294a6976925a164f). A GitHub continuation will replace all ten assets and refresh the website after both bound CI runs pass; the actual Release files and SHA256SUMS define publication.
+The Vega-Lite chart fix source is available at [`e0443ec3bc80a5dd853a81edd696e95db5516265`](https://github.com/Natsummerance/rust-ReadMD/tree/e0443ec3bc80a5dd853a81edd696e95db5516265). After the bound [release CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744958483) and [three-platform PET checks](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744976370) pass, GitHub will replace all ten desktop/integration assets and checksums, then refresh the actual download snapshot and website. The Release files and SHA256SUMS define publication.
 <!-- readmd-autopublish:end -->
 
 ## Downloads and installation
