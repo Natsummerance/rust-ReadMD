@@ -75,7 +75,7 @@ async function main() {
   if (tree.length) {
     const commit = await api('GET', '/git/commits/' + parent);
     const updatedTree = await api('POST', '/git/trees', {base_tree: commit.tree.sha, tree});
-    const updated = await api('POST', '/git/commits', {message: 'Record completed V0.0.7 recovery refresh and actual downloads [skip ci]', tree: updatedTree.sha, parents: [parent]});
+    const updated = await api('POST', '/git/commits', {message: 'Record completed V0.0.7 recovery refresh and actual downloads [skip ci]', tree: updatedTree.sha, parents: [parent], author: {name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com'}});
     await api('PATCH', '/git/refs/heads/main', {sha: updated.sha, force: false});
     documentationCommit = updated.sha;
   }
