@@ -26,12 +26,21 @@ async function main() {
   const own = path.join(root, '.cache/v007-refresh'); fs.mkdirSync(own, {recursive: true});
   const save = (name, value) => fs.writeFileSync(path.join(own, name), JSON.stringify(value, null, 2) + '\n');
   async function api(method, route, data) {
-    const response = await fetch('https://api.github.com/' + base + route, {method, headers: {Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json'}, body: data === undefined ? undefined : JSON.stringify(data), signal: AbortSignal.timeout(60000)});
-    if (!response.ok) throw Error('Continuation ' + method + ' HTTP ' + response.status);
-    return response.status === 204 ? null : response.json();
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await fetch('https://api.github.com/' + base + route, {method, headers: {Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json'}, body: data === undefined ? undefined : JSON.stringify(data), signal: AbortSignal.timeout(60000)});
+        if (!response.ok) throw Error('Continuation ' + method + ' HTTP ' + response.status);
+        return response.status === 204 ? null : await response.json();
+      } catch (error) {
+        // Only reads are retried; ambiguous writes retain their normal receipts.
+        if (method !== 'GET' || attempt >= 5) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
+    }
   }
   if (process.argv[2] === 'wait') {
     const deadline = Date.now() + 150 * 60000; let previous;
+    save('ci-wait.json', {sourceCommit: source, releaseRun: run, petRun, status: 'waiting', checkedAt: new Date().toISOString()});
     while (Date.now() < deadline) {
       const states = [];
       for (const [id, expectedPath] of [[run, '.github/workflows/release.yml'], [petRun, '.github/workflows/pet-rust-quality.yml']]) {
