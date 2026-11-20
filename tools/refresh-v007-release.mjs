@@ -8,6 +8,7 @@ import {pipeline} from 'node:stream/promises';
 import {PACKAGE_NAMES, writeChecksums, releaseNotes} from './publish-release.mjs';
 import {FIXED_TAG, FIXED_TAG_COMMIT, FIXED_RELEASE_ID, assertCandidateRun, refreshV007} from './refresh-v007-transaction.mjs';
 import {inspectV007Packages} from './inspect-v007-packages.mjs';
+import {publishedCopy} from './continue-v007-release.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runId = Number(process.env.CANDIDATE_RUN), sourceCommit = process.env.CANDIDATE_COMMIT, token = process.env.GH_TOKEN;
@@ -22,7 +23,7 @@ const productTrees = ['assets', 'rust', 'packages', 'VERSION'].map(name => ({pat
   publicMain: execFileSync('git', ['rev-parse', 'HEAD:' + name], {cwd: root, encoding: 'utf8'}).trim()}));
 if (productTrees.some(entry => entry.candidate !== entry.publicMain)) throw Error('Public product tree differs from the built candidate');
 const publicationFiles = ['.github/workflows/refresh-v007-assets.yml', 'tools/inspect-p0-platform-packages.mjs', 'tools/inspect-v007-packages.mjs',
-  'tools/refresh-v007-release.mjs', 'tools/refresh-v007-transaction.mjs', 'tools/test/refresh-v007-release.test.mjs',
+  'tools/refresh-v007-release.mjs', 'tools/refresh-v007-transaction.mjs', 'tools/continue-v007-release.mjs', 'tools/test/refresh-v007-release.test.mjs',
   'README.md', 'README.en.md', 'README.zh-TW.md', 'README.ja.md', 'RELEASE_NOTES.md', 'release/release_notes.md'];
 const changedFiles = execFileSync('git', ['diff', '--name-only', sourceCommit, 'HEAD'], {cwd: root, encoding: 'utf8'}).trim().split('\n').filter(Boolean);
 if (changedFiles.some(file => !publicationFiles.includes(file))) throw Error('Changes beyond the reviewed publication tools and documentation require a new product CI');
@@ -111,7 +112,7 @@ save('source-inspection.json', sourceInspection);
 writeChecksums(directory);
 save('verification.json', verification); save('SHA256SUMS.txt', fs.readFileSync(path.join(directory, 'SHA256SUMS.txt'), 'utf8'));
 const identity = `同版资产更新：十份桌面／集成包全部来自同一完整构建提交 [\`${sourceCommit}\`](https://github.com/Natsummerance/rust-ReadMD/commit/${sourceCommit})；[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/${runId})。\n\n本次源码：[固定源码树](https://github.com/Natsummerance/rust-ReadMD/tree/${sourceCommit}) · [同一提交的 ZIP 源码归档](https://github.com/Natsummerance/rust-ReadMD/archive/${sourceCommit}.zip)。版本保留 0.0.7，原标签 V0.0.7 固定在 \`${FIXED_TAG_COMMIT}\`，不移动标签；GitHub 页面自动附带的 Source code 归档仍对应这个原标签。本次更新请使用本段固定提交的源码链接。\n\n`;
-const notes = releaseNotes(fs.readFileSync(path.join(root, 'RELEASE_NOTES.md'), 'utf8'), {tag: FIXED_TAG, commit: sourceCommit, repo: 'Natsummerance/rust-ReadMD'})
+const notes = releaseNotes(publishedCopy(fs.readFileSync(path.join(root, 'RELEASE_NOTES.md'), 'utf8'), {source: sourceCommit, run: runId, petRun: Number(process.env.CANDIDATE_PET_RUN)}), {tag: FIXED_TAG, commit: sourceCommit, repo: 'Natsummerance/rust-ReadMD'})
   .replace(/^# ReadMD V0\.0\.7\n\n/, '# ReadMD V0.0.7\n\n' + identity)
   .replaceAll('/blob/V0.0.7/', '/blob/' + sourceCommit + '/');
 save('release-notes.md', notes);

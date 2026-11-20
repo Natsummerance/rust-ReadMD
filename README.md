@@ -49,7 +49,11 @@ ReadMD 把阅读、编辑、格式转换与出版放在同一个本地工作流�
 
 本次同版更新增加五套原生 PPTX 设计：**合流、万象光场、浮光、液相、在场**，正文与表格以可编辑对象写入，保留各套设计的原生背景与可用动画。HTML 提供**出版阅读、技术文档、长文杂志**三种连续阅读版式，预览与独立文件共用正文、目录、排印和宽表格处理。设计来源与内嵌方式见[模板说明](rust/readmd-kernel/templates/pptx/README.md)。
 
-本次同版更新的全部 10 份桌面／集成资产由同一源码提交 [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) 构建；[对应源码 ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [本次发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。原 `V0.0.7` 标签保留首次发布时的提交，获取本轮源码请使用这里的固定链接。
+此前排版发布的全部 10 份桌面／集成资产由同一源码提交 [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) 构建；[对应源码 ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [本次发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。原 `V0.0.7` 标签保留首次发布时的提交，获取本轮源码请使用这里的固定链接。
+
+<!-- readmd-autopublish:start -->
+桌宠恢复修复源码已公开：[`0b3535f219c66ae455186344294a6976925a164f`](https://github.com/Natsummerance/rust-ReadMD/tree/0b3535f219c66ae455186344294a6976925a164f)。发行 CI 与 PET 三系统 CI 均成功后，GitHub 自动续发任务会统一替换十份资产并同步官网；以正式 Release 的实际文件与 SHA256SUMS 为准。
+<!-- readmd-autopublish:end -->
 
 ## 下载与安装
 
@@ -107,7 +111,7 @@ macOS 通常为 `/Applications/ReadMD.app/Contents/MacOS/ReadMD`；Windows 使�
 
 ## 验证与源码
 
-2026-11-20 同版更新的正式 Apple Silicon ZIP 已在本机完成两次原生冷启动／重开，并更新安装。Windows／Linux 由 CI 中实际发行二进制的生命周期与图像导出回归覆盖；Intel 由 Mac CI 构建、签名及封包检查覆盖。
+此前排版发布的正式 Apple Silicon ZIP 已在本机完成两次原生冷启动／重开，并更新安装。Windows／Linux 由 CI 中实际发行二进制的生命周期与图像导出回归覆盖；Intel 由 Mac CI 构建、签名及封包检查覆盖。
 
 2026-11-19 首次发布的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，包括关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级；另从归档中的生产二进制执行 46 语言的保存编码流程，页面异常为 0。[Mac 验证记录](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败及同包复测结果。这里的检查范围与跨应用兼容性、各系统实机覆盖分别记录。
 

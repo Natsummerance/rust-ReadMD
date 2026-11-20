@@ -15,7 +15,15 @@
 
 - **发行收尾**：修复 Windows 旧进度回执读取时的新回执提交，保留重试中已完成的输出；SSE 流式聊天在接收端读取停滞时可取消所属写入与连接。Office 运行时按实际依赖闭包补齐并校验锁定版本的第三方许可通知。
 
-## 2026-11-20 同版排版更新
+## 2026-11-20 桌宠恢复修复（自动发布中）
+
+<!-- readmd-autopublish:start -->
+桌宠恢复源码 [`0b3535f219c66ae455186344294a6976925a164f`](https://github.com/Natsummerance/rust-ReadMD/tree/0b3535f219c66ae455186344294a6976925a164f) 已冻结，自动续发绑定发行 CI 44676245719 与 PET 三系统 CI 44676248896。只有两者均成功后，GitHub 才会沿用既有事务统一替换十份包、更新实际下载快照并部署官网。当前正式文件以 Release 资产与 SHA256SUMS 为准。
+<!-- readmd-autopublish:end -->
+
+App 保持 0.0.7，随包伴读组件升级至 1.0.2。Mac 桌宠完全离屏时自动找回可见位置并保存，已有安装可升级；启动失败说明跟随已选语言。本机同产品源码的签名候选已验证旧版升级、离屏找回、重开与原生冷启动。正式四平台包由绑定的发行 CI 生成并接受已有发布验收。
+
+## 2026-11-20 第一轮排版发布记录
 
 完整构建提交：[`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) · [同一提交的源码 ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。全部十份桌面／集成包从这一轮构建提取，版本仍为 0.0.7。已安装早期 V0.0.7 的用户请重新下载本轮包，正常退出应用后更新安装。
 
@@ -47,7 +55,7 @@ OCR、Typst、出版字体、代码运行时及音视频转写依实际平台能
 
 ## 验证记录
 
-本轮成品检查覆盖五套 PPTX 与三种 HTML 的真实导出、30 页 Office 渲染、HTML 27 种视口组合及 39 项 Rust 定向回归。正式 Apple Silicon ZIP（SHA-256 `fc957c03434ef6d7c76ebae66409a52d0950826c5b6d84f0ed256e37ec7c53fa`）已完成两次本机原生冷启动／重开并更新安装；包内执行文件 SHA-256 为 `c5c53815a6e8b3d10e489abeafaa66d2614c2024b2971fdd7c43729aacde5823`。Windows／Linux 的证据来自 CI 上实际发行二进制的生命周期与图像导出回归，Intel 来自 Mac CI 构建、签名与封包检查。
+第一轮排版成品检查覆盖五套 PPTX 与三种 HTML 的真实导出、30 页 Office 渲染、HTML 27 种视口组合及 39 项 Rust 定向回归。正式 Apple Silicon ZIP（SHA-256 `fc957c03434ef6d7c76ebae66409a52d0950826c5b6d84f0ed256e37ec7c53fa`）已完成两次本机原生冷启动／重开并更新安装；包内执行文件 SHA-256 为 `c5c53815a6e8b3d10e489abeafaa66d2614c2024b2971fdd7c43729aacde5823`。Windows／Linux 的证据来自 CI 上实际发行二进制的生命周期与图像导出回归，Intel 来自 Mac CI 构建、签名与封包检查。
 
 2026-11-19 首次发布的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，涵盖关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级。归档内的生产二进制另通过 46 语言保存编码流程，页面异常为 0。[Mac 本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败，以及未改包后成功的同包复测结果。
 

@@ -15,7 +15,7 @@ const authentic = (asset, file) => asset?.state === 'uploaded' && asset.size ===
 const unchanged = (asset, old) => asset?.id === old.id && asset.name === old.name && asset.size === old.size && asset.digest === old.digest && asset.state === 'uploaded';
 
 export function assertCandidateRun(run, jobs, sourceCommit) {
-  if (run.head_sha !== sourceCommit || !['main', 'codex/v007-export-layout-publish-20261120'].includes(run.head_branch) || run.status !== 'completed' || run.conclusion !== 'success'
+  if (run.head_sha !== sourceCommit || !['main', 'codex/v007-export-layout-publish-20261120', 'codex/v007-pet-recovery-publish-20261120'].includes(run.head_branch) || run.status !== 'completed' || run.conclusion !== 'success'
       || run.event !== 'workflow_dispatch' || run.path !== '.github/workflows/release.yml'
       || run.repository?.full_name !== 'Natsummerance/rust-ReadMD') throw Error('The exact release.yml build must have passed');
   const required = ['Build · Windows x64', 'Build · Linux x64', 'Build · macOS ARM64', 'Build · macOS Intel',

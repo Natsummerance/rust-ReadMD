@@ -49,7 +49,11 @@ See the [release notes](release/release_notes.md). Earlier versions remain in th
 
 This same-version update adds five native PPTX designs: **Confluence, Lightfield, Pearl, Chrome and Field**, with editable text and tables and each design’s native artwork and supported animations. HTML offers **Publication Reading, Technical Docs and Longform Magazine** layouts; previews and standalone files share article content, navigation, typography and wide-table handling. See the [embedded design documentation](rust/readmd-kernel/templates/pptx/README.md).
 
-All 10 desktop/integration assets in this refresh are built from [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c). [Matching source ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [Release CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015). The original `V0.0.7` tag stays at its first-publication commit; use these fixed links for this refresh’s source.
+The previous layout publication’s 10 desktop/integration assets are built from [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c). [Matching source ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [Release CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015). The original `V0.0.7` tag stays at its first-publication commit; use these fixed links for this refresh’s source.
+
+<!-- readmd-autopublish:start -->
+Pet recovery source is available at [`0b3535f219c66ae455186344294a6976925a164f`](https://github.com/Natsummerance/rust-ReadMD/tree/0b3535f219c66ae455186344294a6976925a164f). A GitHub continuation will replace all ten assets and refresh the website after both bound CI runs pass; the actual Release files and SHA256SUMS define publication.
+<!-- readmd-autopublish:end -->
 
 ## Downloads and installation
 
@@ -107,7 +111,7 @@ On macOS the usual path is `/Applications/ReadMD.app/Contents/MacOS/ReadMD`. On 
 
 ## Validation and source
 
-For the 2026-11-20 refresh, the official Apple Silicon ZIP completed two native cold launches/reopenings and was installed locally. Windows/Linux coverage uses the actual release binaries in CI lifecycle and image-export regressions; Intel coverage uses Mac CI build, signing and packaging checks.
+For the previous layout publication, the official Apple Silicon ZIP completed two native cold launches/reopenings and was installed locally. Windows/Linux coverage uses the actual release binaries in CI lifecycle and image-export regressions; Intel coverage uses Mac CI build, signing and packaging checks.
 
 The 2026-11-19 V0.0.7 release candidate completed **244 native checks in six groups on macOS ARM64**: closing and recovery, six export formats, cold launch/reopening from its packaged ZIP, and migration of an isolated V0.0.6 session. The archived production binary also completed the 46-language save-encoding flow with zero page exceptions. The [Mac report](docs/reviews/readmd-v007-macos-rc-2026-11-19.md) retains an initial WebKit cold-launch failure and successful same-package reruns. These checks have a defined scope; application interoperability and physical coverage on each system are recorded separately.
 

@@ -49,7 +49,11 @@ ReadMD は閲覧、編集、形式変換、出版をローカルで行うため�
 
 今回の同一バージョン更新では、**Confluence、Lightfield、Pearl、Chrome、Field** の5種類のネイティブ PPTX デザインを追加しました。本文と表は編集可能なオブジェクトとして出力し、各デザインの背景と対応するアニメーションを保持します。HTML では **出版閲覧、技術文書、長文マガジン** の3種類を選べます。プレビューと単独ファイルで本文、目次、組版、幅広い表の処理を共有します。[テンプレートの説明](rust/readmd-kernel/templates/pptx/README.md)をご覧ください。
 
-今回のデスクトップ／連携用の全10ファイルは、同じコミット [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) からビルドしています。[対応するソース ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [リリース CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。元の `V0.0.7` タグは初回公開時のコミットを維持します。今回のソースはこの固定リンクから取得してください。
+前回のレイアウト公開のデスクトップ／連携用の全10ファイルは、同じコミット [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) からビルドしています。[対応するソース ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [リリース CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。元の `V0.0.7` タグは初回公開時のコミットを維持します。今回のソースはこの固定リンクから取得してください。
+
+<!-- readmd-autopublish:start -->
+ペット復元修正のソース：[`0b3535f219c66ae455186344294a6976925a164f`](https://github.com/Natsummerance/rust-ReadMD/tree/0b3535f219c66ae455186344294a6976925a164f)。指定した2つの CI が通過した後、GitHub の継続タスクが全10ファイルと公式サイトを更新します。公開状態は実際の Release ファイルと SHA256SUMS で確認できます。
+<!-- readmd-autopublish:end -->
 
 ## ダウンロードとインストール
 
@@ -107,7 +111,7 @@ macOS の通常のパスは `/Applications/ReadMD.app/Contents/MacOS/ReadMD` で
 
 ## 検証とソース
 
-2026-11-20 の同一バージョン更新では、正式 Apple Silicon ZIP で2回のネイティブ起動・再起動を確認し、ローカルに更新インストールしました。Windows/Linux は CI の実際のリリース実行ファイルでライフサイクルと画像出力を検証し、Intel は Mac CI のビルド、署名、パッケージ検査で確認しています。
+前回のレイアウト公開では、正式 Apple Silicon ZIP で2回のネイティブ起動・再起動を確認し、ローカルに更新インストールしました。Windows/Linux は CI の実際のリリース実行ファイルでライフサイクルと画像出力を検証し、Intel は Mac CI のビルド、署名、パッケージ検査で確認しています。
 
 2026-11-19 の初回 V0.0.7 候補版は macOS ARM64 で **6 グループ、244 項目のネイティブ検査**を完了しました。終了・復元、6 形式の出力、リリース候補版の ZIP からのコールド起動・再起動、隔離した V0.0.6 セッションの移行を含みます。アーカイブ内の製品バイナリでも 46 言語の保存文字コード操作を検証し、ページ例外は 0 件でした。[Mac 検証記録](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)には最初の WebKit 起動失敗と同じパッケージでの再検証を残しています。これらの検査範囲、他アプリとの互換性、各システムの実機検証は個別に記録します。
 

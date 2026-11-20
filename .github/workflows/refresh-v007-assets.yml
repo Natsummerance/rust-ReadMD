@@ -11,6 +11,10 @@ on:
         description: Exact public source commit built by that run
         required: true
         type: string
+      pet_run_id:
+        description: Exact PET Rust quality run for the same approved source
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -23,7 +27,12 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CANDIDATE_RUN: ${{ inputs.run_id }}
+      CANDIDATE_COMMIT: ${{ inputs.source_commit }}
+      CANDIDATE_PET_RUN: ${{ inputs.pet_run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,12 +54,16 @@ jobs:
           fi
       - name: Verify transaction recovery and source admission before release access
         run: node --test tools/test/refresh-v007-release.test.mjs
+      - name: Wait for the exact approved release and PET CI runs
+        run: node tools/continue-v007-release.mjs wait
       - name: Authenticate CI archives and refresh all eleven downloads without moving the tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CANDIDATE_RUN: ${{ inputs.run_id }}
           CANDIDATE_COMMIT: ${{ inputs.source_commit }}
         run: node tools/refresh-v007-release.mjs
+      - name: Publish actual download snapshot and continue existing website deployments
+        run: node tools/continue-v007-release.mjs finish
       - name: Retain source, checksums and recovery receipts
         if: always()
         uses: actions/upload-artifact@v4
