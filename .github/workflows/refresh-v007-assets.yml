@@ -1,0 +1,49 @@
+name: Refresh existing V0.0.7 downloads
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful release.yml workflow_dispatch run integrated into main
+        required: true
+        type: string
+      source_commit:
+        description: Exact public source commit built by that run
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: readmd-release-downloads-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Authenticate CI archives and refresh all eleven downloads without moving the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_RUN: ${{ inputs.run_id }}
+          CANDIDATE_COMMIT: ${{ inputs.source_commit }}
+        run: node tools/refresh-v007-release.mjs
+      - name: Retain source, checksums and recovery receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V007-refresh-receipts
+          if-no-files-found: error
+          path: |
+            .cache/v007-refresh/*.json
+            .cache/v007-refresh/*.md
+            .cache/v007-refresh/*.txt

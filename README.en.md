@@ -47,6 +47,8 @@ ReadMD brings reading, editing, conversion and publishing into one local workflo
 
 See the [release notes](release/release_notes.md). Earlier versions remain in the [changelog](RELEASE_NOTES.md).
 
+This same-version update adds five native PPTX designs: **Confluence, Lightfield, Pearl, Chrome and Field**, with editable text and tables and each design’s native artwork and supported animations. HTML offers **Publication Reading, Technical Docs and Longform Magazine** layouts; previews and standalone files share article content, navigation, typography and wide-table handling. See the [embedded design documentation](rust/readmd-kernel/templates/pptx/README.md).
+
 ## Downloads and installation
 
 Desktop packages, the extension and the MCP configuration kit use **V0.0.7**. [All assets and SHA-256 checksums](https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7).

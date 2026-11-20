@@ -47,6 +47,8 @@ ReadMD 將閱讀、編輯、格式轉換與出版放在同一個本機工作流�
 
 詳見[本版說明](release/release_notes.md)；[歷次更新](RELEASE_NOTES.md)保留舊版記錄。
 
+本次同版更新加入五套原生 PPTX 設計：**合流、萬象光場、浮光、液相、在場**，正文與表格以可編輯物件寫入，保留各套設計的原生背景與可用動畫。HTML 提供**出版閱讀、技術文件、長文雜誌**三種連續閱讀版式，預覽與獨立檔案共用正文、目錄、排印及寬表格處理。見[範本說明](rust/readmd-kernel/templates/pptx/README.md)。
+
 ## 下載與安裝
 
 桌面套件、擴充套件及 MCP 設定套件統一為 **V0.0.7**。[全部檔案與 SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7)。

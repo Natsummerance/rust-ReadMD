@@ -15,6 +15,12 @@
 
 - **发行收尾**：修复 Windows 旧进度回执读取时的新回执提交，保留重试中已完成的输出；SSE 流式聊天在接收端读取停滞时可取消所属写入与连接。Office 运行时按实际依赖闭包补齐并校验锁定版本的第三方许可通知。
 
+## 2026-11-20 同版排版更新
+
+- **五套原生 PPTX 设计**：合流（Confluence）、万象光场（Lightfield）、浮光（Pearl）、液相（Chrome）、在场（Field）。每套使用独立的原生图形、主题、母版与布局，正文和表格保持可编辑；保留适用的原生动画，静态预览不代表动画播放。液相使用重新制作的连续流体画面，并保留两种原蓝黑背景；在场使用重新选取的海岸照片。设计来源、素材记录及内嵌方式见[模板说明](../rust/readmd-kernel/templates/pptx/README.md)。
+- **三种 HTML 阅读版式**：出版阅读、技术文档、长文杂志。预览与独立 HTML 共用正文投影、排印、颜色、脚注及目录逻辑；布局按自身可用宽度适配，长代码与宽表格局部滚动，打印时展开为连续正文。原有离线 HTML 全屏演讲继续单独提供。
+- **同版下载替换**：应用及集成版本仍为 0.0.7。实际构建源码由本次成功发行 CI 单独记录，原 V0.0.7 标签固定在 `76c7e22921fdfb926c5a0c678d65e0dc666d5e2e`。十份桌面／集成包与 SHA256SUMS.txt 全部暂存认证后再替换，旧文件保留至新下载完整校验结束。
+
 ## 下载与安装
 
 | 平台 | 文件 |
@@ -39,9 +45,9 @@ OCR、Typst、出版字体、代码运行时及音视频转写依实际平台能
 
 ## 验证记录
 
-V0.0.7 的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，涵盖关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级。归档内的生产二进制另通过 46 语言保存编码流程，页面异常为 0。[Mac 本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败，以及未改包后成功的同包复测结果。
+2026-11-19 首次发布的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，涵盖关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级。归档内的生产二进制另通过 46 语言保存编码流程，页面异常为 0。[Mac 本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败，以及未改包后成功的同包复测结果。
 
-Windows x64、Linux x64、macOS Apple Silicon 和 Intel 的发行构建及质量门槛已通过，十份桌面／集成包与 SHA256SUMS.txt 的公开下载均已核对。正式 Apple Silicon ZIP 另完成正常系统冷启动与重开。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44559480050) · [发布验证记录](https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md)
+首次发布时，Windows x64、Linux x64、macOS Apple Silicon 和 Intel 的发行构建及质量门槛已通过，十份桌面／集成包与 SHA256SUMS.txt 的公开下载均已核对。该次正式 Apple Silicon ZIP 另完成正常系统冷启动与重开。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44559480050) · [发布验证记录](https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md)
 
 [使用指南](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/README.md) · [English guide](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/README.en.md) · [历史更新](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/RELEASE_NOTES.md) · [问题反馈](https://github.com/Natsummerance/rust-ReadMD/issues)
 

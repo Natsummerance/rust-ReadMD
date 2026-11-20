@@ -47,6 +47,8 @@ ReadMD は閲覧、編集、形式変換、出版をローカルで行うため�
 
 詳しくは[リリースノート](release/release_notes.md)をご覧ください。以前の内容は[変更履歴](RELEASE_NOTES.md)に残しています。
 
+今回の同一バージョン更新では、**Confluence、Lightfield、Pearl、Chrome、Field** の5種類のネイティブ PPTX デザインを追加しました。本文と表は編集可能なオブジェクトとして出力し、各デザインの背景と対応するアニメーションを保持します。HTML では **出版閲覧、技術文書、長文マガジン** の3種類を選べます。プレビューと単独ファイルで本文、目次、組版、幅広い表の処理を共有します。[テンプレートの説明](rust/readmd-kernel/templates/pptx/README.md)をご覧ください。
+
 ## ダウンロードとインストール
 
 デスクトップ、拡張、MCP 設定キットのバージョンは **V0.0.7** です。[すべてのファイルと SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7)。
