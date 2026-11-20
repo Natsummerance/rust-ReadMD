@@ -33,10 +33,18 @@ const headers = {Authorization: 'Bearer ' + token, Accept: 'application/vnd.gith
 async function request(method, route, data, {file} = {}) {
   const url = route.startsWith('https://uploads.github.com/') ? route : 'https://api.github.com/' + route;
   if (!/^https:\/\/(api|uploads)\.github\.com\/repos\/Natsummerance\/rust-ReadMD\//.test(url)) throw Error('Foreign repository endpoint refused');
-  const response = await fetch(url, {method, headers: {...headers, 'Content-Type': file ? 'application/octet-stream' : 'application/json'},
-    body: file ? await fs.openAsBlob(file) : data === undefined ? undefined : JSON.stringify(data), signal: AbortSignal.timeout(file ? 600000 : 60000)});
-  if (!response.ok) throw Error('Repository ' + method + ' HTTP ' + response.status);
-  return response.status === 204 ? null : response.json();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url, {method, headers: {...headers, 'Content-Type': file ? 'application/octet-stream' : 'application/json'},
+        body: file ? await fs.openAsBlob(file) : data === undefined ? undefined : JSON.stringify(data), signal: AbortSignal.timeout(file ? 600000 : 60000)});
+      if (!response.ok) throw Error('Repository ' + method + ' HTTP ' + response.status);
+      return response.status === 204 ? null : await response.json();
+    } catch (error) {
+      // A disconnected read is safe to repeat; writes keep their existing receipts.
+      if (method !== 'GET' || attempt >= 5) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
+  }
 }
 async function fileHash(file) {
   const digest = crypto.createHash('sha256');
