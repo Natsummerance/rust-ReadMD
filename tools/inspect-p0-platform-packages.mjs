@@ -8,13 +8,13 @@ import {PLATFORM_NAMES} from './refresh-macos-release.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const run=(program,args,options={})=>execFileSync(program,args,{maxBuffer:256*1024*1024,...options});
-export function inspectPlatformPackages({directory,sourceCommit,buildRunId,scratch}) {
+export function inspectPlatformPackages({directory,sourceCommit,buildRunId,scratch,additionalAssets=[],verifyBinary=()=>({})}) {
   if(!/^[a-f\d]{40}$/.test(sourceCommit)||!Number.isSafeInteger(buildRunId))throw Error('Bound source and build run required');
   const original=file=>run('git',['show',sourceCommit+':'+file],{cwd:root});
   const assets=[
     'assets/index.html','assets/readmd.boot.js','assets/js/core/lifecycle.js',
     'assets/css/shell.css','assets/css/dialogs.css','assets/css/reader.css',
-    'assets/providers/provider-catalog.json','assets/i18n/zh-CN.json',
+    'assets/providers/provider-catalog.json','assets/i18n/zh-CN.json',...additionalAssets,
   ];
   const sourceBytes=new Map(assets.map(file=>[file,original(file)]));
   const expected=new Map(assets.map(file=>[file,sha(sourceBytes.get(file))]));
@@ -44,7 +44,7 @@ export function inspectPlatformPackages({directory,sourceCommit,buildRunId,scrat
       if(bytes.toString('ascii',0,2)!=='MZ'||offset+6>bytes.length||bytes.readUInt32LE(offset)!==0x4550||bytes.readUInt16LE(offset+4)!==0x8664)throw Error('Expected Windows x64 PE executable');
     }else if(bytes.length<20||bytes.toString('hex',0,4)!=='7f454c46'||bytes[4]!==2||bytes[5]!==1||bytes.readUInt16LE(18)!==62)throw Error('Expected Linux x86_64 ELF executable');
     binaryDigests[name]=sha(bytes);
-    Object.assign(packages.find(p=>p.name===name),{archiveInspected:true,sourceBootSha256:expected.get('assets/readmd.boot.js'),bootSha256:assetSha256['assets/readmd.boot.js'],assetSha256,sourceByteVariants,binarySha256:sha(bytes)});
+    Object.assign(packages.find(p=>p.name===name),{archiveInspected:true,sourceBootSha256:expected.get('assets/readmd.boot.js'),bootSha256:assetSha256['assets/readmd.boot.js'],assetSha256,sourceByteVariants,binarySha256:sha(bytes),...verifyBinary(bytes)});
     checks.push({name,sourceAssetsMatch:true,sourceByteVariants,executableArchitecture:kind==='pe'?'PE x86_64':'ELF x86_64',nativeHostCertified:false});
   }
   try {
@@ -70,7 +70,7 @@ export function inspectPlatformPackages({directory,sourceCommit,buildRunId,scrat
     if(binaryDigests[tar]!==binaryDigests[deb])throw Error('Debian executable differs from portable tarball');
     const vscode=packages.find(p=>p.name.endsWith('.vsix')),vscodeFile=path.join(directory,vscode.name);
     const pkg=JSON.parse(run('unzip',['-p',vscodeFile,'extension/package.json'],{encoding:'utf8'}));
-    if(pkg.version!=='0.0.6'||pkg.repository?.url!==JSON.parse(original('packages/vscode-extension/package.json')).repository.url)throw Error('VSIX version or repository differs');
+    if(pkg.version!==original('VERSION').toString('utf8').trim()||pkg.repository?.url!==JSON.parse(original('packages/vscode-extension/package.json')).repository.url)throw Error('VSIX version or repository differs');
     for(const name of ['extension/out/extension.js','extension/out/webview.js','extension/media/preview.js','extension/media/diagram-frame.js'])if(!run('unzip',['-p',vscodeFile,name]).length)throw Error('Compiled extension member missing');
     Object.assign(vscode,{archiveInspected:true,integrationFilesVerified:true});
     const vscodeMembers=run('unzip',['-Z1',vscodeFile],{encoding:'utf8'}).trim().split(/\r?\n/);

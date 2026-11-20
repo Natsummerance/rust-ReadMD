@@ -17,6 +17,8 @@
 
 ## 2026-11-20 同版排版更新
 
+完整构建提交：[`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) · [同一提交的源码 ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。全部十份桌面／集成包从这一轮构建提取，版本仍为 0.0.7。已安装早期 V0.0.7 的用户请重新下载本轮包，正常退出应用后更新安装。
+
 - **五套原生 PPTX 设计**：合流（Confluence）、万象光场（Lightfield）、浮光（Pearl）、液相（Chrome）、在场（Field）。每套使用独立的原生图形、主题、母版与布局，正文和表格保持可编辑；保留适用的原生动画，静态预览不代表动画播放。液相使用重新制作的连续流体画面，并保留两种原蓝黑背景；在场使用重新选取的海岸照片。设计来源、素材记录及内嵌方式见[模板说明](../rust/readmd-kernel/templates/pptx/README.md)。
 - **三种 HTML 阅读版式**：出版阅读、技术文档、长文杂志。预览与独立 HTML 共用正文投影、排印、颜色、脚注及目录逻辑；布局按自身可用宽度适配，长代码与宽表格局部滚动，打印时展开为连续正文。原有离线 HTML 全屏演讲继续单独提供。
 - **同版下载替换**：应用及集成版本仍为 0.0.7。实际构建源码由本次成功发行 CI 单独记录，原 V0.0.7 标签固定在 `76c7e22921fdfb926c5a0c678d65e0dc666d5e2e`。十份桌面／集成包与 SHA256SUMS.txt 全部暂存认证后再替换，旧文件保留至新下载完整校验结束。
@@ -45,6 +47,8 @@ OCR、Typst、出版字体、代码运行时及音视频转写依实际平台能
 
 ## 验证记录
 
+本轮成品检查覆盖五套 PPTX 与三种 HTML 的真实导出、30 页 Office 渲染、HTML 27 种视口组合及 39 项 Rust 定向回归。正式 Apple Silicon ZIP（SHA-256 `fc957c03434ef6d7c76ebae66409a52d0950826c5b6d84f0ed256e37ec7c53fa`）已完成两次本机原生冷启动／重开并更新安装；包内执行文件 SHA-256 为 `c5c53815a6e8b3d10e489abeafaa66d2614c2024b2971fdd7c43729aacde5823`。Windows／Linux 的证据来自 CI 上实际发行二进制的生命周期与图像导出回归，Intel 来自 Mac CI 构建、签名与封包检查。
+
 2026-11-19 首次发布的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，涵盖关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级。归档内的生产二进制另通过 46 语言保存编码流程，页面异常为 0。[Mac 本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败，以及未改包后成功的同包复测结果。
 
 首次发布时，Windows x64、Linux x64、macOS Apple Silicon 和 Intel 的发行构建及质量门槛已通过，十份桌面／集成包与 SHA256SUMS.txt 的公开下载均已核对。该次正式 Apple Silicon ZIP 另完成正常系统冷启动与重开。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44559480050) · [发布验证记录](https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md)
@@ -53,6 +57,8 @@ OCR、Typst、出版字体、代码运行时及音视频转写依实际平台能
 
 ## English
 
+The 2026-11-20 same-version refresh adds five native editable PPTX designs (Confluence, Lightfield, Pearl, Chrome and Field) and three HTML article layouts (Publication Reading, Technical Docs and Longform Magazine). All ten desktop/integration assets come from commit `43905601f2a0ae747f4000aad8e69a80e955ce7c`. The official Apple Silicon ZIP passed two local native cold launches/reopenings and was installed locally; Windows/Linux use actual release-binary CI regressions, while Intel uses Mac CI build, signing and packaging evidence.
+
 V0.0.7 adds page-first PDF reading, read-only DOCX/PPTX layout views, merged-cell table editing, safer closing and recovery, manual resolution of shared suggestions, SVG drawing, multi-file OpenAPI updates and opt-in VS Code inline AI completion. Desktop, VSIX and MCP configuration packages share version `0.0.7`. Windows batch progress, cancellation under SSE downstream backpressure, and pinned Office dependency notices are included in the final release.
 
-Downloads target Windows x64, Linux x64 and macOS Apple Silicon/Intel. Desktop bundles include matching Office and PDFium resources. Larger OCR, typesetting, font and media capabilities depend on platform packs; independent FFmpeg/Whisper packs are separate from these release assets. Mac packages use free ad hoc signing and are not Apple-notarized. The locally packaged macOS ARM64 candidate completed 244 native checks; build coverage and native/platform interoperability evidence are recorded separately in the links above.
+Downloads target Windows x64, Linux x64 and macOS Apple Silicon/Intel. Desktop bundles include matching Office and PDFium resources. Larger OCR, typesetting, font and media capabilities depend on platform packs; independent FFmpeg/Whisper packs are separate from these release assets. Mac packages use free ad hoc signing and are not Apple-notarized. The 2026-11-19 locally packaged macOS ARM64 candidate completed 244 native checks; build coverage and native/platform interoperability evidence are recorded separately in the links above.

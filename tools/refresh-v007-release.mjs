@@ -7,6 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {pipeline} from 'node:stream/promises';
 import {PACKAGE_NAMES, writeChecksums, releaseNotes} from './publish-release.mjs';
 import {FIXED_TAG, FIXED_TAG_COMMIT, FIXED_RELEASE_ID, assertCandidateRun, refreshV007} from './refresh-v007-transaction.mjs';
+import {inspectV007Packages} from './inspect-v007-packages.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runId = Number(process.env.CANDIDATE_RUN), sourceCommit = process.env.CANDIDATE_COMMIT, token = process.env.GH_TOKEN;
@@ -15,6 +16,18 @@ if (!process.env.GITHUB_ACTIONS || !token || !Number.isSafeInteger(runId) || run
 const base = 'repos/Natsummerance/rust-ReadMD', own = path.join(root, '.cache/v007-refresh'), directory = path.join(own, 'packages');
 fs.mkdirSync(directory, {recursive: true, mode: 0o700});
 const save = (name, value) => fs.writeFileSync(path.join(own, name), typeof value === 'string' ? value : JSON.stringify(value, null, 2) + '\n', {mode: 0o600});
+execFileSync('git', ['diff', '--exit-code', '--quiet', sourceCommit, 'HEAD', '--', 'assets', 'rust', 'packages', 'VERSION'], {cwd: root});
+const productTrees = ['assets', 'rust', 'packages', 'VERSION'].map(name => ({path: name,
+  candidate: execFileSync('git', ['rev-parse', sourceCommit + ':' + name], {cwd: root, encoding: 'utf8'}).trim(),
+  publicMain: execFileSync('git', ['rev-parse', 'HEAD:' + name], {cwd: root, encoding: 'utf8'}).trim()}));
+if (productTrees.some(entry => entry.candidate !== entry.publicMain)) throw Error('Public product tree differs from the built candidate');
+const publicationFiles = ['.github/workflows/refresh-v007-assets.yml', 'tools/inspect-p0-platform-packages.mjs', 'tools/inspect-v007-packages.mjs',
+  'tools/refresh-v007-release.mjs', 'tools/refresh-v007-transaction.mjs', 'tools/test/refresh-v007-release.test.mjs',
+  'README.md', 'README.en.md', 'README.zh-TW.md', 'README.ja.md', 'RELEASE_NOTES.md', 'release/release_notes.md'];
+const changedFiles = execFileSync('git', ['diff', '--name-only', sourceCommit, 'HEAD'], {cwd: root, encoding: 'utf8'}).trim().split('\n').filter(Boolean);
+if (changedFiles.some(file => !publicationFiles.includes(file))) throw Error('Changes beyond the reviewed publication tools and documentation require a new product CI');
+const sourceIdentity = {sourceCommit, publicationCommit: execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(), productTrees, changedFiles};
+save('source-identity.json', sourceIdentity);
 const headers = {Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'};
 async function request(method, route, data, {file} = {}) {
   const url = route.startsWith('https://uploads.github.com/') ? route : 'https://api.github.com/' + route;
@@ -43,7 +56,7 @@ const required = {
   'ReadMD-macos-x64': ['ReadMD-macos-x64.dmg', 'ReadMD-macos-x64.zip'],
   'ReadMD-integrations': ['readmd-vscode-0.0.7.vsix', 'readmd-mcp-server-0.0.7.zip'],
 };
-const verification = {sourceCommit, tagCommit: FIXED_TAG_COMMIT, runId, packages: [], artifacts: []};
+const verification = {sourceCommit, publicationCommit: sourceIdentity.publicationCommit, tagCommit: FIXED_TAG_COMMIT, runId, packages: [], artifacts: []};
 for (const [name, members] of Object.entries(required)) {
   const matches = artifacts.filter(artifact => artifact.name === name && !artifact.expired);
   if (matches.length !== 1 || !/^sha256:[a-f\d]{64}$/.test(matches[0].digest)) throw Error('Missing, ambiguous or unauthenticated source artifact: ' + name);
@@ -69,9 +82,35 @@ for (const [name, members] of Object.entries(required)) {
   console.log('Authenticated CI artifact: ' + name);
 }
 if (verification.packages.length !== PACKAGE_NAMES.length) throw Error('Incomplete candidate packages');
+const macReports = {};
+for (const [arch, jobName] of [['arm64', 'Build · macOS ARM64'], ['x64', 'Build · macOS Intel']]) {
+  const job = jobs.jobs.filter(job => job.name === jobName).sort((a, b) => b.id - a.id)[0];
+  const redirect = await fetch('https://api.github.com/' + base + '/actions/jobs/' + job.id + '/logs', {headers, redirect: 'manual', signal: AbortSignal.timeout(60000)});
+  if (redirect.status !== 302) throw Error('Mac build log redirect HTTP ' + redirect.status);
+  const location = new URL(redirect.headers.get('location'));
+  if (location.protocol !== 'https:' || !/(\.blob\.core\.windows\.net|\.githubusercontent\.com)$/.test(location.hostname)) throw Error('Unexpected build log delivery endpoint');
+  const response = await fetch(location, {signal: AbortSignal.timeout(120000)});
+  if (!response.ok) throw Error('Mac build log delivery HTTP ' + response.status);
+  const reports = (await response.text()).split(/\r?\n/).flatMap(line => {
+    const start = line.indexOf('{');
+    if (start < 0) return [];
+    try {const value = JSON.parse(line.slice(start)); return value.version === '0.0.7' && value.arch === arch && Array.isArray(value.files) && value.bootSha256 ? [value] : [];} catch {return [];}
+  });
+  if (reports.length !== 1) throw Error('Expected one exact native CI packaging report for ' + arch);
+  macReports[arch] = reports[0];
+}
+save('macos-packaging-reports.json', macReports);
+const sourceInspection = inspectV007Packages({directory, sourceCommit, runId, scratch: own, macReports});
+if (sourceInspection.packages.length !== PACKAGE_NAMES.length) throw Error('Every package requires a source inspection receipt');
+for (const file of verification.packages) {
+  const proof = sourceInspection.packages.filter(proof => proof.name === file.name);
+  if (proof.length !== 1 || proof[0].size !== file.size || proof[0].sha256 !== file.sha256) throw Error('Inspected package differs from its authenticated CI artifact');
+  file.sourceInspectionVerified = true;
+}
+save('source-inspection.json', sourceInspection);
 writeChecksums(directory);
 save('verification.json', verification); save('SHA256SUMS.txt', fs.readFileSync(path.join(directory, 'SHA256SUMS.txt'), 'utf8'));
-const identity = `同版资产更新：实际构建源码 [\`${sourceCommit}\`](https://github.com/Natsummerance/rust-ReadMD/commit/${sourceCommit})；[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/${runId})。版本保留 0.0.7，原标签 V0.0.7 固定在 \`${FIXED_TAG_COMMIT}\`，不移动标签。\n\n`;
+const identity = `同版资产更新：十份桌面／集成包全部来自同一完整构建提交 [\`${sourceCommit}\`](https://github.com/Natsummerance/rust-ReadMD/commit/${sourceCommit})；[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/${runId})。\n\n本次源码：[固定源码树](https://github.com/Natsummerance/rust-ReadMD/tree/${sourceCommit}) · [同一提交的 ZIP 源码归档](https://github.com/Natsummerance/rust-ReadMD/archive/${sourceCommit}.zip)。版本保留 0.0.7，原标签 V0.0.7 固定在 \`${FIXED_TAG_COMMIT}\`，不移动标签；GitHub 页面自动附带的 Source code 归档仍对应这个原标签。本次更新请使用本段固定提交的源码链接。\n\n`;
 const notes = releaseNotes(fs.readFileSync(path.join(root, 'RELEASE_NOTES.md'), 'utf8'), {tag: FIXED_TAG, commit: sourceCommit, repo: 'Natsummerance/rust-ReadMD'})
   .replace(/^# ReadMD V0\.0\.7\n\n/, '# ReadMD V0.0.7\n\n' + identity)
   .replaceAll('/blob/V0.0.7/', '/blob/' + sourceCommit + '/');

@@ -27,10 +27,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Locate the runner's existing archive inspection tools
+        run: |
+          for tool in unzip tar ar; do command -v "$tool"; done
+          if command -v 7z >/dev/null; then
+            echo "READMD_7Z_PATH=$(command -v 7z)" >> "$GITHUB_ENV"
+          elif command -v 7zz >/dev/null; then
+            echo "READMD_7Z_PATH=$(command -v 7zz)" >> "$GITHUB_ENV"
+          else
+            echo "The runner needs its existing 7-Zip inspector" >&2
+            exit 1
+          fi
+      - name: Verify transaction recovery and source admission before release access
+        run: node --test tools/test/refresh-v007-release.test.mjs
       - name: Authenticate CI archives and refresh all eleven downloads without moving the tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -41,7 +55,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: V007-refresh-receipts
+          name: V007-refresh-receipts-${{ github.run_attempt }}
           if-no-files-found: error
           path: |
             .cache/v007-refresh/*.json

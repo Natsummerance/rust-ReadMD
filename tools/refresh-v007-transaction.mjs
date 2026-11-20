@@ -35,6 +35,7 @@ export function assertCandidateRun(run, jobs, sourceCommit) {
 export async function refreshV007({directory, sourceCommit, runId, notes, verification, request, verifyDownload, checkpoint = () => {}}) {
   if (!/^[a-f\d]{40}$/.test(sourceCommit) || !Number.isSafeInteger(runId) || runId <= 0
       || verification?.sourceCommit !== sourceCommit || verification.runId !== runId
+      || !/^[a-f\d]{40}$/.test(verification.publicationCommit)
       || typeof verifyDownload !== 'function' || !notes.includes(sourceCommit) || !notes.includes(FIXED_TAG_COMMIT)) throw Error('Bound CI verification and explicit source/tag notes are required');
   if (JSON.stringify(fs.readdirSync(directory).sort()) !== JSON.stringify([...DOWNLOAD_NAMES].sort())) throw Error('Exactly ten packages and their checksum manifest are required');
   const sums = parseChecksums(fs.readFileSync(path.join(directory, 'SHA256SUMS.txt'), 'utf8'));
@@ -45,7 +46,7 @@ export async function refreshV007({directory, sourceCommit, runId, notes, verifi
     if (!item.size || (sums.has(name) && sums.get(name) !== item.sha256)) throw Error('Local release checksum mismatch');
     if (name !== 'SHA256SUMS.txt') {
       const proof = verification.packages?.find(proof => proof.name === name);
-      if (!proof || proof.sha256 !== item.sha256 || proof.size !== item.size || proof.artifactDigestVerified !== true) throw Error('Package is not bound to an authenticated CI artifact');
+      if (!proof || proof.sha256 !== item.sha256 || proof.size !== item.size || proof.artifactDigestVerified !== true || proof.sourceInspectionVerified !== true) throw Error('Package is not bound to an authenticated and source-inspected CI artifact');
     }
     return item;
   });
@@ -58,6 +59,8 @@ export async function refreshV007({directory, sourceCommit, runId, notes, verifi
   async function checkTag() {
     const ref = await call('GET', base + '/git/ref/tags/' + FIXED_TAG);
     if (ref.object?.type !== 'commit' || ref.object.sha !== FIXED_TAG_COMMIT) throw Error('The fixed original release tag changed');
+    const main = await call('GET', base + '/git/ref/heads/main');
+    if (main.object?.type !== 'commit' || main.object.sha !== verification.publicationCommit) throw Error('Public main changed since product/source inspection');
   }
   const release = await call('GET', base + '/releases/tags/' + FIXED_TAG);
   if (release.id !== FIXED_RELEASE_ID || release.tag_name !== FIXED_TAG || release.draft || release.immutable) throw Error('Unexpected existing release');
@@ -69,7 +72,7 @@ export async function refreshV007({directory, sourceCommit, runId, notes, verifi
   if (inventory.total_count > 100) throw Error('Job history needs pagination review');
   assertCandidateRun(run, inventory.jobs, sourceCommit);
   const prefix = 'v007-refresh-' + sourceCommit.slice(0, 12) + '-';
-  const journal = {releaseId: FIXED_RELEASE_ID, tag: FIXED_TAG, tagCommit: FIXED_TAG_COMMIT, sourceCommit, runId, status: 'inspecting', replacements: []};
+  const journal = {releaseId: FIXED_RELEASE_ID, tag: FIXED_TAG, tagCommit: FIXED_TAG_COMMIT, sourceCommit, publicationCommit: verification.publicationCommit, runId, status: 'inspecting', replacements: []};
   let current = await assets();
   const previousName = asset => {
     const match = new RegExp('^' + prefix + 'previous-(\\d+)-(.+)$').exec(asset.name);

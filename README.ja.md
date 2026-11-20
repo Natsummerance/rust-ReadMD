@@ -49,6 +49,8 @@ ReadMD は閲覧、編集、形式変換、出版をローカルで行うため�
 
 今回の同一バージョン更新では、**Confluence、Lightfield、Pearl、Chrome、Field** の5種類のネイティブ PPTX デザインを追加しました。本文と表は編集可能なオブジェクトとして出力し、各デザインの背景と対応するアニメーションを保持します。HTML では **出版閲覧、技術文書、長文マガジン** の3種類を選べます。プレビューと単独ファイルで本文、目次、組版、幅広い表の処理を共有します。[テンプレートの説明](rust/readmd-kernel/templates/pptx/README.md)をご覧ください。
 
+今回のデスクトップ／連携用の全10ファイルは、同じコミット [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) からビルドしています。[対応するソース ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [リリース CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。元の `V0.0.7` タグは初回公開時のコミットを維持します。今回のソースはこの固定リンクから取得してください。
+
 ## ダウンロードとインストール
 
 デスクトップ、拡張、MCP 設定キットのバージョンは **V0.0.7** です。[すべてのファイルと SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7)。
@@ -105,9 +107,11 @@ macOS の通常のパスは `/Applications/ReadMD.app/Contents/MacOS/ReadMD` で
 
 ## 検証とソース
 
-V0.0.7 は macOS ARM64 で **6 グループ、244 項目のネイティブ検査**を完了しました。終了・復元、6 形式の出力、リリース候補版の ZIP からのコールド起動・再起動、隔離した V0.0.6 セッションの移行を含みます。アーカイブ内の製品バイナリでも 46 言語の保存文字コード操作を検証し、ページ例外は 0 件でした。[Mac 検証記録](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)には最初の WebKit 起動失敗と同じパッケージでの再検証を残しています。これらの検査範囲、他アプリとの互換性、各システムの実機検証は個別に記録します。
+2026-11-20 の同一バージョン更新では、正式 Apple Silicon ZIP で2回のネイティブ起動・再起動を確認し、ローカルに更新インストールしました。Windows/Linux は CI の実際のリリース実行ファイルでライフサイクルと画像出力を検証し、Intel は Mac CI のビルド、署名、パッケージ検査で確認しています。
 
-Windows x64、Linux x64、macOS ARM64/Intel のリリースビルドと共有品質検査が通過しました。公開 ARM64 ZIP は通常のコールド起動・再起動も確認し、テスト文書のバイト列を保持しました。この製品パッケージの結果と、以前の候補版の 244 項目検査は別に記録します。[公開検証記録](docs/reviews/readmd-v007-published-2026-11-19.md)と[プラットフォーム表](release/platform-matrix.json)をご覧ください。
+2026-11-19 の初回 V0.0.7 候補版は macOS ARM64 で **6 グループ、244 項目のネイティブ検査**を完了しました。終了・復元、6 形式の出力、リリース候補版の ZIP からのコールド起動・再起動、隔離した V0.0.6 セッションの移行を含みます。アーカイブ内の製品バイナリでも 46 言語の保存文字コード操作を検証し、ページ例外は 0 件でした。[Mac 検証記録](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)には最初の WebKit 起動失敗と同じパッケージでの再検証を残しています。これらの検査範囲、他アプリとの互換性、各システムの実機検証は個別に記録します。
+
+2026-11-19 の初回公開時に、Windows x64、Linux x64、macOS ARM64/Intel のリリースビルドと共有品質検査が通過しました。公開 ARM64 ZIP は通常のコールド起動・再起動も確認し、テスト文書のバイト列を保持しました。この製品パッケージの結果と、以前の候補版の 244 項目検査は別に記録します。[公開検証記録](docs/reviews/readmd-v007-published-2026-11-19.md)と[プラットフォーム表](release/platform-matrix.json)をご覧ください。
 
 ```sh
 cargo build --locked --release --manifest-path rust/Cargo.toml -p readmd-kernel

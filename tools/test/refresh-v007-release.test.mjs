@@ -6,6 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {PACKAGE_NAMES, writeChecksums} from '../publish-release.mjs';
 import {FIXED_TAG, FIXED_TAG_COMMIT, FIXED_RELEASE_ID, DOWNLOAD_NAMES, refreshV007} from '../refresh-v007-transaction.mjs';
+import {embeddedTemplateDigests} from '../inspect-v007-packages.mjs';
 
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 function fixture(t, {badUpload = false, failRenameAt = 0, badDownload = false} = {}) {
@@ -14,7 +15,7 @@ function fixture(t, {badUpload = false, failRenameAt = 0, badDownload = false} =
   const sourceCommit = 'a'.repeat(40), runId = 23, events = [], checkpoints = [];
   const packages = PACKAGE_NAMES.map(name => {
     const bytes = Buffer.from('new verified ' + name); fs.writeFileSync(path.join(directory, name), bytes);
-    return {name, size: bytes.length, sha256: sha(bytes), artifactDigestVerified: true};
+    return {name, size: bytes.length, sha256: sha(bytes), artifactDigestVerified: true, sourceInspectionVerified: true};
   });
   writeChecksums(directory);
   const original = DOWNLOAD_NAMES.map((name, i) => ({id: i + 1, name, size: 3, state: 'uploaded', digest: 'sha256:' + sha('old')}));
@@ -23,10 +24,11 @@ function fixture(t, {badUpload = false, failRenameAt = 0, badDownload = false} =
   const names = ['Build · Windows x64', 'Build · Linux x64', 'Build · macOS ARM64', 'Build · macOS Intel', 'Kernel tests · windows-latest', 'Kernel tests · ubuntu-latest', 'Kernel tests · macos-latest', 'Frontend gates', 'UI quality (Playwright)', 'VS Code and MCP quality', 'Owned small volume · ubuntu-latest', 'Owned small volume · windows-latest'];
   const jobs = names.map((name, i) => ({id: 100 + i, name, conclusion: 'success', steps: ['P0 lifecycle against the actual Windows or Linux release binary', 'Verify platform image exports and installed PDFium'].map(name => ({name, conclusion: 'success'}))}));
   let next = 200, renames = 0;
-  const state = {tagCommit: FIXED_TAG_COMMIT, mainStatus: 'ahead'};
+  const state = {tagCommit: FIXED_TAG_COMMIT, mainCommit: 'd'.repeat(40), mainStatus: 'ahead'};
   const request = async (method, route, data, {file} = {}) => {
     events.push({method, route, data});
-    if (route.includes('/git/ref/')) return {object: {type: 'commit', sha: state.tagCommit}};
+    if (route.includes('/git/ref/heads/main')) return {object: {type: 'commit', sha: state.mainCommit}};
+    if (route.includes('/git/ref/tags/')) return {object: {type: 'commit', sha: state.tagCommit}};
     if (route.includes('/commits/')) return {sha: sourceCommit};
     if (route.includes('/compare/')) return {status: state.mainStatus};
     if (route.endsWith('/actions/runs/23')) return structuredClone(run);
@@ -48,7 +50,7 @@ function fixture(t, {badUpload = false, failRenameAt = 0, badDownload = false} =
   };
   const verifyDownload = async (_asset, file) => ({size: file.size, sha256: badDownload ? 'f'.repeat(64) : file.sha256});
   return {directory, sourceCommit, runId, notes: 'Updated package source ' + sourceCommit + '; fixed tag ' + FIXED_TAG_COMMIT,
-    verification: {sourceCommit, runId, packages}, request, verifyDownload, checkpoint: j => checkpoints.push(structuredClone(j)),
+    verification: {sourceCommit, publicationCommit: state.mainCommit, runId, packages}, request, verifyDownload, checkpoint: j => checkpoints.push(structuredClone(j)),
     all, original, events, checkpoints, run, jobs, release, state};
 }
 
@@ -118,5 +120,25 @@ test('a completed same-source transaction is safely idempotent and does not reup
 test('another refresh namespace cannot be silently consumed or removed', async t => {
   const f = fixture(t); f.all.push({id: 800, name: 'v007-refresh-foreign-old.zip'});
   await assert.rejects(refreshV007(f), /another refresh asset/);
+  assert(f.events.every(event => event.method === 'GET'));
+});
+
+test('container provenance cannot replace inspection of the shipped source bytes', async t => {
+  const f = fixture(t); f.verification.packages[0].sourceInspectionVerified = false;
+  await assert.rejects(refreshV007(f), /source-inspected CI artifact/);
+  assert.deepEqual(f.events, []);
+});
+
+test('all exact native template bytes must survive compilation into the executable', () => {
+  const templates = new Map([['one', Buffer.from('native design one')], ['two', Buffer.from('native design two')]]);
+  const binary = Buffer.concat([Buffer.from('binary prefix'), ...templates.values(), Buffer.from('binary suffix')]);
+  assert.deepEqual(embeddedTemplateDigests(binary, templates).embeddedTemplates, {one: sha(templates.get('one')), two: sha(templates.get('two'))});
+  const changed = new Map(templates); changed.set('two', Buffer.from('native design XXo'));
+  assert.throws(() => embeddedTemplateDigests(binary, changed), /exact source template: two/);
+});
+
+test('a newer public main cannot be silently certified by an earlier source inspection', async t => {
+  const f = fixture(t); f.state.mainCommit = 'e'.repeat(40);
+  await assert.rejects(refreshV007(f), /main changed since product\/source inspection/);
   assert(f.events.every(event => event.method === 'GET'));
 });
