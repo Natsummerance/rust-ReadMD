@@ -52,8 +52,10 @@ ReadMD は閲覧、編集、形式変換、出版をローカルで行うため�
 前回のレイアウト公開のデスクトップ／連携用の全10ファイルは、同じコミット [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) からビルドしています。[対応するソース ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [リリース CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。元の `V0.0.7` タグは初回公開時のコミットを維持します。今回のソースはこの固定リンクから取得してください。
 
 <!-- readmd-autopublish:start -->
-Vega-Lite グラフ修正のソース：[`e0443ec3bc80a5dd853a81edd696e95db5516265`](https://github.com/Natsummerance/rust-ReadMD/tree/e0443ec3bc80a5dd853a81edd696e95db5516265)。指定した [リリース CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744958483) と [PET の3システム検査](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744976370) が通過した後、GitHub が全10ファイルとチェックサムを置換し、実際のダウンロード情報と公式サイトを更新します。公開状態は Release ファイルと SHA256SUMS で確認できます。
+グラフ閲覧 UI と AI 修正のソース：[`f6267fdf820135bcb2b2f2dd56313e0ee2160646`](https://github.com/Natsummerance/rust-ReadMD/tree/f6267fdf820135bcb2b2f2dd56313e0ee2160646)。指定した [リリース CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750315786) と [PET の3システム検査](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750341039) が通過した後、GitHub が全10ファイルとチェックサムを置換し、実際のダウンロード情報と公式サイトを更新します。公開状態は Release ファイルと SHA256SUMS で確認できます。
 <!-- readmd-autopublish:end -->
+
+今回のソースではグラフを本文に自然に配置し、ソースとコピー操作は初期状態で折りたたみます。描画に失敗した場合は診断とローカル修正のプレビューを表示します。ユーザーの操作で現在のグラフと診断を設定済み AI に送り、候補の編集とプレビュー、レビューへの提案、明示的な保存へ進めます。
 
 ## ダウンロードとインストール
 

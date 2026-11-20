@@ -52,8 +52,10 @@ ReadMD 把阅读、编辑、格式转换与出版放在同一个本地工作流�
 此前排版发布的全部 10 份桌面／集成资产由同一源码提交 [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) 构建；[对应源码 ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [本次发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。原 `V0.0.7` 标签保留首次发布时的提交，获取本轮源码请使用这里的固定链接。
 
 <!-- readmd-autopublish:start -->
-Vega-Lite 图表修复源码已公开：[`e0443ec3bc80a5dd853a81edd696e95db5516265`](https://github.com/Natsummerance/rust-ReadMD/tree/e0443ec3bc80a5dd853a81edd696e95db5516265)。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744958483) 与 [PET 三系统检查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744976370) 均通过后，GitHub 自动续作统一替换全部十份桌面／集成包和校验清单，再同步实际下载快照与官网；当前正式文件以 Release 资产与 SHA256SUMS 为准。
+图表阅读界面与 AI 修复源码已公开：[`f6267fdf820135bcb2b2f2dd56313e0ee2160646`](https://github.com/Natsummerance/rust-ReadMD/tree/f6267fdf820135bcb2b2f2dd56313e0ee2160646)。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750315786) 与 [PET 三系统检查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750341039) 均通过后，GitHub 自动续作统一替换全部十份桌面／集成包和校验清单，再同步实际下载快照与官网；当前正式文件以 Release 资产与 SHA256SUMS 为准。
 <!-- readmd-autopublish:end -->
+
+本轮源码让阅读中的图表直接融入正文，源码与复制控件默认折叠。渲染失败时提供错误定位和本地修复预览；用户可主动把当前图表及诊断发给已配置 AI，生成可编辑候选，先预览再提出待审修改，最后明确保存。
 
 ## 下载与安装
 

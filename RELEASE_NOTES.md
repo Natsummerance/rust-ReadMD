@@ -15,11 +15,15 @@
 
 - **发行收尾**：修复 Windows 旧进度回执读取时的新回执提交，保留重试中已完成的输出；SSE 流式聊天在接收端读取停滞时可取消所属写入与连接。Office 运行时按实际依赖闭包补齐并校验锁定版本的第三方许可通知。
 
-## 2026-11-20 Vega-Lite 图表修复（自动发布中）
+## 2026-11-20 图表阅读与 AI 修复（自动发布中）
 
 <!-- readmd-autopublish:start -->
-Vega-Lite 图表修复源码已公开：[`e0443ec3bc80a5dd853a81edd696e95db5516265`](https://github.com/Natsummerance/rust-ReadMD/tree/e0443ec3bc80a5dd853a81edd696e95db5516265)。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744958483) 与 [PET 三系统检查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44744976370) 均通过后，GitHub 自动续作统一替换全部十份桌面／集成包和校验清单，再同步实际下载快照与官网；当前正式文件以 Release 资产与 SHA256SUMS 为准。
+图表阅读界面与 AI 修复源码已公开：[`f6267fdf820135bcb2b2f2dd56313e0ee2160646`](https://github.com/Natsummerance/rust-ReadMD/tree/f6267fdf820135bcb2b2f2dd56313e0ee2160646)。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750315786) 与 [PET 三系统检查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750341039) 均通过后，GitHub 自动续作统一替换全部十份桌面／集成包和校验清单，再同步实际下载快照与官网；当前正式文件以 Release 资产与 SHA256SUMS 为准。
 <!-- readmd-autopublish:end -->
+
+本轮源码让阅读中的图表直接融入正文，源码与复制控件默认折叠。渲染失败时提供错误定位和本地修复预览；用户可主动把当前图表及诊断发给已配置 AI，生成可编辑候选，先预览再提出待审修改，最后明确保存。
+
+## 2026-11-20 Vega-Lite 阅读修复（包含在本轮构建中）
 
 阅读视图恢复 Vega／Vega-Lite 图表的离线矢量显示，使用随包解释器，无需系统 Node。本机已验证无 Node PATH 下三张图表均正常显示。
 
@@ -69,7 +73,9 @@ OCR、Typst、出版字体、代码运行时及音视频转写依实际平台能
 
 ## English
 
-The 2026-11-20 same-version refresh adds five native editable PPTX designs (Confluence, Lightfield, Pearl, Chrome and Field) and three HTML article layouts (Publication Reading, Technical Docs and Longform Magazine). All ten desktop/integration assets come from commit `43905601f2a0ae747f4000aad8e69a80e955ce7c`. The official Apple Silicon ZIP passed two local native cold launches/reopenings and was installed locally; Windows/Linux use actual release-binary CI regressions, while Intel uses Mac CI build, signing and packaging evidence.
+This source refresh places inline charts directly in the article and folds source/copy controls by default. Failures offer diagnostics and local repair previews. Users may explicitly send the current chart and diagnosis to their configured AI, edit and preview a candidate, submit it for review, and save explicitly.
+
+The earlier layout refresh adds five native editable PPTX designs (Confluence, Lightfield, Pearl, Chrome and Field) and three HTML article layouts (Publication Reading, Technical Docs and Longform Magazine). All ten desktop/integration assets come from commit `43905601f2a0ae747f4000aad8e69a80e955ce7c`. The official Apple Silicon ZIP passed two local native cold launches/reopenings and was installed locally; Windows/Linux use actual release-binary CI regressions, while Intel uses Mac CI build, signing and packaging evidence.
 
 V0.0.7 adds page-first PDF reading, read-only DOCX/PPTX layout views, merged-cell table editing, safer closing and recovery, manual resolution of shared suggestions, SVG drawing, multi-file OpenAPI updates and opt-in VS Code inline AI completion. Desktop, VSIX and MCP configuration packages share version `0.0.7`. Windows batch progress, cancellation under SSE downstream backpressure, and pinned Office dependency notices are included in the final release.
 
