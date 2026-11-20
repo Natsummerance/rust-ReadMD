@@ -2215,35 +2215,6 @@ body[data-theme="sepia"] #edit-wrap .cm-editor { background: var(--bg2); }
   color: var(--accent-fg, #fff);
 }
 
-/* ---------- 图表暗色模式适配 (WaveDrom, Bitfield, Viz/Dot/Graphviz, TikZ, Vega) ---------- */
-body[data-theme="dark"] .diagram-card[data-diagram-engine="wavedrom"] .diagram-preview,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="bitfield"] .diagram-preview,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="viz"] .diagram-preview,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="dot"] .diagram-preview,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="graphviz"] .diagram-preview,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="tikz"] .diagram-preview {
-  background: var(--bg2);
-  border-radius: var(--radius-s);
-}
-
-body[data-theme="dark"] .diagram-card[data-diagram-engine="wavedrom"] .diagram-preview svg,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="bitfield"] .diagram-preview svg,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="viz"] .diagram-preview svg,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="dot"] .diagram-preview svg,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="graphviz"] .diagram-preview svg,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="tikz"] .diagram-preview svg {
-  filter: invert(0.88) hue-rotate(180deg);
-}
-
-body[data-theme="dark"] .diagram-card[data-diagram-engine="vega"] svg text,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="vega-lite"] svg text {
-  fill: var(--fg) !important;
-}
-body[data-theme="dark"] .diagram-card[data-diagram-engine="vega"] svg line,
-body[data-theme="dark"] .diagram-card[data-diagram-engine="vega-lite"] svg line {
-  stroke: var(--border2) !important;
-}
-
 /* ---------- 等宽数字：杜绝高频读数跳动 ---------- */
 #ai-usage,
 #edit-doc-stats,
@@ -5353,9 +5324,9 @@ body[data-theme="dark"] .code-chunk-status.error,
 }
 
 .diagram-fallback-wrap {
-  padding: 12px;
-  background: var(--bg);
-  border-radius: var(--radius-s);
+  width: 100%;
+  padding: 12px 0;
+  background: transparent;
 }
 
 .diagram-fallback-hint {
@@ -5425,56 +5396,41 @@ body[data-theme="dark"] .code-chunk-status.error,
   cursor: zoom-in;
 }
 
-/* ---------- 专业图表渲染卡片 (Diagram Cards) ---------- */
+/* ---------- 图表融入纸面，工具按需展开 ---------- */
 .diagram-card {
-  margin: 18px 0;
-  border-radius: var(--radius-m);
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.diagram-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  background: var(--bg3);
-  border-bottom: 1px solid var(--border);
-}
-
-.diagram-badge {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.diagram-reload-btn {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  margin: 1.5em 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   background: transparent;
-  border: none;
-  font-size: 12px;
-  color: var(--fg2);
-  cursor: pointer;
-}
-
-.diagram-reload-btn:hover {
-  color: var(--accent);
+  box-shadow: none;
 }
 
 .diagram-preview {
-  padding: 18px;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
-  min-height: 100px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 6px 0;
   overflow-x: auto;
-  background: var(--bg);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--fg);
+  scrollbar-width: thin;
 }
 
 .diagram-preview svg {
+  display: block;
+  flex-shrink: 0;
   max-width: 100%;
   height: auto;
+  background: transparent;
 }
 
 .diagram-preview svg foreignObject p {
@@ -5482,12 +5438,42 @@ body[data-theme="dark"] .code-chunk-status.error,
   padding: 0;
 }
 
-[data-theme="dark"] .diagram-card[data-diagram-engine="wavedrom"] .diagram-preview,
-[data-theme="dark"] .diagram-card[data-diagram-engine="bitfield"] .diagram-preview,
-.dark .diagram-card[data-diagram-engine="wavedrom"] .diagram-preview,
-.dark .diagram-card[data-diagram-engine="bitfield"] .diagram-preview {
-  background: var(--bg2);
-  border-radius: var(--radius-s);
+.diagram-render-target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media screen {
+  .diagram-card[data-diagram-style="research"] .diagram-preview > :is(svg, canvas) {
+    width: min(100%, 680px);
+  }
+  .diagram-card:is([data-diagram-engine="vega"], [data-diagram-engine="vega-lite"]) .diagram-preview > svg > rect:first-child {
+    fill: transparent;
+  }
+  body[data-theme="dark"] .diagram-card[data-diagram-style="research"] .diagram-preview [data-diagram-neutral-fill="paper"] {
+    fill: transparent;
+  }
+  body[data-theme="dark"] .diagram-card[data-diagram-style="research"] .diagram-preview [data-diagram-neutral-fill="ink"] {
+    fill: var(--diagram-neutral-fill);
+  }
+  body[data-theme="dark"] .diagram-card[data-diagram-style="research"] .diagram-preview [data-diagram-neutral-stroke] {
+    stroke: var(--diagram-neutral-stroke);
+  }
+}
+
+/* Legacy engines emit white SVG pages. Blend the page into the reading
+   surface; theme-aware Mermaid, Vega and Chart retain their own colours. */
+.diagram-card:is([data-diagram-engine="wavedrom"], [data-diagram-engine="bitfield"], [data-diagram-engine="viz"], [data-diagram-engine="dot"], [data-diagram-engine="graphviz"], [data-diagram-engine="tikz"], [data-diagram-engine="plantuml"], [data-diagram-engine="puml"], [data-diagram-engine="wsd"], [data-diagram-engine="ditaa"], [data-diagram-engine="d2"]) .diagram-preview > :is(svg, img) {
+  mix-blend-mode: multiply;
+}
+
+body[data-theme="dark"] .diagram-card:is([data-diagram-engine="wavedrom"], [data-diagram-engine="bitfield"], [data-diagram-engine="viz"], [data-diagram-engine="dot"], [data-diagram-engine="graphviz"], [data-diagram-engine="tikz"], [data-diagram-engine="plantuml"], [data-diagram-engine="puml"], [data-diagram-engine="wsd"], [data-diagram-engine="ditaa"], [data-diagram-engine="d2"]) .diagram-preview > :is(svg, img) {
+  filter: invert(1) hue-rotate(180deg);
+  mix-blend-mode: screen;
 }
 
 .diagram-preview-image {
@@ -5505,20 +5491,278 @@ body[data-theme="dark"] .code-chunk-status.error,
 }
 
 .diagram-loading {
-  font-size: 12px;
+  padding: 12px 36px;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 
-.diagram-src-wrap {
-  padding: 6px 12px;
-  background: var(--bg3);
-  border-top: 1px solid var(--border);
-  font-size: 12px;
+.markdown-body .diagram-card > .diagram-tools {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: 1.5;
 }
 
-.diagram-src-wrap summary {
+.diagram-tools > .diagram-tools-toggle {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--fg3);
   cursor: pointer;
+  list-style: none;
+  user-select: none;
+  transition: color var(--duration-fast, 120ms), background var(--duration-fast, 120ms), opacity var(--duration-fast, 120ms);
+}
+
+.diagram-tools-toggle::-webkit-details-marker { display: none; }
+.diagram-tools-toggle::marker { content: ''; }
+.diagram-tools-toggle::before, .diagram-tools-toggle::after { display: none; }
+
+.diagram-card:hover .diagram-tools-toggle,
+.diagram-card:focus-within .diagram-tools-toggle,
+.diagram-tools[open] > .diagram-tools-toggle { opacity: 1; }
+
+.diagram-tools-toggle:hover,
+.diagram-tools-toggle:focus-visible,
+.diagram-tools[open] > .diagram-tools-toggle {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.diagram-tools-toggle:focus-visible,
+.diagram-tool-actions button:focus-visible,
+.diagram-diagnostic button:focus-visible,
+.diagram-apply-preview-btn:focus-visible,
+.diagram-reset-preview-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.diagram-tool-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.diagram-tools-panel {
+  min-width: 0;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.diagram-tools-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.diagram-badge {
+  min-width: 0;
   color: var(--fg2);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.diagram-tool-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.diagram-tool-actions button,
+.diagram-local-fix-btn,
+.diagram-ai-repair-btn,
+.diagram-apply-preview-btn,
+.diagram-reset-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--fg2);
+  font: 500 var(--text-xs)/1.4 var(--font-ui);
+  cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.diagram-tool-actions button:hover,
+.diagram-local-fix-btn:hover,
+.diagram-ai-repair-btn:hover,
+.diagram-apply-preview-btn:hover,
+.diagram-reset-preview-btn:hover {
+  background: var(--color-hover, var(--bg3));
+  color: var(--accent);
+}
+
+.diagram-tool-actions button:disabled,
+.diagram-diagnostic-actions button:disabled { opacity: .5; cursor: wait; }
+.diagram-tool-actions .diagram-copy-btn.is-copied { color: var(--color-success, var(--accent)); }
+
+.diagram-src-wrap {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.markdown-body .diagram-card .diagram-src-wrap pre {
+  max-width: 100%;
+  max-height: min(340px, 50vh);
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: var(--code-bg);
+  color: var(--fg);
+  font: var(--text-xs)/1.65 var(--font-code);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+
+.markdown-body .diagram-card .diagram-src-wrap code {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: inherit;
+}
+
+/* Failed figures use the same source control, without duplicating code. */
+.diagram-diagnostic {
+  width: 100%;
+  min-width: 0;
+  padding: 14px 36px 14px 0;
+  color: var(--fg2);
+  font: var(--text-xs)/1.65 var(--font-ui);
+  overflow-wrap: anywhere;
+}
+
+.diagram-diagnostic-title {
+  margin: 0 0 6px;
+  color: var(--warning);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.diagram-diagnostic-location {
+  margin: 0 0 4px;
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+}
+
+.diagram-diagnostic-reason { margin: 0 0 8px; }
+.diagram-card .diagram-diagnostic > .diagram-diagnostic-advice { margin: 6px 0 0; font-size: var(--text-2xs); }
+.diagram-card .diagram-diagnostic > .diagram-diagnostic-details { margin: 6px 0 0; font-size: var(--text-2xs); }
+.diagram-diagnostic-details summary { color: var(--fg3); cursor: pointer; }
+.diagram-diagnostic-details pre {
+  max-height: 180px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  font: var(--text-2xs)/1.6 var(--font-code);
+  white-space: pre-wrap;
+  overflow: auto;
+}
+
+.diagram-diagnostic-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.diagram-diagnostic-actions .diagram-inline-retry { min-height: 32px; margin: 0; }
+.diagram-local-fix-btn,
+.diagram-ai-repair-btn { background: var(--color-hover, var(--bg3)); color: var(--fg2); }
+
+.diagram-repair-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 8px;
+  color: var(--fg3);
+  font: var(--text-2xs)/1.5 var(--font-ui);
+}
+.diagram-apply-preview-btn,
+.diagram-reset-preview-btn { min-height: 28px; font-size: var(--text-2xs); }
+.diagram-apply-preview-btn { color: var(--accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .diagram-tools:not([open]) > .diagram-tools-toggle { opacity: 0; }
+  .diagram-card:hover .diagram-tools > .diagram-tools-toggle,
+  .diagram-card:focus-within .diagram-tools > .diagram-tools-toggle { opacity: 1; }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .diagram-tools > .diagram-tools-toggle { width: 44px; height: 44px; }
+  .diagram-tool-actions button,
+  .diagram-diagnostic-actions button,
+  .diagram-apply-preview-btn,
+  .diagram-reset-preview-btn { min-height: 44px; }
+}
+
+@media (max-width: 640px) {
+  .diagram-diagnostic { padding-inline-end: 44px; }
+}
+
+@media print {
+  [data-diagram-tools],
+  .diagram-diagnostic-actions,
+  .diagram-repair-notice,
+  #diagram-repair-modal { display: none !important; }
+  .diagram-card {
+    margin: 1em 0;
+    break-inside: avoid;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+  .diagram-preview { padding: 0; overflow: visible; background: transparent !important; }
+  .diagram-card .diagram-preview > :is(svg, img) {
+    filter: none !important;
+    mix-blend-mode: normal !important;
+  }
+  .diagram-diagnostic { padding-inline-end: 0; color: black; }
 }
 
 /* ---------- 禅模式 / 专注模式 (Zen Mode) ---------- */

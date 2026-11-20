@@ -1181,13 +1181,27 @@ function parseMarkdownWithSourceMap(content, options = {}) {
       const diagramLangs = ['mermaid', 'tikz', 'plantuml', 'puml', 'wsd', 'wavedrom', 'bitfield', 'viz', 'dot', 'graphviz', 'vega', 'vega-lite', 'chart', 'chartjs', 'chart.js', 'd2', 'ditaa'];
       if (diagramLangs.includes(lang.toLowerCase())) {
         const encodedCode = encodeURIComponent(code);
-        return `<div class="diagram-card" ${lineAttr} data-diagram-engine="${lang.toLowerCase()}" data-diagram-code="${encodedCode}">
-          <div class="diagram-header">
-            <span class="diagram-badge">${_t('reader.diagramBadge', { lang: lang.toUpperCase() })}</span>
-            <button class="diagram-reload-btn" title="${_t('reader.refresh')}" aria-label="${_t('reader.refresh')}">⟳ ${_t('reader.refresh')}</button>
-          </div>
+        let diagramStyle = '';
+        if (['vega', 'vega-lite', 'chart', 'chartjs', 'chart.js'].includes(lang.toLowerCase())) {
+          try { if (JSON.parse(code)?.readmd?.style === 'research') diagramStyle = ' data-diagram-style="research"'; }
+          catch (_) { /* Invalid input is diagnosed by the renderer. */ }
+        }
+        return `<div class="diagram-card" ${lineAttr} data-diagram-engine="${lang.toLowerCase()}"${diagramStyle} data-diagram-code="${encodedCode}">
           <div class="diagram-preview"><div class="diagram-loading">${_t('reader.diagramLoading')}</div></div>
-          <details class="diagram-src-wrap"><summary>${_t('reader.viewCode')}</summary><pre><code class="language-${lang}">${escaped ? code : (window.escapeHtml ? escapeHtml(code) : code)}</code></pre></details>
+          <details class="diagram-tools" data-diagram-tools data-rd-chrome>
+            <summary class="diagram-tools-toggle" title="${_t('reader.viewCode')}" aria-label="${_t('reader.viewCode')}"><svg class="diagram-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m8 8-4 4 4 4m8-8 4 4-4 4m-3-11-2 14"/></svg><span class="visually-hidden">${_t('reader.viewCode')}</span></summary>
+            <div class="diagram-tools-panel">
+              <div class="diagram-tools-header">
+                <span class="diagram-badge">${_t('reader.diagramBadge', { lang: lang.toUpperCase() })}</span>
+                <div class="diagram-tool-actions">
+                  <button type="button" class="diagram-copy-btn" title="${_t('reader.codeCopyTitle')}" aria-label="${_t('reader.codeCopyTitle')}"><svg class="diagram-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><span class="diagram-copy-label">${_t('reader.codeCopy')}</span></button>
+                  <button type="button" class="diagram-reload-btn" title="${_t('reader.refresh')}" aria-label="${_t('reader.refresh')}"><svg class="diagram-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 7a9 9 0 1 0 1 8M21 3v6h-6"/></svg><span>${_t('reader.refresh')}</span></button>
+                </div>
+              </div>
+              <div class="diagram-src-wrap"><pre><code class="language-${lang}">${escaped ? code : (window.escapeHtml ? escapeHtml(code) : code)}</code></pre></div>
+              <span class="diagram-copy-status visually-hidden"></span>
+            </div>
+          </details>
         </div>\n`;
       }
 
@@ -1224,6 +1238,7 @@ const RENDER_BUTTON_CLASSES = new Set([
   'code-chunk-copy-btn',
   'code-chunk-clear-btn',
   'diagram-reload-btn',
+  'diagram-copy-btn',
 ]);
 const MARKDOWN_RESERVED_IDS = new Set([
   'content', 'toolbar', 'statusbar', 'doc-tabs-container', 'doc-tabs-bar',
@@ -2373,23 +2388,6 @@ function diagramOutputMarkup(markup) {
   return template.innerHTML;
 }
 
-// Server responses and client throws both carry stable diagram_* error codes.
-// Map them to locale keys once so every failure path shows the same honest
-// wording instead of a blanket "unknown error".
-const DIAGRAM_ERROR_I18N = {
-  diagram_engine_unavailable: 'reader.diagramEngineUnavailable',
-  diagram_engine_load_failed: 'reader.diagramEngineLoadFailed',
-  diagram_engine_timeout: 'reader.diagramTimeout',
-  diagram_engine_unavailable_handler: 'reader.diagramEngineUnavailable',
-  diagram_engine_unavailable_rendered: 'reader.diagramEngineUnavailable',
-  diagram_invalid_input: 'reader.diagramInvalidInput',
-  diagram_dependency_missing: 'reader.diagramDependencyMissing',
-  diagram_client_renderer_required: 'reader.diagramClientRendererRequired',
-  diagram_network_unavailable: 'reader.diagramNetworkUnavailable',
-  diagram_input_too_large: 'reader.diagramInputTooLarge',
-  diagram_render_failed: 'reader.diagramRenderFailed',
-};
-
 function escapeHtml(str) {
   return String(str || '')
     .replace(/&/g, '&amp;')
@@ -2401,23 +2399,34 @@ function escapeHtml(str) {
 window.escapeHtml = escapeHtml;
 
 function diagramErrorKey(code) {
-  return (code && DIAGRAM_ERROR_I18N[String(code)]) || 'toast.unknownError';
+  return window.ReadMDDiagramDiagnostics.errorKey(code);
 }
 
-function diagramFallbackMarkup(code, errorCode) {
+function diagramFallbackMarkup(code, errorCode, diagnostic) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const reason = _t(diagramErrorKey(errorCode));
-  const safeReason = window.escapeHtml ? escapeHtml(reason) : reason;
-  const message = _t('reader.diagramError', { error: safeReason });
-  const safeMessage = window.escapeHtml ? escapeHtml(message) : message;
-  const safeCode = window.escapeHtml ? escapeHtml(String(code || '')) : String(code || '');
-  const refreshLabel = _t('reader.refresh') || '重试';
-  return `<div class="diagram-fallback-wrap"><div class="diagram-fallback-hint">${safeMessage}</div><button type="button" class="diagram-inline-retry" aria-label="${refreshLabel}"><svg class="tb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;margin-right:4px;"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg><span>${refreshLabel}</span></button><pre class="diagram-fallback"><code>${safeCode}</code></pre></div>`;
+  const title = _t(diagramErrorKey(errorCode || diagnostic?.code));
+  const reason = diagnostic?.messageKey ? _t(diagnostic.messageKey, diagnostic.messageParams) : title;
+  const line = diagnostic?.sourceLine || diagnostic?.line;
+  const position = line ? _t('editor.lineCol', { line, col: diagnostic.column || '—' }) : '';
+  const detail = window.ReadMDDiagramDiagnostics?.safeDetail(diagnostic?.detail || '') || '';
+  const refreshLabel = escapeHtml(_t('plugin.retry'));
+  return `<div class="diagram-fallback-wrap diagram-diagnostic" role="alert">
+    <div class="diagram-diagnostic-title">${escapeHtml(title)}</div>
+    ${position ? `<div class="diagram-diagnostic-location">${escapeHtml(position)}</div>` : ''}
+    ${reason !== title ? `<div class="diagram-fallback-hint diagram-diagnostic-reason">${escapeHtml(reason)}</div>` : ''}
+    ${detail ? `<details class="diagram-diagnostic-details"><summary>${escapeHtml(_t('plugin.errorDetails'))}</summary><pre>${escapeHtml(detail)}</pre></details>` : ''}
+    ${diagnostic?.fix ? `<p class="diagram-diagnostic-advice">${escapeHtml(_t('fixes.note'))}</p>` : ''}
+    <div class="diagram-diagnostic-actions">
+      <button type="button" class="diagram-inline-retry" aria-label="${refreshLabel}">⟳ ${refreshLabel}</button>
+      ${diagnostic?.fix ? `<button type="button" class="diagram-local-fix-btn">${escapeHtml(_t('reader.diagramLocalFix'))}</button>` : ''}
+      <button type="button" class="diagram-ai-repair-btn">${escapeHtml(_t('fixes.aiFix'))}</button>
+    </div>
+  </div>`;
 }
 
-function renderDiagramFallback(previewEl, engine, code, errorCode) {
+function renderDiagramFallback(previewEl, engine, code, errorCode, diagnostic) {
   if (!previewEl) return;
-  previewEl.innerHTML = diagramFallbackMarkup(code, errorCode);
+  previewEl.innerHTML = diagramFallbackMarkup(code, errorCode, diagnostic);
 }
 
 // A few vendored renderers (notably bitfield) return ONML's array-shaped
@@ -2448,6 +2457,7 @@ function diagramOnmlToSvg(node) {
 }
 
 function parseWaveDromSource(source) {
+  if (window.ReadMDDiagramDiagnostics) return window.ReadMDDiagramDiagnostics.parseJson(source, true);
   const raw = String(source || '').trim();
   try { return JSON.parse(raw); } catch (_) { /* Common WaveDrom examples use JS-like keys. */ }
   const normalized = raw
@@ -2480,12 +2490,12 @@ async function renderTikzjaxDiagram(code, previewEl) {
   // Declared outside try: the finally restore references these, and
   // sibling blocks (try/finally) do not share block scope.
   const originalLog = console.log;
-  let texError = '';
+  let texError = '', texErrorLine = null;
   const texLogHook = function(...args) {
-    if (!texError) {
-      const line = args.map(a => (typeof a === 'string' ? a : '')).join(' ');
-      if (line.slice(0, 2) === '! ' || line.indexOf('Emergency stop') !== -1) texError = line;
-    }
+    const line = args.map(a => (typeof a === 'string' ? a : '')).join(' ');
+    if (!texError && (line.slice(0, 2) === '! ' || line.indexOf('Emergency stop') !== -1)) texError = line;
+    const sourceLine = texError && /^l\.(\d+)\b/.exec(line.trim());
+    if (sourceLine && !texErrorLine) texErrorLine = Number(sourceLine[1]);
     return originalLog.apply(this, args);
   };
   console.log = texLogHook;
@@ -2505,7 +2515,8 @@ async function renderTikzjaxDiagram(code, previewEl) {
     // environment, even in a full TeX install.  Bare snippets are therefore
     // invalid input as-is; wrap them instead of failing with "Undefined
     // control sequence" after a full 30s compile.
-    if (!/\\begin\{document\}/.test(tikzSource) && !/\\begin\{tikzpicture\}/.test(tikzSource)) {
+    const wrapped = !/\\begin\{document\}/.test(tikzSource) && !/\\begin\{tikzpicture\}/.test(tikzSource);
+    if (wrapped) {
       tikzSource = '\\begin{tikzpicture}\n' + tikzSource + '\n\\end{tikzpicture}';
     }
     source.textContent = tikzSource;
@@ -2522,7 +2533,7 @@ async function renderTikzjaxDiagram(code, previewEl) {
     }
     const rendered = previewEl.firstElementChild;
     if (!rendered || rendered.tagName.toLowerCase() === 'script') {
-      if (texError) throw new Error('diagram_render_failed');
+      if (texError) throw Object.assign(new Error('diagram_render_failed'), { diagramDetail: texError, line: texErrorLine ? Math.max(1, texErrorLine - (wrapped ? 1 : 0)) : undefined });
       throw new Error(Date.now() >= deadline ? 'diagram_engine_timeout' : 'diagram_engine_unavailable_rendered');
     }
     return diagramOutputMarkup(rendered.outerHTML);
@@ -2617,7 +2628,7 @@ async function renderLocalDiagram(engine, code, previewEl, figureOptions = {}) {
   }
   if (normalized === 'vega' || normalized === 'vega-lite') {
     let spec;
-    try { spec = JSON.parse(String(code || '')); } catch (_) { throw new Error('diagram_invalid_input'); }
+    try { spec = JSON.parse(String(code || '')); } catch (error) { throw Object.assign(error, { code: 'diagram_invalid_input' }); }
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
       throw new Error('diagram_invalid_input');
     }
@@ -2653,24 +2664,42 @@ async function renderLocalDiagram(engine, code, previewEl, figureOptions = {}) {
         subtitleColor: '#9aa3b2'
       }
     } : publication ? {} : { background: 'transparent' };
+    let view;
     try {
-      const compiled = normalized === 'vega-lite' && vegaLite ? vegaLite.compile(spec, { config: darkConfig }).spec : spec;
+      let invalidTransformWarning = '';
+      // Vega-Lite otherwise drops an unknown transform and returns a plausible
+      // but incorrect chart. Its compiler logger is local to this synchronous
+      // compile; ordinary layout warnings remain non-fatal.
+      const logger = vega.logger(vega.Warn);
+      logger.warn = (...args) => {
+        const message = args.filter(value => typeof value === 'string').join(' ');
+        if (/^Ignoring an invalid transform\b/.test(message) && !invalidTransformWarning) invalidTransformWarning = message;
+        return logger;
+      };
+      const compiled = normalized === 'vega-lite' && vegaLite ? vegaLite.compile(spec, { config: darkConfig, logger }).spec : spec;
+      if (invalidTransformWarning) {
+        const diagnostic = window.ReadMDDiagramDiagnostics?.invalidTransform(code, invalidTransformWarning);
+        throw diagnostic ? window.ReadMDDiagramDiagnostics.asError(diagnostic)
+          : Object.assign(new Error('diagram_invalid_input'), { diagramDetail: 'Ignoring an invalid transform.' });
+      }
       const loader=vega.loader();let denied=false;loader.load=()=>{denied=true;return Promise.reject(new Error('diagram_render_failed'));};
-      const view = new vega.View(vega.parse(compiled, darkConfig, {ast:true}), { renderer: 'none',loader,expr:vega.expressionInterpreter });
+      view = new vega.View(vega.parse(compiled, darkConfig, {ast:true}), { renderer: 'none',loader,expr:vega.expressionInterpreter });
       await view.runAsync();
       const svg = await view.toSVG();
-      view.finalize();if(denied)throw new Error('diagram_render_failed');
+      if(denied)throw new Error('diagram_render_failed');
       if (!svg || !svg.startsWith('<svg')) throw new Error('diagram_render_failed');
       return diagramOutputMarkup(svg);
     } catch (err) {
       if (err && (err.message === 'diagram_invalid_input' || err.message === 'diagram_render_failed')) throw err;
-      throw new Error('diagram_render_failed');
+      throw Object.assign(err instanceof Error ? err : new Error(String(err || 'diagram_render_failed')), { code: 'diagram_render_failed' });
+    } finally {
+      view?.finalize();
     }
   }
   if (normalized === 'chart' || normalized === 'chartjs' || normalized === 'chart.js') {
     const Chart = await loadDiagramScript('/assets/vendor/diagrams/chart/chart.umd.js', 'Chart');
     let config;
-    try { config = JSON.parse(String(code || '')); } catch (_) { throw new Error('diagram_invalid_input'); }
+    try { config = JSON.parse(String(code || '')); } catch (error) { throw Object.assign(error, { code: 'diagram_invalid_input' }); }
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       throw new Error('diagram_invalid_input');
     }
@@ -2758,9 +2787,11 @@ async function renderLocalDiagram(engine, code, previewEl, figureOptions = {}) {
       // Wait for the first synchronous draw before returning the canvas.  The
       // instance is retained on the node so a reload can destroy it cleanly.
       canvas._readmdChart = chart;
-    } catch (_) {
+    } catch (error) {
+      const partial = Chart.getChart?.(canvas);
+      if (partial && typeof partial.destroy === 'function') { try { partial.destroy(); } catch (_) { /* partial constructor cleanup */ } }
       canvas.remove();
-      throw new Error('diagram_render_failed');
+      throw Object.assign(error instanceof Error ? error : new Error(String(error || 'diagram_render_failed')), { code: 'diagram_render_failed' });
     }
     return canvas;
   }
@@ -2782,15 +2813,27 @@ function renderAllDiagrams(container) {
   const cards = root.matches && root.matches('.diagram-card')
     ? [root]
     : root.querySelectorAll('.diagram-card');
-  cards.forEach(async card => {
+  cards.forEach(card => {
     if (card._rendered) return;
     card._rendered = true;
     const engine = card.dataset.diagramEngine || 'plantuml';
-    const code = decodeURIComponent(card.dataset.diagramCode || '');
+    let originalCode;
+    try { originalCode = decodeURIComponent(card.dataset.diagramCode || ''); }
+    catch (_) { originalCode = String(card.dataset.diagramCode || ''); }
+    let code = originalCode, renderEpoch = 0;
     const previewEl = card.querySelector('.diagram-preview');
     const reloadBtn = card.querySelector('.diagram-reload-btn');
+    if (!previewEl) return;
 
-    const render = async () => {
+    const render = async options => {
+      // Event handlers also call render: only explicit preview/reset objects
+      // can change the ephemeral input. Never update dataset or document text.
+      if (options?.reset === true) code = originalCode;
+      else if (options?.preview === true && typeof options.code === 'string') code = options.code;
+      const input = code, epoch = ++renderEpoch;
+      card._diagramPreviewCode = input === originalCode ? undefined : input;
+      card.dataset.diagramState = 'loading';
+      previewEl.setAttribute('aria-busy', 'true');
       if (reloadBtn) {
         reloadBtn.disabled = true;
         reloadBtn.classList.add('is-loading');
@@ -2799,34 +2842,92 @@ function renderAllDiagrams(container) {
       if (previousCanvas && previousCanvas._readmdChart && typeof previousCanvas._readmdChart.destroy === 'function') {
         try { previousCanvas._readmdChart.destroy(); } catch (_) { /* best effort cleanup */ }
       }
-      previewEl.innerHTML = `<div class="diagram-loading">${_t('reader.renderingDiagram', { engine: engine.toUpperCase() })}</div>`;
+      // Each attempt owns its target, so a late renderer can only mutate a
+      // detached element after retry/navigation rather than the next result.
+      const target = document.createElement('div');
+      target.className = 'diagram-render-target';
+      target.innerHTML = `<div class="diagram-loading">${escapeHtml(_t('reader.renderingDiagram', { engine: engine.toUpperCase() }))}</div>`;
+      previewEl.replaceChildren(target);
+      const current = () => epoch === renderEpoch;
+      const success = rendered => {
+        if (!current()) {
+          const canvas = rendered instanceof Element ? rendered : target.querySelector('.diagram-chart-canvas');
+          canvas?._readmdChart?.destroy?.();
+          return false;
+        }
+        if (rendered instanceof Element) previewEl.replaceChildren(rendered);
+        else previewEl.innerHTML = rendered;
+        card._diagramDiagnostic = null;
+        card.dataset.diagramState = 'ready';
+        if (input !== originalCode) {
+          const notice = document.createElement('div');
+          notice.className = 'diagram-repair-notice';
+          notice.setAttribute('role', 'status');
+          const note = document.createElement('span'); note.textContent = _t('fixes.note');
+          const apply = document.createElement('button'); apply.type = 'button'; apply.className = 'diagram-apply-preview-btn';
+          apply.textContent = _t('publication.local.apply'); apply.disabled = !window.ReadMDDiagramRepair?.open;
+          apply.onclick = () => window.ReadMDDiagramRepair?.open(card, null, input);
+          const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'diagram-reset-preview-btn';
+          reset.textContent = _t('reader.closePreview'); reset.onclick = () => render({ reset: true });
+          notice.append(note, apply, reset); previewEl.append(notice);
+        }
+        return true;
+      };
+      const failure = error => {
+        if (!current()) return false;
+        const diagnostic = window.ReadMDDiagramDiagnostics.inspect(engine, input, error);
+        const fenceLine = Number(card.dataset.sourceLine);
+        if (Number.isInteger(fenceLine) && fenceLine >= 1 && diagnostic.line) diagnostic.sourceLine = fenceLine + diagnostic.line;
+        card._diagramDiagnostic = diagnostic;
+        card.dataset.diagramState = 'error';
+        previewEl.innerHTML = diagramFallbackMarkup(input, diagnostic.code, diagnostic);
+        const retry = previewEl.querySelector('.diagram-inline-retry');
+        if (retry) retry.onclick = () => render();
+        const fix = previewEl.querySelector('.diagram-local-fix-btn');
+        if (fix) fix.onclick = () => render({ preview: true, code: diagnostic.fix.code });
+        const ai = previewEl.querySelector('.diagram-ai-repair-btn');
+        if (ai) {
+          ai.disabled = !window.ReadMDDiagramRepair?.open;
+          ai.onclick = () => window.ReadMDDiagramRepair?.open(card, diagnostic);
+        }
+        if (input !== originalCode) {
+          const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'diagram-reset-preview-btn';
+          reset.textContent = _t('reader.closePreview'); reset.onclick = () => render({ reset: true });
+          previewEl.querySelector('.diagram-diagnostic-actions')?.append(reset);
+        }
+        // Only stable codes enter the console; parser text is bounded and
+        // redacted in the user-requested details/AI diagnostic above.
+        console.warn('diagram render failed:', engine, diagnostic.code);
+        return false;
+      };
       try {
+        const invalid = window.ReadMDDiagramDiagnostics?.inspect(engine, input);
+        if (invalid) throw window.ReadMDDiagramDiagnostics.asError(invalid);
         // Vega expressions run in the bundled AST interpreter under the WebView CSP.
         if (['mermaid', 'wavedrom', 'bitfield', 'viz', 'dot', 'graphviz', 'tikz', 'vega', 'vega-lite', 'chart', 'chartjs', 'chart.js'].includes(engine)) {
-          const rendered = await renderLocalDiagram(engine, code, previewEl);
-          if (rendered instanceof Element) previewEl.replaceChildren(rendered);
-          else previewEl.innerHTML = rendered;
-          return;
+          const rendered = await renderLocalDiagram(engine, input, target);
+          return success(rendered);
         }
 
         let res;
         const allowRemote = Boolean(card._allowRemote);
         if (hasPy && py.render_diagram) {
-          res = await py.render_diagram(engine, code, { allow_remote: allowRemote });
+          res = await py.render_diagram(engine, input, { allow_remote: allowRemote });
         } else {
           const r = await apiFetch('/api/diagram/render', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ engine: engine, code: code, allow_remote: allowRemote })
+            body: JSON.stringify({ engine: engine, code: input, allow_remote: allowRemote })
           });
           res = await r.json();
         }
 
+        if (!current()) return false;
         if (res && res.ok) {
           if (res.type === 'html' && res.html) {
-            previewEl.innerHTML = diagramOutputMarkup(res.html);
+            success(diagramOutputMarkup(res.html));
           } else if (res.svg) {
-            previewEl.innerHTML = diagramOutputMarkup(res.svg);
+            success(diagramOutputMarkup(res.svg));
           } else {
             throw new Error('diagram_engine_unavailable');
           }
@@ -2842,44 +2943,34 @@ function renderAllDiagrams(container) {
             }
           }
         } else {
-          // Server responses intentionally carry only stable error codes.  Do
-          // not leak those codes (or provider/host diagnostics) into the
-          // rendered document; the locale owns the user-facing wording.
-          console.warn('diagram render failed:', engine, res && res.error_code);
+          failure(res || new Error('diagram_render_failed'));
           if (res && res.error_code === 'diagram_dependency_missing' && res.remote_available) {
             const isZh = window.i18n ? ((window.i18n.currentLang || window.i18n.locale || '').startsWith('zh')) : true;
             const confirmText = isZh ? '本机未就绪 PlantUML 环境。点击允许连接 plantuml.com 在线渲染（将上传图表源码）' : 'PlantUML local engine not found. Click to render via plantuml.com (diagram source will be sent)';
             const btnText = isZh ? '允许在线渲染' : 'Allow Online Render';
-            const safeCode = window.escapeHtml ? escapeHtml(String(code || '')) : String(code || '');
-            previewEl.innerHTML = `<div class="diagram-fallback-wrap"><div class="diagram-fallback-hint">${confirmText}</div><button type="button" class="diagram-inline-retry diagram-allow-remote-btn" aria-label="${btnText}"><svg class="tb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;margin-right:4px;"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M12 6v6l4 2"/></svg><span>${btnText}</span></button><pre class="diagram-fallback"><code>${safeCode}</code></pre></div>`;
-            const allowBtn = previewEl.querySelector('.diagram-allow-remote-btn');
-            if (allowBtn) {
-              allowBtn.addEventListener('click', () => {
-                card._allowRemote = true;
-                card._rendered = false;
-                render();
-              });
-            }
-          } else {
-            previewEl.innerHTML = diagramFallbackMarkup(code, res && res.error_code);
+            const note = document.createElement('p'); note.className = 'diagram-fallback-hint'; note.textContent = confirmText;
+            const allowBtn = document.createElement('button'); allowBtn.type = 'button'; allowBtn.className = 'diagram-allow-remote-btn';
+            allowBtn.textContent = btnText; allowBtn.setAttribute('aria-label', btnText);
+            allowBtn.onclick = () => { card._allowRemote = true; render(); };
+            const diagnosticEl = previewEl.querySelector('.diagram-diagnostic');
+            diagnosticEl?.append(note, allowBtn);
           }
+          return false;
         }
       } catch (err) {
-        console.warn('diagram render threw:', engine, err && err.message);
-        previewEl.innerHTML = diagramFallbackMarkup(code, err && err.message);
+        return failure(err);
       } finally {
-        if (reloadBtn) {
-          reloadBtn.disabled = false;
-          reloadBtn.classList.remove('is-loading');
-        }
-        const inlineRetry = previewEl && previewEl.querySelector('.diagram-inline-retry');
-        if (inlineRetry) {
-          inlineRetry.onclick = () => { render(); };
+        if (current()) {
+          previewEl.setAttribute('aria-busy', 'false');
+          if (reloadBtn) { reloadBtn.disabled = false; reloadBtn.classList.remove('is-loading'); }
         }
       }
+      return true;
     };
 
     card._renderFn = render;
+    card._diagramPreview = source => render({ preview: true, code: source });
+    card._diagramResetPreview = () => render({ reset: true });
     if (reloadBtn) reloadBtn.addEventListener('click', render);
     render();
   });
