@@ -21,8 +21,9 @@ function driver(file,outputs,fontPack,captureAck){return `(async()=>{
     if(fmt==='epub')return nativeExportPreview.data?.format==='epub'&&host?.querySelector('iframe')?.contentDocument?.body?.textContent.includes('Export contract');
     if(fmt==='tex')return nativeExportPreview.data?.mode==='source'&&host?.querySelector('code')?.textContent.includes('\\\\documentclass');
     if(fmt==='pptx')return host?.querySelector('iframe')?.dataset.ready==='true';
-    return nativeExportPreview.data?.format==='html'&&host?.dataset.ready==='true'&&host.textContent.includes('Actual slide one.')
-     &&[...host.querySelectorAll('img')].every(image=>image.complete&&image.naturalWidth>0);
+    const article=host?.querySelector('.export-html-frame')?.contentDocument?.getElementById('content');
+    return nativeExportPreview.data?.format==='html'&&host?.dataset.ready==='true'&&article?.textContent.includes('Actual slide one.')
+     &&[...article.querySelectorAll('img')].every(image=>image.complete&&image.naturalWidth>0);
    });check(true,fmt+'_preview_ready');
    if(fmt==='pptx'){
     const doc=$('export-preview-mini-content').querySelector('iframe').contentDocument;

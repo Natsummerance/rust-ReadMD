@@ -199,7 +199,9 @@ function getExportSections() {
     ]},
   ];
   if (state.export.fmt === 'pptx') {
-    return [...sections.filter(section => section.fmts?.includes('pptx')), {
+    const slides = sections.find(section => section.fmts?.includes('pptx'));
+    const native = state.export.options?.pptxLayout?.startsWith('pptx-');
+    return [native ? { ...slides, fields: slides.fields.filter(field => field.k === 'slidesHint') } : slides, {
       ...tableOptions, fmts: ['pptx'],
       fields: tableOptions.fields.filter(field => !['table.cellPadding', 'table.cellSize'].includes(field.k)),
     }];
@@ -1196,6 +1198,7 @@ function renderNativeExportPreview(presetName, options) {
   const data = nativeExportPreview.data;
   if (!data) return;
   renderExportWarns(data.warnings || []);
+  if (data.format === 'html' && data.styleSheet) { renderHtmlArticlePreview(data, presetName); return; }
   if (data.format === 'html') { renderBrowserExportPreview('html', data.options || options, data.content, presetName); return; }
   if (data.format === 'pptx') { renderPptxExportPreview(data, presetName); return; }
   if (data.format === 'presentation') { renderPresentationExportPreview(data, presetName); return; }
@@ -1712,35 +1715,39 @@ function awaitHtmlExportPreview() {
   if (modal && !modal.classList.contains('hidden')) hosts.push(modal.querySelector('.export-preview-paper-wrapper'));
   for (const host of hosts) {
     if (!host) continue;
-    const ticket = {}; host._readmdHtmlReady = ticket;
-    delete host.dataset.ready; host.setAttribute('aria-busy', 'true'); host.classList.add('export-html-pending');
-    const loading = document.createElement('div'); loading.className = 'export-html-loading';
-    host.append(loading); window.ReadMDTask.loading(loading, 'export.previewGenerating');
-    const images = [...host.querySelectorAll('img')];
-    const current = () => generation === nativeExportPreview.generation && host.isConnected && host._readmdHtmlReady === ticket;
-    const mathReady = async () => {
-      if (typeof mathReadyPromise !== 'undefined' && mathReadyPromise) await mathReadyPromise;
-      if (typeof mathTypesetQueue !== 'undefined') await mathTypesetQueue;
-      while (current() && host.querySelector('.readmd-dsl-math:not([data-readmd-ready]), .readmd-model-math:not([data-readmd-ready]), [data-readmd-busy]')) await new Promise(resolve => setTimeout(resolve, 25));
-      if (host.querySelector('[data-readmd-ready="error"], [data-mml-node="merror"], [data-mjx-error]')) throw Error('math_preview_failed');
-    };
-    // Discover fonts before reading FontFaceSet.ready; it can otherwise still
-    // describe the preceding format before this DOM has participated in layout.
-    void host.offsetWidth;
-    let deadline;
-    Promise.race([
-      Promise.all([document.fonts?.ready, mathReady(), ...images.map(img => img.decode())]),
-      new Promise((_, reject) => { deadline = setTimeout(() => reject(Error('preview_timeout')), 15000); }),
-    ]).then(() => {
-      if (current()) { host.dataset.ready = 'true'; host.setAttribute('aria-busy', 'false'); }
-    }, () => {
-      if (!current()) return;
-      host.replaceChildren(); host.setAttribute('aria-busy', 'false');
-      const message = document.createElement('p'); message.textContent = _t('export.previewFailed');
-      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'tb-btn'; retry.textContent = _t('audit.retryLoad');
-      retry.onclick = () => { nativeExportPreview.signature = ''; updateExportLivePreview(); }; host.append(message, retry);
-    }).finally(() => { clearTimeout(deadline); if (current()) { loading.remove(); host.classList.remove('export-html-pending'); } });
+    awaitHtmlPreviewSurface(host, host, generation);
   }
+}
+
+function awaitHtmlPreviewSurface(host, root, generation) {
+  const ticket = {}; host._readmdHtmlReady = ticket;
+  delete host.dataset.ready; host.setAttribute('aria-busy', 'true'); host.classList.add('export-html-pending');
+  const loading = document.createElement('div'); loading.className = 'export-html-loading';
+  host.append(loading); window.ReadMDTask.loading(loading, 'export.previewGenerating');
+  const images = [...root.querySelectorAll('img')];
+  const current = () => generation === nativeExportPreview.generation && root.isConnected && host.isConnected && host._readmdHtmlReady === ticket;
+  const mathReady = async () => {
+    if (typeof mathReadyPromise !== 'undefined' && mathReadyPromise) await mathReadyPromise;
+    if (typeof mathTypesetQueue !== 'undefined') await mathTypesetQueue;
+    while (current() && root.querySelector('.readmd-dsl-math:not([data-readmd-ready]), .readmd-model-math:not([data-readmd-ready]), [data-readmd-busy]')) await new Promise(resolve => setTimeout(resolve, 25));
+    if (root.querySelector('[data-readmd-ready="error"], [data-mml-node="merror"], [data-mjx-error]')) throw Error('math_preview_failed');
+  };
+  // Discover fonts before reading FontFaceSet.ready; it can otherwise still
+  // describe the preceding format before this DOM has participated in layout.
+  void root.offsetWidth;
+  let deadline;
+  Promise.race([
+    Promise.all([root.ownerDocument.fonts?.ready, mathReady(), ...images.map(img => img.decode())]),
+    new Promise((_, reject) => { deadline = setTimeout(() => reject(Error('preview_timeout')), 15000); }),
+  ]).then(() => {
+    if (current()) { host.dataset.ready = 'true'; host.setAttribute('aria-busy', 'false'); }
+  }, () => {
+    if (!current()) return;
+    host.replaceChildren(); host.setAttribute('aria-busy', 'false');
+    const message = document.createElement('p'); message.textContent = _t('export.previewFailed');
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'tb-btn'; retry.textContent = _t('audit.retryLoad');
+    retry.onclick = () => { nativeExportPreview.signature = ''; updateExportLivePreview(); }; host.append(message, retry);
+  }).finally(() => { clearTimeout(deadline); if (current()) { loading.remove(); host.classList.remove('export-html-pending'); } });
 }
 
 function expFieldApplicable(f, secFmts, fmt) {
@@ -2078,7 +2085,7 @@ function exportPresetOptions(name) {
   return expDeepMerge(state.export.defaults, preset);
 }
 
-const EXPORT_FORMAT_DEFAULTS = { html: 'web_reading', pptx: 'pptx_defense', png: 'image_clean', 'png-pages': 'image_clean' };
+const EXPORT_FORMAT_DEFAULTS = { html: 'web_reading', pptx: 'pptx-confluence', png: 'image_clean', 'png-pages': 'image_clean' };
 
 function presetFitsFormat(name, format) {
   const entry = state.export.catalog?.find(profile => profile.id === name);
@@ -2121,7 +2128,10 @@ function renderExportPresetSelect() {
   const presetNames = getExportPresetNames();
   const catalog=state.export.catalog||[],fmt=state.export.fmt||'pdf';
   const entries = new Map(catalog.map(profile => [profile.id, profile]));
-  const names = Object.keys(state.export.presets || {}).filter(name => presetFitsFormat(name, fmt));
+  const last = state.export.last;
+  const remembered = state.export.selectedPreset || last?.preset;
+  const names = Object.keys(state.export.presets || {}).filter(name =>
+    presetFitsFormat(name, fmt) && (!entries.get(name)?.legacy || name === remembered));
   sel.appendChild(new Option(_t('export.presetDefault') || 'Default', '__default__'));
   const categories=[['common','export.presetsCommon'],['book','export.presetsBook'],['academic','export.presetsAcademic']];
   const added = new Set();
@@ -2143,8 +2153,7 @@ function renderExportPresetSelect() {
   });
   if(customNames.length){const group=document.createElement('optgroup');group.label=_t('export.presetCustom');customNames.forEach(n=>group.append(new Option(n,n)));sel.append(group);}
   sel.appendChild(new Option(_t('export.presetCustom') || '', '__custom__'));
-  const last = state.export.last;
-  const remembered = state.export.selectedPreset || (last && last.preset);
+
   sel.value = remembered && [...sel.options].some(o => o.value === remembered)
     ? remembered
     : (last ? '__custom__' : '__default__');
@@ -2174,6 +2183,7 @@ function renderExportPresetCards() {
   [...sel.options].forEach(o => {
     const v = o.value;
     if (v === '__custom__' && sel.value !== '__custom__') return;
+    if (v === '__default__' && state.export.fmt === 'pptx' && sel.value !== v) return;
     const opts = exportPresetOptions(v);
     const card = document.createElement('button');
     card.type = 'button';
@@ -2191,7 +2201,15 @@ function renderExportPresetCards() {
       if (typeof color === 'string' && /^#[\da-f]{6}$/i.test(color)) swatch.style.setProperty('--preset-' + part, color);
     });
     swatch.dataset.previewFormat = state.export.fmt;
-    for (let i = 0; i < 3; i++) swatch.appendChild(document.createElement('i'));
+    if (profile?.cover && profile.id === 'pptx-' + profile.cover && /^[a-z]+$/.test(profile.cover)) {
+      const cover = document.createElement('img');
+      cover.src = '/assets/data/slide-covers/' + profile.cover + '.jpg';
+      cover.alt = '';
+      swatch.classList.add('exp-template-cover');
+      swatch.append(cover);
+    } else {
+      for (let i = 0; i < 3; i++) swatch.appendChild(document.createElement('i'));
+    }
     const name = document.createElement('span');
     name.className = 'exp-preset-name';
     name.textContent = o.text;

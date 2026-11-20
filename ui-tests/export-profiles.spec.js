@@ -7,6 +7,16 @@ test.afterEach(()=>{expect(path.dirname(path.resolve(folder))).toBe(path.resolve
 async function select(page,name){
   await page.locator('#exp-preset-cards').getByRole('button').and(page.locator('[data-preset="'+name+'"]')).click();
 }
+test('PowerPoint opens the five native covers and preserves an editable template choice',async({page})=>{
+  await page.locator('#export-tab-pptx').click();
+  const names=['confluence','lightfield','pearl','chrome','field'].map(id=>'pptx-'+id);
+  const gallery=page.locator('#exp-preset-cards');
+  expect(await gallery.locator('button').evaluateAll(items=>items.map(item=>item.dataset.preset))).toEqual(names);
+  await expect.poll(()=>gallery.locator('.exp-template-cover img').evaluateAll(images=>images.filter(img=>img.complete&&img.naturalWidth>0).length)).toBe(5);
+  await select(page,'pptx-chrome');
+  expect(await page.evaluate(()=>collectExportOptions().pptxLayout)).toBe('pptx-chrome');
+});
+
 test('book, academic and common profiles are visible in a format-aware gallery',async({page})=>{
   await expect(page.locator('#exp-preset optgroup[label="Academic"] option')).toHaveCount(5);await expect(page.locator('#exp-preset optgroup[label="Books"] option')).toHaveCount(5);await expect(page.locator('#exp-preset optgroup[label="General purpose"] option')).toHaveCount(3);
   const shown = await page.locator('#exp-preset-cards button').evaluateAll(buttons => buttons.map(button => button.dataset.preset));

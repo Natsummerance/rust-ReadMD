@@ -69,6 +69,7 @@ pub const SOURCES: &[&str] = &[
     "js/features/ocr.js",
     "js/features/web.js",
     "js/features/clipboard.js",
+    "js/features/export-html-preview.js",
     "js/features/export.js",
     "js/features/pdf.js",
     "js/features/openapi.js",

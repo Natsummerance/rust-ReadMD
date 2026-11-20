@@ -7,7 +7,7 @@ use crate::table_geometry::{TableGeometry, TableLayout, TableSlot, VerticalAlign
 
 use super::table_style::{TableAlign, TableRowKind, TableStyle};
 use super::{advance, aligned_text_body, check, emu, inline_runs, line_html, position, wrap};
-use super::{Builder, Line, Rect, Result, Run, Shape, BOTTOM, BUDGET, MAX_SLIDES, TOP, W, WIDTH};
+use super::{Builder, Line, Rect, Result, Run, Shape, BUDGET, MAX_SLIDES};
 
 const FONT_SIZE: f64 = 20.;
 const LINE_HEIGHT: f64 = 25.;
@@ -199,11 +199,13 @@ impl Builder {
         height: f64,
     ) -> Result<()> {
         let width = columns.iter().sum::<f64>();
+        let [left,_,available,_]=self.body_rect();
         self.push(Shape::Table {
-            rect: [(W - width) / 2., self.y, width, height],
+            rect: [left+(available-width)/2., self.y, width, height],
             rows,
             columns: columns.to_vec(),
             style: self.table_style.clone(),
+            text_style: self.body_style(),
         })
     }
 
@@ -218,7 +220,7 @@ impl Builder {
         if columns == 0 {
             return Ok(());
         }
-        let max_body_rows = ((BOTTOM - TOP - MIN_ROW_HEIGHT) / MIN_ROW_HEIGHT) as usize;
+        let max_body_rows = ((self.body_rect()[3] - MIN_ROW_HEIGHT) / MIN_ROW_HEIGHT).max(1.) as usize;
         if columns > 16 || body.len() > MAX_SLIDES * max_body_rows {
             return Err(BUDGET.into());
         }
@@ -230,7 +232,10 @@ impl Builder {
             .map_err(|error| error.code)?;
         let enhanced = geometry.is_enhanced();
         let tracks = geometry.tracks(columns, grid.len());
-        let columns = tracks.column_widths_pt(WIDTH * self.table_style.width_pct / 100.);
+        let columns = tracks.column_widths_pt(self.body_rect()[2] * self.table_style.width_pct / 100.);
+        if self.deck.native.is_some() && columns.iter().sum::<f64>() > self.body_rect()[2]+0.01 {
+            return Err(PUBLICATION_LAYOUT_GEOMETRY.into());
+        }
         let row_min = |index: usize| {
             tracks.row_heights[index].map_or(0., |height| height as f64 * PT_PER_CSS_PX)
         };
@@ -248,9 +253,9 @@ impl Builder {
         } else {
             BUDGET
         };
-        if header.height > BOTTOM - self.y {
+        if header.height > self.bottom() - self.y {
             self.continuation()?;
-            if header.height > BOTTOM - self.y {
+            if header.height > self.bottom() - self.y {
                 return Err(header_error.into());
             }
         }
@@ -258,7 +263,7 @@ impl Builder {
         // titles therefore leave less space even on a fresh slide.
         let sized_body = (1..grid.len()).any(|index| row_min(index) > MIN_ROW_HEIGHT);
         let fresh_body = if sized_body {
-            BOTTOM - Self::heading_content_top(wrap(&self.title, 32., WIDTH)?.len()) - header.height
+            self.bottom() - self.fresh_content_top()? - header.height
         } else {
             0.
         };
@@ -284,7 +289,7 @@ impl Builder {
             } else {
                 PUBLICATION_TABLE_UNSUPPORTED
             };
-            if has_merge && header.height + (end - start) as f64 * MIN_ROW_HEIGHT > BOTTOM - TOP {
+            if has_merge && header.height + (end - start) as f64 * MIN_ROW_HEIGHT > self.body_rect()[3] {
                 return Err(group_error.into());
             }
             let mut group = (start..end)
@@ -304,9 +309,9 @@ impl Builder {
             start = end;
             if has_merge {
                 let height = fit_rowspans(&mut group);
-                if used + height > BOTTOM - self.y {
+                if used + height > self.bottom() - self.y {
                     used = continue_table(self, &mut rows, used)?;
-                    if used + height > BOTTOM - self.y {
+                    if used + height > self.bottom() - self.y {
                         return Err(group_error.into());
                     }
                 }
@@ -323,7 +328,7 @@ impl Builder {
                 // Keep an explicitly sized row together when it fits on a
                 // fresh slide; still paginate rows with too much text.
                 if row.height <= fresh_body {
-                    if used + row.height > BOTTOM - self.y {
+                    if used + row.height > self.bottom() - self.y {
                         used = continue_table(self, &mut rows, used)?;
                     }
                     used += row.height;
@@ -341,10 +346,10 @@ impl Builder {
             let mut first_line = 0;
             while first_line < total {
                 let minimum = if first_line == 0 { declared } else { 0. };
-                if BOTTOM - self.y - used < MIN_ROW_HEIGHT.max(minimum) {
+                if self.bottom() - self.y - used < MIN_ROW_HEIGHT.max(minimum) {
                     used = continue_table(self, &mut rows, used)?;
                 }
-                let capacity = ((BOTTOM - self.y - used - 2. * PADDING_Y) / LINE_HEIGHT)
+                let capacity = ((self.bottom() - self.y - used - 2. * PADDING_Y) / LINE_HEIGHT)
                     .floor()
                     .max(0.) as usize;
                 if capacity == 0 {

@@ -47,7 +47,12 @@
     "eo":"Revuo kun longaj artikoloj","sl":"Revija z dolgimi članki","tr":"Uzun makale dergisi",
     "uk":"Журнал із довгими статтями","el":"Περιοδικό με εκτενή άρθρα","hu":"Magazin hosszú cikkekhez"
   },"formats":["html"],"options":{"htmlLayout":"magazine","htmlTheme":"light","typography":{"font":"SimSun","size":13,"lineHeight":1.9,"color":"#352921"},"headings":{"h1":{"size":31,"color":"#42281b"}},"link":{"color":"#8c4a32"},"quote":{"bg":"#f5eee6","barColor":"#a76745"},"table":{"headerBg":"#efe0cf","headerColor":"#603b2a","bandColor":"#fbf6ed"}},"previewColors":["#f9f3ea","#42281b","#a76745"]},
-  {"id":"pptx_defense","category":"slides","names":{"zh-CN":"学术答辩","zh-HK":"學術答辯","zh-TW":"學術答辯","en":"Thesis Defense",
+  {"id":"pptx-confluence","category":"slides","names":{"zh-CN":"合流","zh-HK":"合流","zh-TW":"合流","en":"Confluence"},"formats":["pptx"],"options":{"pptxLayout":"pptx-confluence","table":{"headerBg":"#cc3b28","headerColor":"#ffffff","bandColor":"#e7e3d7","borderColor":"#c8c2b3"}},"cover":"confluence","previewColors":["#f6f3ea","#171b18","#c3442e"]},
+  {"id":"pptx-lightfield","category":"slides","names":{"zh-CN":"万象光场","zh-HK":"萬象光場","zh-TW":"萬象光場","en":"Lightfield"},"formats":["pptx"],"options":{"pptxLayout":"pptx-lightfield","table":{"headerBg":"#42fde8","headerColor":"#07131f","bandColor":"#151d3b","borderColor":"#354466"}},"cover":"lightfield","previewColors":["#100d22","#f3f0ff","#a257ef"]},
+  {"id":"pptx-pearl","category":"slides","names":{"zh-CN":"浮光","zh-HK":"浮光","zh-TW":"浮光","en":"Pearl"},"formats":["pptx"],"options":{"pptxLayout":"pptx-pearl","table":{"headerBg":"#8fa5c2","headerColor":"#11181d","bandColor":"#f2f3f6","borderColor":"#ced4dd"}},"cover":"pearl","previewColors":["#faf8f3","#2c2b2a","#9b9998"]},
+  {"id":"pptx-chrome","category":"slides","names":{"zh-CN":"液相","zh-HK":"液相","zh-TW":"液相","en":"Chrome"},"formats":["pptx"],"options":{"pptxLayout":"pptx-chrome","table":{"headerBg":"#8789fe","headerColor":"#080a13","bandColor":"#151628","borderColor":"#3a3b5b"}},"cover":"chrome","previewColors":["#090b12","#e2e5ed","#5859c9"]},
+  {"id":"pptx-field","category":"slides","names":{"zh-CN":"在场","zh-HK":"在場","zh-TW":"在場","en":"Field"},"formats":["pptx"],"options":{"pptxLayout":"pptx-field","table":{"headerBg":"#dbf04a","headerColor":"#151611","bandColor":"#f2f5e6","borderColor":"#c8cec0"}},"cover":"field","previewColors":["#edece4","#162521","#cdf03d"]},
+  {"id":"pptx_defense","legacy":true,"category":"slides","names":{"zh-CN":"学术答辩","zh-HK":"學術答辯","zh-TW":"學術答辯","en":"Thesis Defense",
     "ja":"学位論文の口頭審査","ko":"학위 논문 구술심사","fr":"Soutenance de thèse",
     "de":"Verteidigung der Abschlussarbeit","es":"Defensa de tesis","pt":"Defesa de tese",
     "ru":"Защита дипломной работы","it":"Discussione della tesi","ar":"مناقشة الرسالة الجامعية",
@@ -63,7 +68,7 @@
     "eo":"Defendo de tezo","sl":"Zagovor zaključnega dela","tr":"Tez savunması",
     "uk":"Захист дипломної роботи","el":"Υποστήριξη διπλωματικής εργασίας","hu":"Szakdolgozat védése"
   },"formats":["pptx"],"options":{"pptxLayout":"defense","transition":"fade"},"previewColors":["#f9fbff","#172846","#365bb0"]},
-  {"id":"pptx_lab","category":"slides","names":{"zh-CN":"实验汇报","zh-HK":"實驗匯報","zh-TW":"實驗匯報","en":"Lab Presentation",
+  {"id":"pptx_lab","legacy":true,"category":"slides","names":{"zh-CN":"实验汇报","zh-HK":"實驗匯報","zh-TW":"實驗匯報","en":"Lab Presentation",
     "ja":"実験発表","ko":"실험 발표","fr":"Présentation des résultats d’expérience",
     "de":"Präsentation von Laborversuchen","es":"Presentación de resultados de laboratorio","pt":"Apresentação de resultados de laboratório",
     "ru":"Презентация результатов эксперимента","it":"Presentazione dei risultati di laboratorio","ar":"عرض نتائج التجربة المخبرية",
@@ -79,7 +84,7 @@
     "eo":"Prezento de eksperimentaj rezultoj","sl":"Predstavitev rezultatov poskusa","tr":"Deney sonuçları sunumu",
     "uk":"Презентація результатів експерименту","el":"Παρουσίαση αποτελεσμάτων πειράματος","hu":"Kísérleti eredmények bemutatása"
   },"formats":["pptx"],"options":{"pptxLayout":"lab","transition":"fade","pptxTitleFade":true},"previewColors":["#f8fbfa","#183e38","#107e71"]},
-  {"id":"pptx_launch","category":"slides","names":{"zh-CN":"产品发布","zh-HK":"產品發表","zh-TW":"產品發表","en":"Product Launch",
+  {"id":"pptx_launch","legacy":true,"category":"slides","names":{"zh-CN":"产品发布","zh-HK":"產品發表","zh-TW":"產品發表","en":"Product Launch",
     "ja":"製品発表","ko":"제품 출시","fr":"Lancement de produit",
     "de":"Produkteinführung","es":"Lanzamiento de producto","pt":"Lançamento de produto",
     "ru":"Запуск продукта","it":"Lancio del prodotto","ar":"إطلاق منتج",

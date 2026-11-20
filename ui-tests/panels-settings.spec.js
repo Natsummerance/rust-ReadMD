@@ -227,7 +227,10 @@ test('HTML, PDF and DOCX export the selected preset and the previewed document',
     const style = getComputedStyle(document.querySelector(root + ' ' + selector));
     return { color: style.color, fontSize: style.fontSize, weight: style.fontWeight, align: style.textAlign };
   }), root);
-  expect(await styles(page, '#export-preview-full-page')).toEqual(await styles(exported, '#content'));
+  const preview = page.frameLocator('#export-preview-modal .export-html-frame');
+  await expect(preview.locator('#content h1')).toHaveText('Panel title');
+  const handle = await page.locator('#export-preview-modal .export-html-frame').elementHandle();
+  expect(await styles(await handle.contentFrame(), '#content')).toEqual(await styles(exported, '#content'));
   await exported.close();
   const pdf = fs.readFileSync(outputs[1].outPath);
   expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');

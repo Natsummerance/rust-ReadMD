@@ -284,6 +284,11 @@ body[data-theme="sepia"] {
 
 /* The HTML layouts use these colours in the preview and in standalone exports. */
 :root {
+  --export-reading-accent: #40816c;
+  --export-docs-accent: #4569ba;
+  --export-sepia-paper: #fffaf0;
+  --export-sepia-border: #e8dcc5;
+  --export-print-ink: #222;
   --export-layout-paper: #ffffff;
   --export-layout-border: #e7e9ee;
   --export-layout-accent: #365d95;

@@ -50,6 +50,7 @@ pub(super) fn ornaments(layout: Layout, cover: bool) -> Vec<Shape> {
     let rule = |rect, color| mark(rect, Rectangle, Solid(color));
     match (layout, cover) {
         (Layout::Plain, _) => Vec::new(),
+        (Layout::Native(_), _) => Vec::new(),
         (Layout::Defense, true) => vec![
             mark([0., 0., W, H], Rectangle, Gradient("F9FBFF", "EAF0FB")),
             rule([0., 0., 10., H], "365BB0"),

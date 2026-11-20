@@ -67,11 +67,9 @@ pub(crate) fn preview(app:&Arc<App>,body:&Value)->ApiResult<Value>{
     let id=identifier(body)?;let meta=authorized_snapshot(app,id)?;if meta["figures_complete"]!=true{return Err(error("diagram_client_renderer_required"));}
     let store=service(app);let frozen=store.load(id).map_err(error)?;store.validate_runtime(&frozen,&app.paths.assets_dir).map_err(error)?;
     let result=if frozen.format=="html"{
-        // The browser keeps its existing HTML layout projection, but its body
-        // and image bytes must come from the same owned snapshot as export.
-        let (content,warnings)=crate::mdexport::prepare_export_source("html",&frozen.content,&frozen.base_dir.to_string_lossy(),&frozen.options)
-            .map_err(|code|ApiError::new(422,&code))?;
-        Ok(json!({"ok":true,"format":"html","mode":"projection","content":content,"options":frozen.options,"warnings":warnings}))
+        let budget = crate::publication_budget::capture();
+        let _fonts = crate::publication_fonts::scope_checked(&app.paths.data_dir, &app.paths.assets_dir, &|| budget.api())?;
+        crate::mdexport::html_preview(&frozen.content, &frozen.base_dir.to_string_lossy(), &frozen.options, &frozen.name)
     }else if frozen.format=="epub"{
         crate::epub_preview::prepare(&frozen.content,&frozen.base_dir.to_string_lossy(),&frozen.options,&frozen.name)
     }else if frozen.format=="tex"{

@@ -2,38 +2,67 @@
 
 globalThis.ReadMDExportHtmlLayout = (() => {
   const layouts = new Set(['reading', 'docs', 'magazine']);
-  let nextAnchor = 0;
-  function mount(root, layout, { links = true, contentsLabel, tone = "light" } = {}) {
+
+  function mount(root, layout, { links = true, contentsLabel, tableLabel, tone = 'light' } = {}) {
     if (!root || !layouts.has(layout)) return;
     const doc = root.ownerDocument;
+    // A preview can reuse its host. Keep the source DOM while changing layout.
+    const previous = root.firstElementChild;
+    if (previous?.classList.contains('readmd-html-layout') && root.children.length === 1) {
+      const article = previous.querySelector('.readmd-layout-article');
+      if (article) root.replaceChildren(...article.childNodes);
+    }
+    const chinese = /^zh/i.test(doc.documentElement.lang);
     const wrap = doc.createElement('div');
     wrap.className = 'readmd-html-layout';
     wrap.dataset.layout = layout;
-    wrap.dataset.tone = tone;
+    wrap.dataset.tone = ['dark', 'sepia'].includes(tone) ? tone : 'light';
+    const flow = doc.createElement('div');
+    flow.className = 'readmd-layout-flow';
     const article = doc.createElement('div');
     article.className = 'readmd-layout-article';
     while (root.firstChild) article.appendChild(root.firstChild);
+
+    for (const table of article.querySelectorAll('table')) {
+      if (table.closest('.readmd-layout-table') || table.parentElement?.closest('table')) continue;
+      const scroll = doc.createElement('div');
+      scroll.className = 'readmd-layout-table';
+      scroll.setAttribute('role', 'region');
+      scroll.setAttribute('aria-label', table.caption?.textContent?.trim() || tableLabel || (chinese ? '表格' : 'Table'));
+      scroll.tabIndex = 0;
+      table.before(scroll);
+      scroll.appendChild(table);
+    }
+
     if (layout === 'docs') {
-      const headings = [...article.querySelectorAll('h2,h3,h4')].slice(0, 200);
+      const headings = [...article.querySelectorAll('h2,h3,h4')].filter(heading => !heading.closest('table,blockquote')).slice(0, 200);
       if (headings.length) {
         const navigation = doc.createElement('nav');
         navigation.className = 'readmd-layout-nav';
-        const label = contentsLabel || (/^zh/i.test(doc.documentElement.lang) ? '目录' : 'Contents');
+        const label = contentsLabel || (chinese ? '目录' : 'Contents');
         navigation.setAttribute('aria-label', label);
         const title = doc.createElement('strong');
         title.textContent = label;
         const list = doc.createElement('ul');
-        const ids = new Set();
+        // Reserve authored IDs in later headings and body content too.
+        const owners = new Map();
+        for (const node of article.querySelectorAll('[id]')) if (!owners.has(node.id)) owners.set(node.id, node);
+        const used = new Set(owners.keys());
+        const assigned = new Set();
+        let nextAnchor = 0;
         for (const heading of headings) {
           const item = doc.createElement('li');
           item.dataset.level = heading.localName;
           const link = doc.createElement(links ? 'a' : 'span');
           if (links) {
-            if (!heading.id || ids.has(heading.id) || doc.getElementById(heading.id)) {
-              do { heading.id = 'readmd-section-' + ++nextAnchor; }
-              while (ids.has(heading.id) || doc.getElementById(heading.id));
+            if (!heading.id || owners.get(heading.id) !== heading || assigned.has(heading.id) || doc.getElementById(heading.id)) {
+              let id;
+              do { id = 'readmd-section-' + ++nextAnchor; }
+              while (used.has(id) || doc.getElementById(id));
+              heading.id = id;
+              used.add(id);
             }
-            ids.add(heading.id);
+            assigned.add(heading.id);
             link.href = '#' + encodeURIComponent(heading.id);
             if (!doc.body.dataset.readmdHtmlLayout) link.addEventListener('click', event => {
               event.preventDefault();
@@ -45,10 +74,11 @@ globalThis.ReadMDExportHtmlLayout = (() => {
           list.appendChild(item);
         }
         navigation.append(title, list);
-        wrap.appendChild(navigation);
+        flow.appendChild(navigation);
       }
     }
-    wrap.appendChild(article);
+    flow.appendChild(article);
+    wrap.appendChild(flow);
     root.replaceChildren(wrap);
   }
   return Object.freeze({ mount });

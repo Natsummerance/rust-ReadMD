@@ -53,7 +53,7 @@ fn validate(pack: &Pack) -> Result<(), &'static str> {
         for (key, value) in preset.options.as_object().ok_or(INVALID)? {
             let allowed = match key.as_str() {
                 "htmlLayout" => fmt == "html" && matches!(value.as_str(), Some("reading" | "docs" | "magazine")),
-                "pptxLayout" => fmt == "pptx" && matches!(value.as_str(), Some("defense" | "lab" | "launch")),
+                "pptxLayout" => fmt == "pptx" && value.as_str().is_some_and(|layout| crate::export_profiles::catalog().iter().any(|profile| profile["options"]["pptxLayout"].as_str() == Some(layout))),
                 "pptxTitleFade" => fmt == "pptx" && value.is_boolean(),
                 "transition" => fmt == "pptx" && matches!(value.as_str(), Some("none" | "fade" | "slide" | "zoom")),
                 "htmlTheme" => fmt == "html" && matches!(value.as_str(), Some("light" | "dark" | "sepia")),

@@ -9,6 +9,7 @@ use std::{collections::BTreeMap, path::Path};
 const W: f64 = 960.;
 const H: f64 = 540.;
 mod design;
+mod native;
 mod table;
 mod table_style;
 use design::{Geometry, Paint};
@@ -33,32 +34,34 @@ type Rect = [f64; 4];
 struct Run { text: String, bold: bool, italic: bool, strike: bool, code: bool, href: Option<String> }
 type Line = Vec<Run>;
 #[derive(Clone, Debug)]
+struct TextStyle { color: String, font: String }
+#[derive(Clone, Debug)]
 enum Shape {
-    Text { rect: Rect, lines: Vec<Line>, size: f64, bullet: Option<String>, center: bool, code: bool },
+    Text { rect: Rect, lines: Vec<Line>, size: f64, bullet: Option<String>, center: bool, code: bool, style: Option<TextStyle> },
     Image { rect: Rect, media: usize, alt: String },
     Accent { rect: Rect, geometry: Geometry, paint: Paint },
-    Table { rect: Rect, rows: Vec<TableRow>, columns: Vec<f64>, style: TableStyle },
+    Table { rect: Rect, rows: Vec<TableRow>, columns: Vec<f64>, style: TableStyle, text_style: Option<TextStyle> },
 }
 #[derive(Default)]
-struct Slide { shapes: Vec<Shape>, notes: String, cover: bool }
+struct Slide { shapes: Vec<Shape>, notes: String, cover: bool, frame: usize }
 struct Media { bytes: Vec<u8>, extension: String, width: f64, height: f64, svg: Option<Vec<u8>> }
 #[derive(Clone, Copy)]
-enum Layout { Plain, Defense, Lab, Launch }
+enum Layout { Plain, Defense, Lab, Launch, Native(native::Template) }
 
 impl Layout {
     fn resolve(options: &Value) -> Result<Self> {
         Ok(match options["pptxLayout"].as_str().unwrap_or("") {
-            "" => Self::Plain,
+            "" | "plain" => Self::Plain,
             "defense" => Self::Defense,
             "lab" => Self::Lab,
             "launch" => Self::Launch,
-            _ => return Err(INVALID.into()),
+            value => Self::Native(native::Template::resolve(value).ok_or(INVALID)?),
         })
     }
 
 }
 
-struct Deck { slides: Vec<Slide>, media: Vec<Media>, warnings: Vec<String>, background: &'static str, foreground: &'static str, accent: &'static str, transition: String, title_fade: bool, layout: Layout }
+struct Deck { slides: Vec<Slide>, media: Vec<Media>, warnings: Vec<String>, background: &'static str, foreground: &'static str, accent: &'static str, transition: String, transition_explicit: bool, title_fade: bool, layout: Layout, native: Option<&'static native::Metadata> }
 
 fn escaped(value: &str) -> String {
     crate::mdexport::html_escape(&value.chars().filter(|&c| c=='\t'||c=='\n'||c=='\r'||c>=' ').collect::<String>(), true)
@@ -170,6 +173,7 @@ impl Builder {
             Layout::Defense => ("F9FBFF", "172846", "365BB0"),
             Layout::Lab => ("F8FBFA", "183E38", "107E71"),
             Layout::Launch => ("131B31", "F1F5FF", "A7BAFF"),
+            Layout::Native(template) => template.palette(),
         };
         let transition=options["transition"].as_str().unwrap_or(if matches!(layout, Layout::Plain) {"slide"} else {"none"});
         if !matches!(transition,"slide"|"fade"|"zoom"|"none"){return Err(INVALID.into());}
@@ -177,7 +181,26 @@ impl Builder {
             None => false,
             Some(value) => value.as_bool().ok_or(INVALID)?,
         };
-        Ok(Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into(),title_fade,layout},page:Slide::default(),authored_notes:String::new(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(options, foreground)})
+        let native = if let Layout::Native(template) = layout { Some(template.metadata()?) } else { None };
+        let table_options=if let Layout::Native(template)=layout {native::table_options(options,template)}else{options.clone()};
+        let mut builder = Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into(),transition_explicit:options.get("transition").is_some(),title_fade,layout,native},page:Slide::default(),authored_notes:String::new(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(&table_options, foreground)};
+        builder.select_role("content");
+        Ok(builder)
+    }
+    fn frame(&self) -> Option<&native::Frame> { self.deck.native.map(|metadata| &metadata.roles[self.page.frame]) }
+    fn select_role(&mut self, role: &'static str) {
+        if let Some(metadata) = self.deck.native {
+            self.page.frame = metadata.select(role, self.deck.slides.len());
+        }
+        self.y = self.body_rect()[1];
+    }
+    fn body_rect(&self) -> Rect { self.frame().map_or([LEFT, TOP, WIDTH, BOTTOM-TOP], |frame| frame.body.rect) }
+    fn bottom(&self) -> f64 { let rect=self.body_rect(); rect[1]+rect[3] }
+    fn body_size(&self) -> f64 { self.frame().map_or(24., |frame| frame.body.font_size) }
+    fn body_style(&self) -> Option<TextStyle> { self.frame().map(|frame| frame.body.style()) }
+    fn fresh_content_top(&self) -> Result<f64> {
+        if let Some(frame)=self.frame() { Ok(frame.body.rect[1]) }
+        else { Ok(Self::heading_content_top(wrap(&self.title,32.,WIDTH)?.len())) }
     }
     fn push(&mut self, shape:Shape) -> Result<()> {
         let text_bytes=match &shape {
@@ -207,10 +230,16 @@ impl Builder {
         (48. + line_count as f64 * 39. + 22.).max(TOP)
     }
     fn heading(&mut self, title:Line) -> Result<()> {
+        if let Some(frame) = self.frame().cloned() {
+            self.title = title.clone();
+            let (lines,size) = native::fit_text(&title,&frame.title,24.)?;
+            self.y = frame.body.rect[1];
+            return self.push(Shape::Text{rect:frame.title.rect,lines,size,bullet:None,center:frame.title.center(),code:false,style:Some(frame.title.style())});
+        }
         self.title=title.clone();let lines=wrap(&title,32.,WIDTH)?;
         if lines.len()>3{return Err(BUDGET.into());}
         let height=lines.len() as f64*39.;self.y=Self::heading_content_top(lines.len());
-        self.push(Shape::Text{rect:[LEFT,42.,WIDTH,height+4.],lines,size:32.,bullet:None,center:false,code:false})
+        self.push(Shape::Text{rect:[LEFT,42.,WIDTH,height+4.],lines,size:32.,bullet:None,center:false,code:false,style:None})
     }
     fn cover(&mut self,title:&Line,blocks:&[Block])->Result<bool>{
         fn ordinary(blocks:&[Block],out:&mut Vec<Line>)->Result<bool>{
@@ -222,11 +251,28 @@ impl Builder {
         }
         if !self.deck.slides.is_empty()||blocks.len()>2{return Ok(false);}
         let mut paragraphs=Vec::new();if !ordinary(blocks,&mut paragraphs)?{return Ok(false);}
+        if self.deck.native.is_some() {
+            let previous = self.page.frame;
+            self.select_role("cover");
+            let frame = self.frame().cloned().ok_or(INVALID)?;
+            let Ok((title_lines,title_size)) = native::fit_text(title,&frame.title,28.) else { self.page.frame=previous;self.y=self.body_rect()[1];return Ok(false); };
+            let mut body = Vec::new();
+            for values in &paragraphs {
+                if !body.is_empty() { body.push(Run{text:"\n\n".into(),..Run::default()}); }
+                body.extend(values.clone());
+            }
+            let Ok((body_lines,body_size)) = native::fit_text(&body,&frame.body,18.) else { self.page.frame=previous;self.y=self.body_rect()[1];return Ok(false); };
+            self.title=title.clone();self.page.cover=true;
+            self.push(Shape::Text{rect:frame.title.rect,lines:title_lines,size:title_size,bullet:None,center:frame.title.center(),code:false,style:Some(frame.title.style())})?;
+            if !body.is_empty() { self.push(Shape::Text{rect:frame.body.rect,lines:body_lines,size:body_size,bullet:None,center:frame.body.center(),code:false,style:Some(frame.body.style())})?; }
+            return Ok(true);
+        }
         let (width, title_size, body_size, centered) = match self.deck.layout {
             Layout::Plain => (WIDTH, 44., 24., true),
             Layout::Defense => (704., 47., 22., false),
             Layout::Lab => (660., 45., 22., true),
             Layout::Launch => (736., 57., 23., false),
+            Layout::Native(_) => unreachable!("native cover handled above"),
         };
         let mut heading = title.clone();
         if !matches!(self.deck.layout, Layout::Plain) {
@@ -248,25 +294,28 @@ impl Builder {
         self.title = title.clone();
         self.page.cover = true;
         self.push(Shape::Text { rect: [x, y, width, title_height], lines: title_lines,
-            size: title_size, bullet: None, center: centered, code: false })?;
+            size: title_size, bullet: None, center: centered, code: false, style:None })?;
         if !body.is_empty() {
             self.push(Shape::Text { rect: [x, y + title_height + gap, width, body_height],
-                lines: body, size: body_size, bullet: None, center: centered, code: false })?;
+                lines: body, size: body_size, bullet: None, center: centered, code: false, style:None })?;
         }
         Ok(true)
     }
     fn continuation(&mut self) -> Result<()> {
+        let frame = self.page.frame;
         self.finish()?;
+        self.page.frame = frame;
         self.heading(self.title.clone())
     }
     fn paragraph(&mut self, values:Line,size:f64,bullet:Option<String>,code:bool) -> Result<()> {
-        let indent=if bullet.is_some(){26.}else{0.};let lines=wrap(&values,size,WIDTH-indent-if code{20.}else{0.})?;
+        let [left,_,width,_]=self.body_rect();
+        let indent=if bullet.is_some(){26.}else{0.};let lines=wrap(&values,size,width-indent-if code{20.}else{0.})?;
         let mut start=0;let line_height=size*1.25;
         while start<lines.len() {
-            check()?;let capacity=((BOTTOM-self.y-12.)/line_height).floor().max(0.) as usize;
+            check()?;let capacity=((self.bottom()-self.y-12.)/line_height).floor().max(0.) as usize;
             if capacity==0 {self.continuation()?;continue;}
             let end=(start+capacity).min(lines.len());let height=(end-start) as f64*line_height+8.;
-            self.push(Shape::Text{rect:[LEFT+indent,self.y,WIDTH-indent,height],lines:lines[start..end].to_vec(),size,bullet:if start==0{bullet.clone()}else{None},center:false,code})?;
+            self.push(Shape::Text{rect:[left+indent,self.y,width-indent,height],lines:lines[start..end].to_vec(),size,bullet:if start==0{bullet.clone()}else{None},center:false,code,style:self.body_style()})?;
             self.y+=height+10.;start=end;if start<lines.len(){self.continuation()?;}
         }
         Ok(())
@@ -291,21 +340,30 @@ impl Builder {
         let media=self.add_media(bytes,extension)?;self.image_id(media,alt)
     }
     fn image_id(&mut self,media:usize,alt:&str) -> Result<()> {
-        if BOTTOM-self.y<160. {self.continuation()?;}
-        let image=&self.deck.media[media];let scale=(WIDTH/image.width).min((BOTTOM-self.y-8.)/image.height);
+        if let Some(rect)=self.frame().and_then(|frame|frame.image_rect) {
+            if self.page.shapes.iter().any(|shape|matches!(shape,Shape::Image{..})) {self.continuation()?;}
+            let image=&self.deck.media[media];let scale=(rect[2]/image.width).min(rect[3]/image.height);
+            let width=image.width*scale;let height=image.height*scale;
+            return self.push(Shape::Image{rect:[rect[0]+(rect[2]-width)/2.,rect[1]+(rect[3]-height)/2.,width,height],media,alt:alt.into()});
+        }
+        if self.bottom()-self.y<160. {self.continuation()?;}
+        let [left,_,available,_]=self.body_rect();
+        let image=&self.deck.media[media];let scale=(available/image.width).min((self.bottom()-self.y-8.)/image.height);
         let width=image.width*scale;let height=image.height*scale;
-        self.push(Shape::Image{rect:[LEFT+(WIDTH-width)/2.,self.y,width,height],media,alt:alt.into()})?;self.y+=height+16.;Ok(())
+        self.push(Shape::Image{rect:[left+(available-width)/2.,self.y,width,height],media,alt:alt.into()})?;self.y+=height+16.;Ok(())
     }
     fn math(&mut self,latex:&str,omml:Option<&str>) -> Result<()> {
-        let formula=crate::math_layout::layout_source_constrained(latex,omml,true,28.,Some(WIDTH)).ok_or("math_unsupported_extension")?;
+        let [left,_,available,_]=self.body_rect();
+        let formula=crate::math_layout::layout_source_constrained(latex,omml,true,28.,Some(available)).ok_or("math_unsupported_extension")?;
         let natural_width=formula.width.max(1.);let natural_height=(formula.height+formula.depth).max(1.);
-        let svg=formula.svg(&format!("#{}",self.deck.foreground));let media=self.add_media(svg.into_bytes(),"svg".into())?;
-        if BOTTOM-self.y<natural_height.min(200.)+16. {self.continuation()?;}
-        let scale=(WIDTH/natural_width).min((BOTTOM-self.y-16.)/natural_height).min(1.);
+        let color=self.body_style().map_or(self.deck.foreground.to_string(),|style|style.color);
+        let svg=formula.svg(&format!("#{color}"));let media=self.add_media(svg.into_bytes(),"svg".into())?;
+        if self.bottom()-self.y<natural_height.min(200.)+16. {self.continuation()?;}
+        let scale=(available/natural_width).min((self.bottom()-self.y-16.)/natural_height).min(1.);
         let width=natural_width*scale;let height=natural_height*scale;
         self.page.notes.push_str(&format!("\n\n$$\n{latex}\n$$"));
         if !self.deck.warnings.iter().any(|value|value=="pptx_math_image"){self.deck.warnings.push("pptx_math_image".into());}
-        self.push(Shape::Image{rect:[LEFT+(WIDTH-width)/2.,self.y,width,height],media,alt:latex.into()})?;self.y+=height+18.;Ok(())
+        self.push(Shape::Image{rect:[left+(available-width)/2.,self.y,width,height],media,alt:latex.into()})?;self.y+=height+18.;Ok(())
     }
     fn inline_paragraph(&mut self,values:&[Inline],size:f64,bullet:Option<String>) -> Result<()> {
         let mut pending=Vec::new();
@@ -326,8 +384,8 @@ impl Builder {
         for block in blocks {
             check()?;
             match block {
-                Block::Heading{inlines,..}=>self.inline_paragraph(inlines,28.,None)?,
-                Block::Paragraph(values)|Block::Caption{inlines:values,..}=>self.inline_paragraph(values,24.,bullet.clone())?,
+                Block::Heading{inlines,..}=>self.inline_paragraph(inlines,self.body_size()+4.,None)?,
+                Block::Paragraph(values)|Block::Caption{inlines:values,..}=>self.inline_paragraph(values,self.body_size(),bullet.clone())?,
                 Block::List{ordered,start,items}=>for (index,item) in items.iter().enumerate(){
                     let marker=if let Some(checked)=item.task{if checked{"☑".into()}else{"☐".into()}}else if *ordered{format!("{}.",start.saturating_add(index as u64))}else{"•".into()};
                     self.blocks(&item.blocks,Some(marker),depth+1)?;
@@ -358,11 +416,15 @@ fn build(content:&str,base:&str,title:&str,options:&Value) -> Result<Deck> {
         check()?;
         if let pulldown_cmark::Event::Html(raw)|pulldown_cmark::Event::InlineHtml(raw)=event {if !comments_only(&raw){return Err(INVALID.into());}}
     }
-    let matrix = crate::mdexport::split_slides_markdown(&content);
     let mut builder = Builder::new(base, options)?;
+    let matrix = crate::mdexport::split_slides_markdown(&content);
+    let matrix = if builder.deck.native.is_some() {native::coalesce_automatic_chunks(matrix)}else{matrix};
+    let chunks = matrix.iter().map(Vec::len).sum::<usize>();
+    let mut chunk_index = 0usize;
     for group in matrix {
         let mut section_heading = text(title.trim_end_matches(".md"));
         for (chunk, notes) in group {
+            chunk_index += 1;
             check()?;
             builder.finish()?;
             if let Some(notes) = notes {
@@ -381,6 +443,7 @@ fn build(content:&str,base:&str,title:&str,options:&Value) -> Result<Deck> {
                 section_heading.clone()
             };
             section_heading = heading.clone();
+            if builder.deck.native.is_some() { builder.select_role(native::role_for(blocks,chunk_index==chunks)); }
             if !builder.cover(&heading, blocks)? {
                 builder.heading(heading)?;
                 builder.blocks(blocks, None, 0)?;
@@ -392,7 +455,7 @@ fn build(content:&str,base:&str,title:&str,options:&Value) -> Result<Deck> {
 }
 
 fn span(run:&Run) -> String {
-    let style=format!("font-weight:{};font-style:{};text-decoration:{};font-family:{}",if run.bold{"700"}else{"400"},if run.italic{"italic"}else{"normal"},if run.strike{"line-through"}else{"none"},if run.code{"monospace"}else{"Arial, sans-serif"});
+    let style=format!("font-weight:{};font-style:{};text-decoration:{};font-family:{}",if run.bold{"700"}else{"400"},if run.italic{"italic"}else{"normal"},if run.strike{"line-through"}else{"none"},if run.code{"monospace"}else{"inherit"});
     let inner=format!("<span style=\"{style}\">{}</span>",escaped(&run.text));
     if let Some(href)=&run.href {format!("<a href=\"{}\">{inner}</a>",escaped(href))}else{inner}
 }
@@ -401,25 +464,32 @@ fn position([x,y,w,h]:Rect) -> String {format!("position:absolute;left:{x}px;top
 fn preview_html(deck:&Deck) -> Result<String> {
     let mut slides=String::new();
     for (index,slide) in deck.slides.iter().enumerate() {
-        check()?;slides.push_str(&format!("<section class=\"readmd-slide\" data-page=\"{}\"{}>",index+1,if index==0{""}else{" hidden"}));
+        check()?;slides.push_str(&format!("<section class=\"readmd-slide frame-{}\" data-page=\"{}\"{}>",slide.frame,index+1,if index==0{""}else{" hidden"}));
         for shape in &slide.shapes {
             check()?;
             if slides.len()>LIMIT{return Err(BUDGET.into());}
             if let Shape::Image{media,..}=shape {if slides.len().saturating_add(deck.media[*media].svg.as_ref().unwrap_or(&deck.media[*media].bytes).len().saturating_mul(4)/3+512)>LIMIT{return Err(BUDGET.into());}}
             match shape {
-            Shape::Text{rect,lines,size,bullet,center,code}=>{
-                slides.push_str(&format!("<div style=\"{}font-size:{size}px;line-height:1.25;white-space:pre;text-align:{};{}\">",position(*rect),if *center{"center"}else{"left"},if *code{"background:#30343B;color:#FFFFFF;padding:0 8px;box-sizing:border-box;"}else{""}));
+            Shape::Text{rect,lines,size,bullet,center,code,style}=>{
+                let native_style=style.as_ref().map(|style|format!("color:#{};font-family:{};",escaped(&style.color),escaped(&style.font))).unwrap_or_default();
+                slides.push_str(&format!("<div style=\"{}font-size:{size}px;line-height:1.25;white-space:pre;text-align:{};{native_style}{}\">",position(*rect),if *center{"center"}else{"left"},if *code{"background:#30343B;color:#FFFFFF;padding:0 8px;box-sizing:border-box;"}else{""}));
                 for (n,line) in lines.iter().enumerate(){slides.push_str("<div>");if n==0 {if let Some(bullet)=bullet{slides.push_str(&format!("<span style=\"position:absolute;left:-26px\">{}</span>",escaped(bullet)));}}slides.push_str(&line_html(line));slides.push_str("</div>");}slides.push_str("</div>");
             },
             Shape::Accent{rect,geometry,paint}=>{
                 slides.push_str(&format!(r#"<div aria-hidden="true" style="{}{}border-radius:{};"></div>"#,position(*rect),paint.css(),geometry.css()));
             },
             Shape::Image{rect,media,alt}=>{let image=&deck.media[*media];slides.push_str(&format!("<img alt=\"{}\" style=\"{}\" src=\"data:image/{};base64,{}\">",escaped(alt),position(*rect),if image.svg.is_some(){"svg+xml"}else if image.extension=="jpg"{"jpeg"}else{&image.extension},base64::engine::general_purpose::STANDARD.encode(image.svg.as_ref().unwrap_or(&image.bytes))));},
-            Shape::Table{rect,rows,columns,style}=>slides.push_str(&table::preview(*rect, rows, columns, style)),
+            Shape::Table{rect,rows,columns,style,text_style}=>{
+                let mut table=table::preview(*rect, rows, columns, style);
+                if let Some(text_style)=text_style {table=table.replacen("style=\"",&format!("style=\"color:#{};font-family:{};",escaped(&text_style.color),escaped(&text_style.font)),1);}
+                slides.push_str(&table);
+            },
         }}
         slides.push_str("</section>");if slides.len()>LIMIT{return Err(BUDGET.into());}
     }
-    Ok(format!("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>html,body{{margin:0;width:100%;height:100%;overflow:hidden;background:#{bg};color:#{fg};font-family:Arial,sans-serif}}a{{color:#{accent}}}.readmd-slide table a{{color:inherit}}#readmd-deck{{position:absolute;width:960px;height:540px;transform-origin:top left}}.readmd-slide{{position:relative;width:960px;height:540px;overflow:hidden}}.readmd-slide[hidden]{{display:none}}</style></head><body><main id=\"readmd-deck\">{slides}</main></body></html>",bg=deck.background,fg=deck.foreground,accent=deck.accent))
+    let native_css=native::preview_css(deck)?;
+    if slides.len().saturating_add(native_css.len())>LIMIT {return Err(BUDGET.into());}
+    Ok(format!("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>html,body{{margin:0;width:100%;height:100%;overflow:hidden;background:#{bg};color:#{fg};font-family:Arial,sans-serif}}a{{color:#{accent}}}.readmd-slide table a{{color:inherit}}#readmd-deck{{position:absolute;width:960px;height:540px;transform-origin:top left}}.readmd-slide{{position:relative;width:960px;height:540px;overflow:hidden}}.readmd-slide[hidden]{{display:none}}{native_css}</style></head><body><main id=\"readmd-deck\">{slides}</main></body></html>",bg=deck.background,fg=deck.foreground,accent=deck.accent))
 }
 
 pub(crate) fn preview(content:&str,base:&str,title:&str,options:&Value) -> Result<Value> {
@@ -452,10 +522,15 @@ fn aligned_text_body(lines:&[Line],size:f64,color:&str,bullet:Option<&str>,align
 }
 fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) -> String {
     match shape {
-        Shape::Text{rect,lines,size,bullet,center,code}=>{
+        Shape::Text{rect,lines,size,bullet,center,code,style}=>{
             let fill=if *code{"<a:solidFill><a:srgbClr val=\"30343B\"/></a:solidFill>"}else{"<a:noFill/>"};
             let mut rect=*rect;if *code{rect[0]+=8.;rect[2]-=16.;}
-            format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Text {id}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>{fill}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody>{}</p:txBody></p:sp>",xfrm(rect),text_body(lines,*size,if *code{"FFFFFF"}else{deck.foreground},bullet.as_deref(),*center,links))
+            let color=if *code{"FFFFFF"}else{style.as_ref().map_or(deck.foreground,|style|style.color.as_str())};
+            let mut body=text_body(lines,*size,color,bullet.as_deref(),*center,links);
+            if let Some(style)=style {
+                body=body.replace("typeface=\"Arial\"",&format!("typeface=\"{}\"",escaped(&style.font))).replace("typeface=\"Microsoft YaHei\"",&format!("typeface=\"{}\"",escaped(&style.font)));
+            }
+            format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Text {id}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>{fill}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody>{}</p:txBody></p:sp>",xfrm(rect),body)
         },
         Shape::Accent{rect,geometry,paint}=>{
             format!(r#"<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="Accent {id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{}"><a:avLst/></a:prstGeom>{}</p:spPr></p:sp>"#,xfrm(*rect),geometry.xml(),paint.xml())
@@ -464,7 +539,11 @@ fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) ->
             let svg=if deck.media[*media].svg.is_some(){format!("<a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"svg{media}\"/></a:ext></a:extLst>")}else{String::new()};
             format!("<p:pic><p:nvPicPr><p:cNvPr id=\"{id}\" name=\"Image {id}\" descr=\"{}\"/><p:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"image{media}\">{svg}</a:blip><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic>",escaped(alt),xfrm(*rect))
         },
-        Shape::Table{rect,rows,columns,style}=>table::xml(*rect, rows, columns, style, id, deck.foreground, links),
+        Shape::Table{rect,rows,columns,style,text_style}=>{
+            let mut result=table::xml(*rect, rows, columns, style, id, text_style.as_ref().map_or(deck.foreground,|style|style.color.as_str()), links);
+            if let Some(style)=text_style {result=result.replace("typeface=\"Arial\"",&format!("typeface=\"{}\"",escaped(&style.font))).replace("typeface=\"Microsoft YaHei\"",&format!("typeface=\"{}\"",escaped(&style.font)));}
+            result
+        },
     }
 }
 fn theme(deck:&Deck) -> String {
@@ -472,6 +551,10 @@ fn theme(deck:&Deck) -> String {
     format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><a:theme xmlns:a=\"{A}\" name=\"ReadMD\"><a:themeElements><a:clrScheme name=\"ReadMD\">{colors}</a:clrScheme><a:fontScheme name=\"ReadMD\"><a:majorFont><a:latin typeface=\"Arial\"/><a:ea typeface=\"Microsoft YaHei\"/><a:cs typeface=\"Arial\"/></a:majorFont><a:minorFont><a:latin typeface=\"Arial\"/><a:ea typeface=\"Microsoft YaHei\"/><a:cs typeface=\"Arial\"/></a:minorFont></a:fontScheme><a:fmtScheme name=\"ReadMD\"><a:fillStyleLst>{fill}{fill}{fill}</a:fillStyleLst><a:lnStyleLst>{line}{line}{line}</a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst>{fill}{fill}{fill}</a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>",fill="<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill>",line="<a:ln w=\"9525\"><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:prstDash val=\"solid\"/></a:ln>")
 }
 fn package(deck:&Deck,title:&str) -> Result<Vec<u8>> {
+    if let Layout::Native(template)=deck.layout {return native::package(deck,title,template);}
+    package_legacy(deck,title)
+}
+fn package_legacy(deck:&Deck,title:&str) -> Result<Vec<u8>> {
     let mut entries=Vec::new();let mut bytes=0usize;
     let mut add=|path:&str,data:Vec<u8>| -> Result<()> {bytes=bytes.checked_add(data.len()).ok_or(BUDGET)?;if bytes>LIMIT{return Err(BUDGET.into());}check()?;entries.push(ZipEntry{path:path.into(),data,compress:true});Ok(())};
     let mut types=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Default Extension=\"png\" ContentType=\"image/png\"/><Default Extension=\"jpg\" ContentType=\"image/jpeg\"/><Override PartName=\"/ppt/presentation.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml\"/>");
@@ -496,7 +579,7 @@ fn package(deck:&Deck,title:&str) -> Result<Vec<u8>> {
         } else { String::new() };
         add(&format!("ppt/slides/slide{n}.xml"),xml("sld",&format!("<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree>{}{shapes}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>{transition}{timing}",deck.background,group())).into_bytes())?;
         add(&format!("ppt/slides/_rels/slide{n}.xml.rels"),relationships(&rels).into_bytes())?;
-        let note=Shape::Text{rect:[36.,100.,600.,600.],lines:slide.notes.lines().map(text).collect(),size:14.,bullet:None,center:false,code:false};
+        let note=Shape::Text{rect:[36.,100.,600.,600.],lines:slide.notes.lines().map(text).collect(),size:14.,bullet:None,center:false,code:false,style:None};
         let notes_shape=shape_xml(&note,2,deck,&BTreeMap::new())
             .replacen("<p:nvPr/>","<p:nvPr><p:ph type=\"body\" idx=\"1\"/></p:nvPr>",1)
             .replace(&format!("val=\"{}\"",deck.foreground),"val=\"24292F\"");

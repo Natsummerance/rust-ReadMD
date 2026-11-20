@@ -331,38 +331,67 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 
 globalThis.ReadMDExportHtmlLayout = (() => {
   const layouts = new Set(['reading', 'docs', 'magazine']);
-  let nextAnchor = 0;
-  function mount(root, layout, { links = true, contentsLabel, tone = "light" } = {}) {
+
+  function mount(root, layout, { links = true, contentsLabel, tableLabel, tone = 'light' } = {}) {
     if (!root || !layouts.has(layout)) return;
     const doc = root.ownerDocument;
+    // A preview can reuse its host. Keep the source DOM while changing layout.
+    const previous = root.firstElementChild;
+    if (previous?.classList.contains('readmd-html-layout') && root.children.length === 1) {
+      const article = previous.querySelector('.readmd-layout-article');
+      if (article) root.replaceChildren(...article.childNodes);
+    }
+    const chinese = /^zh/i.test(doc.documentElement.lang);
     const wrap = doc.createElement('div');
     wrap.className = 'readmd-html-layout';
     wrap.dataset.layout = layout;
-    wrap.dataset.tone = tone;
+    wrap.dataset.tone = ['dark', 'sepia'].includes(tone) ? tone : 'light';
+    const flow = doc.createElement('div');
+    flow.className = 'readmd-layout-flow';
     const article = doc.createElement('div');
     article.className = 'readmd-layout-article';
     while (root.firstChild) article.appendChild(root.firstChild);
+
+    for (const table of article.querySelectorAll('table')) {
+      if (table.closest('.readmd-layout-table') || table.parentElement?.closest('table')) continue;
+      const scroll = doc.createElement('div');
+      scroll.className = 'readmd-layout-table';
+      scroll.setAttribute('role', 'region');
+      scroll.setAttribute('aria-label', table.caption?.textContent?.trim() || tableLabel || (chinese ? '表格' : 'Table'));
+      scroll.tabIndex = 0;
+      table.before(scroll);
+      scroll.appendChild(table);
+    }
+
     if (layout === 'docs') {
-      const headings = [...article.querySelectorAll('h2,h3,h4')].slice(0, 200);
+      const headings = [...article.querySelectorAll('h2,h3,h4')].filter(heading => !heading.closest('table,blockquote')).slice(0, 200);
       if (headings.length) {
         const navigation = doc.createElement('nav');
         navigation.className = 'readmd-layout-nav';
-        const label = contentsLabel || (/^zh/i.test(doc.documentElement.lang) ? '目录' : 'Contents');
+        const label = contentsLabel || (chinese ? '目录' : 'Contents');
         navigation.setAttribute('aria-label', label);
         const title = doc.createElement('strong');
         title.textContent = label;
         const list = doc.createElement('ul');
-        const ids = new Set();
+        // Reserve authored IDs in later headings and body content too.
+        const owners = new Map();
+        for (const node of article.querySelectorAll('[id]')) if (!owners.has(node.id)) owners.set(node.id, node);
+        const used = new Set(owners.keys());
+        const assigned = new Set();
+        let nextAnchor = 0;
         for (const heading of headings) {
           const item = doc.createElement('li');
           item.dataset.level = heading.localName;
           const link = doc.createElement(links ? 'a' : 'span');
           if (links) {
-            if (!heading.id || ids.has(heading.id) || doc.getElementById(heading.id)) {
-              do { heading.id = 'readmd-section-' + ++nextAnchor; }
-              while (ids.has(heading.id) || doc.getElementById(heading.id));
+            if (!heading.id || owners.get(heading.id) !== heading || assigned.has(heading.id) || doc.getElementById(heading.id)) {
+              let id;
+              do { id = 'readmd-section-' + ++nextAnchor; }
+              while (used.has(id) || doc.getElementById(id));
+              heading.id = id;
+              used.add(id);
             }
-            ids.add(heading.id);
+            assigned.add(heading.id);
             link.href = '#' + encodeURIComponent(heading.id);
             if (!doc.body.dataset.readmdHtmlLayout) link.addEventListener('click', event => {
               event.preventDefault();
@@ -374,10 +403,11 @@ globalThis.ReadMDExportHtmlLayout = (() => {
           list.appendChild(item);
         }
         navigation.append(title, list);
-        wrap.appendChild(navigation);
+        flow.appendChild(navigation);
       }
     }
-    wrap.appendChild(article);
+    flow.appendChild(article);
+    wrap.appendChild(flow);
     root.replaceChildren(wrap);
   }
   return Object.freeze({ mount });
@@ -30307,6 +30337,88 @@ async function createFromClipboard() {
 
 ;
 'use strict';
+
+// A preview document uses the writer's CSS at its actual reading width.
+// Only the containing frame is scaled for the thumbnail.
+function renderHtmlArticlePreview(data, presetName) {
+  const generation = nativeExportPreview.generation;
+  const miniPage = $('export-preview-mini-page');
+  miniPage?.classList.add('is-native-preview');
+  if (miniPage?.parentElement) {
+    const viewport = miniPage.parentElement;
+    miniPage.style.transform = 'scale(' + Math.min(2.5, (viewport.clientWidth - 32) / 110, (viewport.clientHeight - 32) / 148) + ')';
+  }
+  const meta = $('export-preview-paper-meta');
+  if (meta) meta.textContent = 'HTML · ' + presetName;
+  const mini = $('export-preview-mini-content');
+  if (mini) mount(mini, true);
+  const modal = $('export-preview-modal');
+  if (modal && !modal.classList.contains('hidden')) {
+    const wrapper = modal.querySelector('.export-preview-paper-wrapper');
+    if (wrapper) mount(wrapper, false);
+    const count = $('export-preview-pages-meta');
+    if (count) count.textContent = 'HTML';
+    for (const id of ['export-preview-prev-btn', 'export-preview-next-btn']) $(id)?.classList.remove('is-visible');
+  }
+
+  function mount(host, small) {
+    if (host.querySelector('.export-html-frame')?.dataset.generation === String(generation)) return;
+    const frame = document.createElement('iframe');
+    frame.className = 'export-html-frame';
+    frame.title = 'HTML · ' + presetName;
+    frame.dataset.generation = String(generation);
+    frame.setAttribute('sandbox', 'allow-same-origin');
+    if (small) { frame.tabIndex = -1; frame.setAttribute('aria-hidden', 'true'); }
+    frame.onload = () => {
+      if (!frame.isConnected || nativeExportPreview.generation !== generation) return;
+      const doc = frame.contentDocument;
+      const root = doc?.getElementById('content');
+      if (!root) return;
+      doc.documentElement.lang = data.language || document.documentElement.lang;
+      const opts = data.options || {};
+      if (opts.htmlLayout) doc.body.dataset.readmdHtmlLayout = opts.htmlLayout;
+      doc.body.dataset.readmdHtmlTone = opts.htmlTheme || 'light';
+      const style = doc.createElement('style');
+      style.textContent = data.styleSheet;
+      doc.head.append(style);
+      // Parse inside an inert template. Keep native Math SVG and table spans.
+      // The sandbox has no script permission or network access.
+      const fragment = doc.createElement('template');
+      const math = protectMath(data.content);
+      fragment.innerHTML = data.footnotesHtml ?? restoreMath(marked.parse(math.src, {gfm: true, breaks: true}), math.saved);
+      fragment.content.querySelectorAll('script,style,iframe,frame,link,base,meta,embed,object,form,foreignObject,template').forEach(node => node.remove());
+      for (const node of fragment.content.querySelectorAll('*')) {
+        for (const attr of [...node.attributes]) {
+          if (/^on/i.test(attr.name) || ['autofocus', 'srcdoc', 'ping', 'target', 'download'].includes(attr.name)) node.removeAttribute(attr.name);
+        }
+      }
+      root.replaceChildren(fragment.content);
+      doc.addEventListener('click', event => {
+        const link = event.target.closest?.('a');
+        if (!link) return;
+        event.preventDefault();
+        const href = link.getAttribute('href') || '';
+        if (!small && href.startsWith('#')) {
+          try { doc.getElementById(decodeURIComponent(href.slice(1)))?.scrollIntoView(); } catch (_) { /* Invalid authored anchor. */ }
+        }
+      });
+      for (const link of root.querySelectorAll('a')) {
+        if (small || !link.getAttribute('href')?.startsWith('#')) link.removeAttribute('href');
+      }
+      if (data.authorText?.runs.length) window.ReadMDAuthorText?.apply(root, data.authorText);
+      ReadMDExportHtmlLayout.mount(root, opts.htmlLayout, {links: !small, contentsLabel: i18n.t('tabs.toc'), tone: opts.htmlTheme});
+      if (data.tableTracks) window.ReadMDTableView?.observe(root, root, (opts.table?.widthPct || 100) / 100);
+      renderMath(root);
+      awaitHtmlPreviewSurface(host, root, generation);
+    };
+    frame.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:; base-uri \'none\'; form-action \'none\'"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><article id="content" class="readmd-export"></article></body></html>';
+    host.setAttribute('aria-busy', 'true');
+    host.replaceChildren(frame);
+  }
+}
+
+;
+'use strict';
 /* ============================================================
    ReadMD Features - Document Export Console & High-Fidelity Preview
    ============================================================ */
@@ -30507,7 +30619,9 @@ function getExportSections() {
     ]},
   ];
   if (state.export.fmt === 'pptx') {
-    return [...sections.filter(section => section.fmts?.includes('pptx')), {
+    const slides = sections.find(section => section.fmts?.includes('pptx'));
+    const native = state.export.options?.pptxLayout?.startsWith('pptx-');
+    return [native ? { ...slides, fields: slides.fields.filter(field => field.k === 'slidesHint') } : slides, {
       ...tableOptions, fmts: ['pptx'],
       fields: tableOptions.fields.filter(field => !['table.cellPadding', 'table.cellSize'].includes(field.k)),
     }];
@@ -31504,6 +31618,7 @@ function renderNativeExportPreview(presetName, options) {
   const data = nativeExportPreview.data;
   if (!data) return;
   renderExportWarns(data.warnings || []);
+  if (data.format === 'html' && data.styleSheet) { renderHtmlArticlePreview(data, presetName); return; }
   if (data.format === 'html') { renderBrowserExportPreview('html', data.options || options, data.content, presetName); return; }
   if (data.format === 'pptx') { renderPptxExportPreview(data, presetName); return; }
   if (data.format === 'presentation') { renderPresentationExportPreview(data, presetName); return; }
@@ -32020,35 +32135,39 @@ function awaitHtmlExportPreview() {
   if (modal && !modal.classList.contains('hidden')) hosts.push(modal.querySelector('.export-preview-paper-wrapper'));
   for (const host of hosts) {
     if (!host) continue;
-    const ticket = {}; host._readmdHtmlReady = ticket;
-    delete host.dataset.ready; host.setAttribute('aria-busy', 'true'); host.classList.add('export-html-pending');
-    const loading = document.createElement('div'); loading.className = 'export-html-loading';
-    host.append(loading); window.ReadMDTask.loading(loading, 'export.previewGenerating');
-    const images = [...host.querySelectorAll('img')];
-    const current = () => generation === nativeExportPreview.generation && host.isConnected && host._readmdHtmlReady === ticket;
-    const mathReady = async () => {
-      if (typeof mathReadyPromise !== 'undefined' && mathReadyPromise) await mathReadyPromise;
-      if (typeof mathTypesetQueue !== 'undefined') await mathTypesetQueue;
-      while (current() && host.querySelector('.readmd-dsl-math:not([data-readmd-ready]), .readmd-model-math:not([data-readmd-ready]), [data-readmd-busy]')) await new Promise(resolve => setTimeout(resolve, 25));
-      if (host.querySelector('[data-readmd-ready="error"], [data-mml-node="merror"], [data-mjx-error]')) throw Error('math_preview_failed');
-    };
-    // Discover fonts before reading FontFaceSet.ready; it can otherwise still
-    // describe the preceding format before this DOM has participated in layout.
-    void host.offsetWidth;
-    let deadline;
-    Promise.race([
-      Promise.all([document.fonts?.ready, mathReady(), ...images.map(img => img.decode())]),
-      new Promise((_, reject) => { deadline = setTimeout(() => reject(Error('preview_timeout')), 15000); }),
-    ]).then(() => {
-      if (current()) { host.dataset.ready = 'true'; host.setAttribute('aria-busy', 'false'); }
-    }, () => {
-      if (!current()) return;
-      host.replaceChildren(); host.setAttribute('aria-busy', 'false');
-      const message = document.createElement('p'); message.textContent = _t('export.previewFailed');
-      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'tb-btn'; retry.textContent = _t('audit.retryLoad');
-      retry.onclick = () => { nativeExportPreview.signature = ''; updateExportLivePreview(); }; host.append(message, retry);
-    }).finally(() => { clearTimeout(deadline); if (current()) { loading.remove(); host.classList.remove('export-html-pending'); } });
+    awaitHtmlPreviewSurface(host, host, generation);
   }
+}
+
+function awaitHtmlPreviewSurface(host, root, generation) {
+  const ticket = {}; host._readmdHtmlReady = ticket;
+  delete host.dataset.ready; host.setAttribute('aria-busy', 'true'); host.classList.add('export-html-pending');
+  const loading = document.createElement('div'); loading.className = 'export-html-loading';
+  host.append(loading); window.ReadMDTask.loading(loading, 'export.previewGenerating');
+  const images = [...root.querySelectorAll('img')];
+  const current = () => generation === nativeExportPreview.generation && root.isConnected && host.isConnected && host._readmdHtmlReady === ticket;
+  const mathReady = async () => {
+    if (typeof mathReadyPromise !== 'undefined' && mathReadyPromise) await mathReadyPromise;
+    if (typeof mathTypesetQueue !== 'undefined') await mathTypesetQueue;
+    while (current() && root.querySelector('.readmd-dsl-math:not([data-readmd-ready]), .readmd-model-math:not([data-readmd-ready]), [data-readmd-busy]')) await new Promise(resolve => setTimeout(resolve, 25));
+    if (root.querySelector('[data-readmd-ready="error"], [data-mml-node="merror"], [data-mjx-error]')) throw Error('math_preview_failed');
+  };
+  // Discover fonts before reading FontFaceSet.ready; it can otherwise still
+  // describe the preceding format before this DOM has participated in layout.
+  void root.offsetWidth;
+  let deadline;
+  Promise.race([
+    Promise.all([root.ownerDocument.fonts?.ready, mathReady(), ...images.map(img => img.decode())]),
+    new Promise((_, reject) => { deadline = setTimeout(() => reject(Error('preview_timeout')), 15000); }),
+  ]).then(() => {
+    if (current()) { host.dataset.ready = 'true'; host.setAttribute('aria-busy', 'false'); }
+  }, () => {
+    if (!current()) return;
+    host.replaceChildren(); host.setAttribute('aria-busy', 'false');
+    const message = document.createElement('p'); message.textContent = _t('export.previewFailed');
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'tb-btn'; retry.textContent = _t('audit.retryLoad');
+    retry.onclick = () => { nativeExportPreview.signature = ''; updateExportLivePreview(); }; host.append(message, retry);
+  }).finally(() => { clearTimeout(deadline); if (current()) { loading.remove(); host.classList.remove('export-html-pending'); } });
 }
 
 function expFieldApplicable(f, secFmts, fmt) {
@@ -32386,7 +32505,7 @@ function exportPresetOptions(name) {
   return expDeepMerge(state.export.defaults, preset);
 }
 
-const EXPORT_FORMAT_DEFAULTS = { html: 'web_reading', pptx: 'pptx_defense', png: 'image_clean', 'png-pages': 'image_clean' };
+const EXPORT_FORMAT_DEFAULTS = { html: 'web_reading', pptx: 'pptx-confluence', png: 'image_clean', 'png-pages': 'image_clean' };
 
 function presetFitsFormat(name, format) {
   const entry = state.export.catalog?.find(profile => profile.id === name);
@@ -32429,7 +32548,10 @@ function renderExportPresetSelect() {
   const presetNames = getExportPresetNames();
   const catalog=state.export.catalog||[],fmt=state.export.fmt||'pdf';
   const entries = new Map(catalog.map(profile => [profile.id, profile]));
-  const names = Object.keys(state.export.presets || {}).filter(name => presetFitsFormat(name, fmt));
+  const last = state.export.last;
+  const remembered = state.export.selectedPreset || last?.preset;
+  const names = Object.keys(state.export.presets || {}).filter(name =>
+    presetFitsFormat(name, fmt) && (!entries.get(name)?.legacy || name === remembered));
   sel.appendChild(new Option(_t('export.presetDefault') || 'Default', '__default__'));
   const categories=[['common','export.presetsCommon'],['book','export.presetsBook'],['academic','export.presetsAcademic']];
   const added = new Set();
@@ -32451,8 +32573,7 @@ function renderExportPresetSelect() {
   });
   if(customNames.length){const group=document.createElement('optgroup');group.label=_t('export.presetCustom');customNames.forEach(n=>group.append(new Option(n,n)));sel.append(group);}
   sel.appendChild(new Option(_t('export.presetCustom') || '', '__custom__'));
-  const last = state.export.last;
-  const remembered = state.export.selectedPreset || (last && last.preset);
+
   sel.value = remembered && [...sel.options].some(o => o.value === remembered)
     ? remembered
     : (last ? '__custom__' : '__default__');
@@ -32482,6 +32603,7 @@ function renderExportPresetCards() {
   [...sel.options].forEach(o => {
     const v = o.value;
     if (v === '__custom__' && sel.value !== '__custom__') return;
+    if (v === '__default__' && state.export.fmt === 'pptx' && sel.value !== v) return;
     const opts = exportPresetOptions(v);
     const card = document.createElement('button');
     card.type = 'button';
@@ -32499,7 +32621,15 @@ function renderExportPresetCards() {
       if (typeof color === 'string' && /^#[\da-f]{6}$/i.test(color)) swatch.style.setProperty('--preset-' + part, color);
     });
     swatch.dataset.previewFormat = state.export.fmt;
-    for (let i = 0; i < 3; i++) swatch.appendChild(document.createElement('i'));
+    if (profile?.cover && profile.id === 'pptx-' + profile.cover && /^[a-z]+$/.test(profile.cover)) {
+      const cover = document.createElement('img');
+      cover.src = '/assets/data/slide-covers/' + profile.cover + '.jpg';
+      cover.alt = '';
+      swatch.classList.add('exp-template-cover');
+      swatch.append(cover);
+    } else {
+      for (let i = 0; i < 3; i++) swatch.appendChild(document.createElement('i'));
+    }
     const name = document.createElement('span');
     name.className = 'exp-preset-name';
     name.textContent = o.text;

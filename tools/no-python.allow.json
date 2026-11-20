@@ -695,5 +695,25 @@
     "pattern": "args=\\(\\-\\-edited\\-table\\ \"\\$RUNNER_TEMP/tt\"\\ \\-\\-evidence\\ \"\\$RUNNER_TEMP/rg\"\\ \\-\\-python\\ python\\)",
     "reason": "Table export acceptance job only. Pass the runner interpreter only to the edited table export verification step.",
     "requirement": "R019"
+  },
+  {
+    "path": "tools/compile-pptx-templates.py",
+    "reason": "Prepare and verify the editable OOXML design seeds from the five source decks. Design authoring only. ReadMD and its release builds consume the committed template assets directly.",
+    "requirement": "Built-in PowerPoint designs"
+  },
+  {
+    "path": "tools/fetch-pptx-photos.py",
+    "reason": "Acquire attributed source photographs for the Field design. Design authoring only. ReadMD and its release builds consume the committed template assets directly.",
+    "requirement": "Built-in PowerPoint designs"
+  },
+  {
+    "path": "tools/pptx_template_art.py",
+    "reason": "Crop, composite and replace offline reference artwork when editing a template. Design authoring only. ReadMD and its release builds consume the committed template assets directly.",
+    "requirement": "Built-in PowerPoint designs"
+  },
+  {
+    "path": "tools/render-pptx-fluid.py",
+    "reason": "Generate the original animated fluid in the Blender authoring environment. Design authoring only. ReadMD and its release builds consume the committed template assets directly.",
+    "requirement": "Built-in PowerPoint designs"
   }
 ]

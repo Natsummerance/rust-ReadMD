@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "provider": "U.S. National Park Service",
+  "license": "Public domain; see each NPS asset record",
+  "verified": "2026-11-20",
+  "sources": [
+    {
+      "file": "headland.jpg",
+      "assetId": "f1a8781f-9110-4676-81b0-3f88b658b8ca",
+      "title": "Views at Point Reyes National Seashore, California — Beach",
+      "credit": "NPS staff",
+      "source": "https://npgallery.nps.gov/AssetDetail/f1a8781f-9110-4676-81b0-3f88b658b8ca",
+      "download": "https://npgallery.nps.gov/GetAsset/f1a8781f-9110-4676-81b0-3f88b658b8ca/original.jpg",
+      "originalDimensions": [
+        2048,
+        3072
+      ],
+      "trim": [
+        0.04,
+        0.04,
+        0.04,
+        0.04
+      ]
+    },
+    {
+      "file": "storm.jpg",
+      "assetId": "66b4306d-1dd8-b71b-0bf1-9cd1903e31f7",
+      "title": "Point Reyes Beach with a Rainbow",
+      "credit": "NPS Photo",
+      "source": "https://npgallery.nps.gov/AssetDetail/66b4306d-1dd8-b71b-0bf1-9cd1903e31f7",
+      "download": "https://npgallery.nps.gov/GetAsset/66b4306d-1dd8-b71b-0bf1-9cd1903e31f7/original.jpg",
+      "originalDimensions": [
+        3456,
+        2592
+      ],
+      "trim": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "pacific.jpg",
+      "assetId": "68489321-1dd8-b71b-0b96-343092cbfa05",
+      "title": "Point Reyes Pacific coast",
+      "credit": "NPS Photo",
+      "source": "https://npgallery.nps.gov/AssetDetail/68489321-1dd8-b71b-0b96-343092cbfa05",
+      "download": "https://npgallery.nps.gov/GetAsset/68489321-1dd8-b71b-0b96-343092cbfa05/original.jpg",
+      "trim": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "wildflowers.jpg",
+      "assetId": "343efa9e-1ca2-44a3-8860-ec11c9183d1b",
+      "title": "Views at Point Reyes National Seashore, California — Wildflowers on path to Point Reyes Lighthouse",
+      "credit": "NPS staff",
+      "source": "https://npgallery.nps.gov/AssetDetail/343efa9e-1ca2-44a3-8860-ec11c9183d1b",
+      "download": "https://npgallery.nps.gov/GetAsset/343efa9e-1ca2-44a3-8860-ec11c9183d1b/original.jpg",
+      "originalDimensions": [
+        2048,
+        3072
+      ],
+      "trim": [
+        0.04,
+        0.04,
+        0.04,
+        0.04
+      ]
+    }
+  ]
+}

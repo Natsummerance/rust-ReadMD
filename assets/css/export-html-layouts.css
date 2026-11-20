@@ -1,122 +1,99 @@
+/* Shared by the HTML file and both export previews. Layout decisions use
+   the article's available width, including when embedded in a narrow panel. */
 .readmd-html-layout {
   --article-surface: var(--export-layout-paper);
   --article-border: var(--export-layout-border);
   --article-accent: var(--export-layout-accent);
+  --article-gutter: clamp(1.25rem, 5cqi, 3.5rem);
   box-sizing: border-box;
+  container: readmd-html / inline-size;
+  inline-size: 100%;
   min-inline-size: 0;
+  margin-inline: auto;
 }
-.readmd-html-layout .readmd-layout-article {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-}
+.readmd-html-layout :where(.readmd-layout-flow, .readmd-layout-article, .readmd-layout-nav, .readmd-layout-table) { box-sizing: border-box; min-inline-size: 0; }
+.readmd-html-layout .readmd-layout-article { overflow-wrap: anywhere; text-underline-offset: .18em; text-decoration-thickness: .06em; }
 .readmd-html-layout .readmd-layout-article > :first-child { margin-block-start: 0; }
 .readmd-html-layout .readmd-layout-article > :last-child { margin-block-end: 0; }
-.readmd-html-layout .readmd-layout-article :is(h2,h3,h4) { scroll-margin-block-start: 2rem; }
-.readmd-html-layout .readmd-layout-article img { max-inline-size: 100%; block-size: auto; }
+.readmd-html-layout .readmd-layout-article :is(h1,h2,h3,h4,h5,h6) { scroll-margin-block-start: 1.5rem; text-wrap: pretty; }
+.readmd-html-layout .readmd-layout-article :is(h1,h2) { text-wrap: balance; }
+.readmd-html-layout .readmd-layout-article :is(ul,ol) { padding-inline-start: 1.6em; }
+.readmd-html-layout .readmd-layout-article li + li { margin-block-start: .3em; }
+.readmd-html-layout .readmd-layout-article li::marker { color: var(--article-accent); }
+.readmd-html-layout .readmd-layout-article li > :is(ul,ol) { margin-block: .4em; }
+.readmd-html-layout .readmd-layout-article :is(img,svg,video) { max-inline-size: 100%; block-size: auto; }
+.readmd-html-layout .readmd-layout-article figure { min-inline-size: 0; margin: 1.6em 0; }
+.readmd-html-layout .readmd-layout-article figcaption { margin-block-start: .7em; font-size: .85em; line-height: 1.6; text-align: center; }
+.readmd-html-layout .readmd-layout-article blockquote { margin-block: 1.5em; }
+.readmd-html-layout .readmd-layout-article blockquote > :first-child { margin-block-start: 0; }
+.readmd-html-layout .readmd-layout-article blockquote > :last-child { margin-block-end: 0; }
+.readmd-html-layout .readmd-layout-article pre { min-inline-size: 0; max-inline-size: 100%; margin-block: 1.4em; tab-size: 4; overscroll-behavior-inline: contain; }
+.readmd-html-layout .readmd-layout-article pre > code { display: block; padding: 0; background: transparent; color: inherit; font-size: inherit; line-height: inherit; white-space: inherit; overflow-wrap: inherit; }
+.readmd-html-layout .readmd-layout-article :not(pre) > code { overflow-wrap: anywhere; }
+.readmd-html-layout .readmd-layout-article mjx-container[display="true"] { max-inline-size: 100%; overflow-x: auto; overflow-y: hidden; }
+.readmd-html-layout .readmd-layout-table { min-inline-size: 0; max-inline-size: 100%; margin-block: 1.5em; overflow-x: auto; overscroll-behavior-inline: contain; }
+.readmd-html-layout .readmd-layout-table > table { margin-block: 0; }
+.readmd-html-layout .readmd-layout-article table { line-height: 1.55; }
+.readmd-html-layout .readmd-layout-article table:not(.readmd-table-geometry--columns) :is(th,td) { overflow-wrap: break-word; }
+.readmd-html-layout .readmd-layout-article :is(th,td):not([valign]) { vertical-align: top; }
+.readmd-html-layout .readmd-layout-article caption { padding-block-end: .65em; font-size: .9em; text-align: start; }
+.readmd-html-layout :is(a,.readmd-layout-table):focus-visible { outline: 2px solid var(--article-accent); outline-offset: 3px; border-radius: 2px; }
+.readmd-layout-nav { color: var(--export-docs-nav); font-size: .85em; line-height: 1.5; }
+.readmd-layout-nav > strong { display: block; padding: .2em .6em .65em; font-size: .85em; letter-spacing: .08em; }
+.readmd-layout-nav ul { margin: 0; padding: 0; list-style: none; }
+.readmd-layout-nav li { margin: 0; padding: 0; }
+.readmd-layout-nav :is(a,span) { display: block; padding: .45em .6em; border-radius: .3em; overflow-wrap: anywhere; }
+.readmd-layout-nav li[data-level="h3"] :is(a,span) { padding-inline-start: 1.4em; font-size: .94em; }
+.readmd-layout-nav li[data-level="h4"] :is(a,span) { padding-inline-start: 2.2em; font-size: .9em; }
+.readmd-layout-nav a { color: inherit; text-decoration: none; }
+.readmd-layout-nav a:hover { color: var(--article-accent); background: color-mix(in srgb, var(--article-accent) 8%, transparent); }
 
 @media screen {
   body[data-readmd-html-layout] { padding: clamp(1rem, 4vw, 3.5rem); }
-  body[data-readmd-html-layout] #content { max-width: 1120px; }
+  body[data-readmd-html-layout] #content { max-width: 1200px; }
   body[data-readmd-html-layout="reading"] { background: var(--export-reading-bg); }
   body[data-readmd-html-layout="docs"] { background: var(--export-docs-bg); }
   body[data-readmd-html-layout="magazine"] { background: var(--export-magazine-bg); }
-  .readmd-html-layout .readmd-layout-article {
-    background: var(--article-surface);
-    border: 1px solid var(--article-border);
-    border-radius: 14px;
-    padding: clamp(1.15rem, 4vw, 3.4rem);
-  }
-  .readmd-html-layout[data-layout="reading"] {
-    --article-surface: var(--export-reading-paper);
-    --article-border: var(--export-reading-border);
-    max-inline-size: 770px;
-    margin-inline: auto;
-  }
-  .readmd-html-layout[data-layout="reading"] .readmd-layout-article h1 {
-    letter-spacing: -.025em;
-    line-height: 1.22;
-  }
-  .readmd-html-layout[data-layout="docs"]:has(.readmd-layout-nav) {
-    display: grid;
-    grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr);
-    align-items: start;
-    gap: clamp(1rem, 3vw, 2rem);
-  }
-  .readmd-html-layout[data-layout="magazine"] {
-    --article-surface: var(--export-magazine-paper);
-    --article-border: var(--export-magazine-border);
-    --article-accent: var(--export-magazine-accent);
-    max-inline-size: 850px;
-    margin-inline: auto;
-  }
-  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article {
-    border-block-start: 4px solid var(--article-accent);
-    border-radius: 2px 2px 14px 14px;
-  }
-  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article h1 {
-    font-family: Georgia, "Songti SC", "SimSun", serif;
-    font-size: clamp(1.8rem, 5vw, 3.3rem);
-    line-height: 1.14;
-    letter-spacing: -.035em;
-    padding-block-end: .45em;
-    border-block-end: 1px solid var(--article-border);
-  }
-  .readmd-layout-nav {
-    position: sticky;
-    inset-block-start: 1.4rem;
-    max-block-size: calc(100vh - 3rem);
-    overflow: auto;
-    padding: 1rem;
-    border: 1px solid var(--article-border);
-    border-radius: 12px;
-    background: var(--article-surface);
-    color: var(--export-docs-nav);
-    font-size: .85em;
-  }
-  .readmd-layout-nav ul { margin: .6em 0 0; padding: 0; list-style: none; }
-  .readmd-layout-nav li { padding-block: .25em; line-height: 1.35; }
-  .readmd-layout-nav li[data-level="h3"] { padding-inline-start: .8em; }
-  .readmd-layout-nav li[data-level="h4"] { padding-inline-start: 1.4em; }
-  .readmd-layout-nav a { color: inherit; text-decoration: none; }
-  .readmd-layout-nav a:hover { color: var(--article-accent); text-decoration: underline; }
+  .readmd-html-layout .readmd-layout-article { background: var(--article-surface); border: 1px solid var(--article-border); border-radius: .75rem; padding: var(--article-gutter); box-shadow: 0 .5rem 2rem -1.5rem color-mix(in srgb, var(--article-accent) 22%, transparent); }
+  .readmd-html-layout .readmd-layout-article pre { white-space: pre; overflow-wrap: normal; word-break: normal; }
+  .readmd-html-layout[data-layout="reading"] { --article-surface: var(--export-reading-paper); --article-border: var(--export-reading-border); --article-accent: var(--export-reading-accent); max-inline-size: 49rem; }
+  .readmd-html-layout[data-layout="reading"] .readmd-layout-article > h1 { padding-block-end: .55em; border-block-end: 1px solid var(--article-border); line-height: 1.25; letter-spacing: -.025em; }
+  .readmd-html-layout[data-layout="reading"] .readmd-layout-article > h2 { margin-block-start: 2.25em; letter-spacing: -.012em; }
+  .readmd-html-layout[data-layout="reading"] .readmd-layout-article > :is(h2,h3) + p { margin-block-start: .65em; }
+  .readmd-html-layout[data-layout="docs"] { --article-accent: var(--export-docs-accent); }
+  .readmd-html-layout[data-layout="docs"] .readmd-layout-flow { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 1.75rem; }
+  .readmd-html-layout[data-layout="docs"] .readmd-layout-article > h1 { line-height: 1.22; letter-spacing: -.03em; }
+  .readmd-html-layout[data-layout="docs"] .readmd-layout-article > h2 { margin-block-start: 2em; padding-block-end: .4em; border-block-end: 1px solid var(--article-border); letter-spacing: -.015em; }
+  .readmd-html-layout[data-layout="docs"] .readmd-layout-article > h3 { margin-block-start: 1.6em; }
+  .readmd-html-layout[data-layout="magazine"] { --article-surface: var(--export-magazine-paper); --article-border: var(--export-magazine-border); --article-accent: var(--export-magazine-accent); max-inline-size: 61rem; }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article { border-block-start: .3rem solid var(--article-accent); border-radius: 0 0 .6rem .6rem; padding-block: clamp(1.75rem, 6cqi, 4rem); padding-inline: clamp(1.25rem, 9cqi, 6rem); }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article > h1 { font-family: Georgia, "Songti SC", "SimSun", serif; line-height: 1.2; letter-spacing: -.035em; padding-block-end: .65em; border-block-end: 1px solid var(--article-border); }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article > h1 + p:not(:has(img,svg,video)) { font-size: 1.12em; line-height: 1.75; margin-block-end: 1.75em; }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article > h2 { margin-block-start: 2.4em; padding-inline-start: .7em; border-inline-start: .16em solid var(--article-accent); }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article blockquote { margin-block: 1.9em; padding-block: 1em; }
+  .readmd-layout-nav { max-block-size: 15rem; overflow: auto; padding: .8rem; border: 1px solid var(--article-border); border-radius: .6rem; background: var(--article-surface); scrollbar-width: thin; }
   body[data-readmd-html-tone="dark"] { background: var(--export-dark-bg); }
-  .readmd-html-layout[data-tone="dark"] {
-    --article-surface: var(--export-dark-paper);
-    --article-border: var(--export-dark-border);
-    --article-accent: var(--export-dark-accent);
-  }
-  .readmd-html-layout[data-tone="dark"] :is(.readmd-layout-nav,.readmd-layout-article) { color: var(--export-dark-ink); }
-  .readmd-html-layout[data-tone="dark"] .readmd-layout-article :is(h1,h2,h3,h4,h5,h6) { color: var(--export-dark-title); }
+  .readmd-html-layout[data-tone="dark"] { --article-surface: var(--export-dark-paper); --article-border: var(--export-dark-border); --article-accent: var(--export-dark-accent); }
+  .readmd-html-layout[data-tone="dark"] .readmd-layout-nav { color: var(--export-dark-ink); }
+  .readmd-html-layout[data-tone="sepia"] { --article-surface: var(--export-sepia-paper); --article-border: var(--export-sepia-border); }
 }
-@media screen and (max-width: 640px) {
-  .readmd-html-layout[data-layout="docs"]:has(.readmd-layout-nav) { display: block; }
-  .readmd-layout-nav { position: static; max-block-size: 10rem; margin-block-end: 1rem; }
+@container readmd-html (min-width: 54rem) {
+  .readmd-html-layout[data-layout="docs"] .readmd-layout-flow:has(.readmd-layout-nav) { grid-template-columns: 13.5rem minmax(0, 1fr); }
+  .readmd-html-layout[data-layout="docs"] .readmd-layout-nav { position: sticky; inset-block-start: 1.5rem; max-block-size: calc(100vh - 3rem); }
 }
+@media screen and (max-width: 640px) { body[data-readmd-html-layout] { padding: .75rem; } }
 @media print {
+  body[data-readmd-html-layout] { background: var(--export-layout-paper); padding: 0; color: var(--export-print-ink); }
+  body[data-readmd-html-layout] #content, .readmd-html-layout { max-inline-size: none; }
+  .readmd-html-layout { display: block; container-type: normal; }
   .readmd-layout-nav { display: none; }
-}
-#export-preview-mini-content .readmd-layout-nav { position: static; }
-#export-preview-mini-content .readmd-layout-article { padding: 7%; }
-
-@media screen {
-  .readmd-html-layout .readmd-layout-article table {
-    border-collapse: collapse;
-    border-block: 1px solid var(--article-border);
-  }
-  .readmd-html-layout .readmd-layout-article :is(th,td) {
-    border-inline: 0;
-    border-block-color: var(--article-border);
-  }
-  .readmd-html-layout[data-layout="reading"] .readmd-layout-article > h2 {
-    margin-block-start: 2.2em;
-    letter-spacing: -.012em;
-  }
-  .readmd-html-layout[data-layout="docs"] .readmd-layout-article > h2 {
-    border-block-end: 1px solid var(--article-border);
-    padding-block-end: .4em;
-  }
-  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article > h1 + p {
-    font-size: 1.14em;
-    line-height: 1.65;
-  }
+  .readmd-html-layout .readmd-layout-article { border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }
+  .readmd-html-layout .readmd-layout-article :is(img,figure,blockquote,pre,tr), .readmd-html-layout .readmd-layout-table { break-inside: avoid; }
+  .readmd-html-layout .readmd-layout-article pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
+  .readmd-html-layout .readmd-layout-table { overflow: visible; }
+  .readmd-html-layout .readmd-layout-table > table { max-inline-size: 100%; table-layout: fixed; }
+  .readmd-html-layout .readmd-layout-article :is(th,td) { overflow-wrap: anywhere; }
+  .readmd-html-layout .readmd-layout-article a { text-decoration: underline; }
+  .readmd-html-layout[data-tone="dark"] .readmd-layout-article :is(h1,h2,h3,h4,h5,h6,pre,code,blockquote,th,td,a) { color: var(--export-print-ink); }
+  .readmd-html-layout[data-tone="dark"] .readmd-layout-article :is(pre,code,blockquote,th,tr) { background: transparent; }
 }

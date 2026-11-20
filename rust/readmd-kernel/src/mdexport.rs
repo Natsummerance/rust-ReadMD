@@ -1100,6 +1100,17 @@ __MATHJAX__
 
 /// `mdexport/html_render.render` (`html_render.py:91-113`) plus the `html`
 /// branch of `mdexport/__init__.py:export` (lines 121-132).
+mod html_article;
+
+pub(crate) fn html_preview(content: &str, base_dir: &str, options: &Value, name: &str) -> Result<Value, String> {
+    let (source, mut warnings) = prepare_export_source("html", content, base_dir, options)?;
+    let article = html_article::prepare(&source, base_dir, options, name)?;
+    warnings.extend(article.warnings);
+    Ok(serde_json::json!({"ok":true,"format":"html","mode":"projection","content":article.markdown,"styleSheet":article.css,
+        "footnotesHtml":article.footnotes,"authorText":article.author_text,"language":article.metadata.language,
+        "tableTracks":article.sized_tables,"options":article.options,"warnings":warnings}))
+}
+
 pub fn export_html(
     content: &str,
     base_dir: &str,
@@ -1108,54 +1119,11 @@ pub fn export_html(
     source_name: &str,
     assets_dir: &Path,
 ) -> Result<ExportResult, String> {
-    let resolved = crate::publication_profile::resolve_for_format("html",content,options).map_err(|e|e.code)?;
-    let options = resolved.values();
-    crate::publication_profile::preflight("html",content,options).map_err(|e|e.code)?;
-    crate::math_word_projection::validate_source(content,"html")?;
-    crate::publication_typography::validate_export("html", content, options).map_err(str::to_string)?;
-    crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
-    crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
-    let mut warns: Vec<String> = Vec::new();
-    if crate::publication_blocks::has_overrides(content){
-        let unsupported=crate::publication_blocks::analyze(content)?.nodes.iter().any(|node|{
-            let caption_author=node.kind=="caption"&&crate::publication_blocks::author_style(&node.style).is_ok_and(|author|!author.is_empty());
-            let consumed=caption_author&&node.style.as_object().is_some_and(|style|style.keys().all(|key|matches!(key.as_str(),"id"|"text")))
-                &&node.style["text"].as_object().is_some_and(|text|text.keys().all(|key|matches!(key.as_str(),"author"|"size")));
-            !consumed&&node.style.as_object().is_some_and(|style|style.keys().any(|key|key!="id"))
-        });
-        if unsupported{warns.push("publication_local_style_unsupported".into());}
-    }
-    // `__init__.py:131` runs before `html_render.render`, so image warnings
-    // precede the asset warnings.
-    let style=crate::export_styles::sanitize(options);
-    // Legacy HTML options coerced flat title/author/subject values. Keep that
-    // boundary compatible; new structured metadata and document declarations
-    // still use the strict shared model without stringifying people or IDs.
-    let source_declared=crate::publication_metadata::from_source(content,&Value::Null,source_name).map_err(|e|e.code)?.declared;
-    let legacy_html=!source_declared&&options.get("meta").and_then(Value::as_object).is_none_or(|meta|meta.keys().all(|key|matches!(key.as_str(),"title"|"author"|"subject")))&&options.pointer("/frontMatter/mode").and_then(Value::as_str).is_none_or(|mode|mode=="none");
-    let mut publication_options=options.clone();if legacy_html&&publication_options.is_object(){publication_options["meta"]=serde_json::json!({});}
-    let metadata=crate::publication_metadata::from_source(content,&publication_options,source_name).map_err(|e|e.code)?;
-    warns.extend(crate::publication_metadata_formats::warnings(&metadata));
-    let publication=crate::publication::prepare_with_options(content,base_dir,&publication_options).map_err(|e|e.code.to_string())?;
-    warns.extend(publication.warnings);
-    let reader_content=publication.projection.reader_content(content).map_err(|e|e.code.to_string())?;
-    let reader_content=crate::cross_references::project(&reader_content).content;
-    let author_text=crate::publication_inline_view::project(&reader_content,options)?;
-    let reader_content=&author_text.content;
-    let reader_content=section_flow_source(&reader_content,&style)?;
-    let source_document = crate::md_ast::parse(content);
-    if crate::publication_sections::has_sections(&source_document){warns.push("publication_layout_paged_unsupported".into());}
-    let sized_tables = crate::table_geometry::document_has_track_sizes(&source_document);
-    let math=crate::html_math::lower_dsl(crate::md_ast::source_without_front_matter(&reader_content),style["typography"]["size"].as_f64().unwrap_or(12.0))?;
-    warns.extend(math.warnings.iter().cloned());
-    let front=crate::publication_metadata::front_matter_blocks(&metadata,options);
-    let front=if front.is_empty(){String::new()}else{
-        crate::epub_writer::render_chapters(&crate::md_ast::Document{front_matter:None,blocks:front},"none",&mut |_|None).into_iter().map(|chapter|chapter.body).collect::<String>()
-    };
-    let html_markdown=if front.is_empty(){math.markdown.to_string()}else{format!("{front}\n\n{}",math.markdown)};
-    let embedded_md = embed_images_for_html(&html_markdown, base_dir, &mut warns);
-    let footnotes = crate::html_footnotes::render(&embedded_md)?;
-
+    let html_article::Article { markdown: embedded_md, css, footnotes, author_text, metadata, sized_tables, warnings: mut warns, options } =
+        html_article::prepare(content, base_dir, options, source_name)?;
+    let options = &options;
+    let style = crate::export_styles::sanitize(options);
+    let layout = options["htmlLayout"].as_str().filter(|value| matches!(*value, "reading" | "docs" | "magazine"));
     let mut marked_js = read_asset_file(assets_dir, "marked.min.js");
     if !marked_js.is_empty() && crate::quoted_strong::candidate(&embedded_md) {
         marked_js.push_str("\n;\n");
@@ -1175,24 +1143,10 @@ pub fn export_html(
         warns.push("MathJax 未找到，公式可能无法渲染".to_string());
     }
 
-    let display_options=crate::export_styles::html_display_options(options);
-    let layout = options["htmlLayout"].as_str().filter(|value| matches!(*value, "reading" | "docs" | "magazine"));
-    let mut css = String::new();
     if layout.is_some() {
-        css.push_str(include_str!("../../../assets/css/tokens.css"));
-        css.push('\n');
-    }
-    css.push_str(&build_export_css(&display_options));
-    if crate::table_geometry::source_candidate(&embedded_md) { css.push_str(include_str!("../../../assets/css/table-geometry.css")); }
-    if layout.is_some() {
-        css.push('\n');
-        css.push_str(include_str!("../../../assets/css/export-html-layouts.css"));
         marked_js.push_str("\n;\n");
         marked_js.push_str(include_str!("../../../assets/js/reader/export-html-layout.js"));
     }
-    if options["htmlTheme"].as_str()==Some("dark") {css.push_str("\n:not(pre) > code { color:#ff99b0; }");}
-    if math.formulas>0{css.push('\n');css.push_str(crate::html_math::CSS);}
-    if footnotes.is_some(){css.push('\n');css.push_str(crate::html_footnotes::CSS);}
     // `plugin_runtime.highlighted_blocks` / `.keywords` are optional-plugin
     // bridges: `run_plugin('pygments', ..., default={})` and
     // `run_plugin('jieba', ..., default='')` return their default whenever the
@@ -1234,7 +1188,7 @@ pub fn export_html(
         .replace("__MATHJAX__", &mathjax_js)
         .replace("__MD__", &md_esc);
     if let Some(layout) = layout {
-        let tone = if options["htmlTheme"] == "dark" {"dark"} else {"light"};
+        let tone = match options["htmlTheme"].as_str() { Some("dark") => "dark", Some("sepia") => "sepia", _ => "light" };
         html = html.replacen("<body>", &format!("<body data-readmd-html-layout=\"{layout}\" data-readmd-html-tone=\"{tone}\">"), 1);
         html = html.replacen("  var highlights = ", "  ReadMDExportHtmlLayout.mount(root, document.body.dataset.readmdHtmlLayout, { tone: document.body.dataset.readmdHtmlTone });\n  var highlights = ", 1);
     }

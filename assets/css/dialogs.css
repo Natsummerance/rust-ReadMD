@@ -192,6 +192,15 @@
   padding-inline-start: 15%;
   box-shadow: inset 3px 0 var(--preset-accent, var(--color-accent));
 }
+#export-box .exp-preset-swatch.exp-template-cover {
+  padding: 0;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  display: block;
+  box-shadow: none;
+}
+#export-box .exp-template-cover img { display: block; inline-size: 100%; block-size: 100%; }
 #export-box .exp-preset-name { padding-inline: 4px; }
 #export-box .export-preview-viewport { height: clamp(245px, 48vh, 455px); }
 #export-box .export-preview-card.is-slide-preview .export-preview-viewport {
@@ -365,3 +374,14 @@
   #plugin-box .plugin-grid { min-height: min(120px, 28dvh); }
   #plugin-box .plugin-system-status { max-height: 68px; }
 }
+
+.export-html-frame { display: block; border: 0; background: white; }
+#export-preview-mini-content > .export-html-frame {
+  width: 1000px;
+  height: 1345px;
+  max-width: none;
+  transform: scale(.11);
+  transform-origin: top left;
+  pointer-events: none;
+}
+#export-preview-modal .export-html-frame { width: 100%; height: 100%; min-height: 56vh; flex: 1; }

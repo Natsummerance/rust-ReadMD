@@ -70,6 +70,7 @@ pub(crate) fn html_dark_palette() -> Value {
         ["quote.color","#4a5568","#cbd3e6"],
         ["quote.barColor","#3b6ef5","#7298ff"],
         ["table.headerBg","#3b6ef5","#345bd1"],
+        ["table.headerColor","#ffffff","#ffffff"],
         ["table.bandColor","#f3f5f9","#1d232e"],
         ["table.borderColor","#c8cdd4","#414854"],
         ["link.color","#2b6cb0","#8ebfff"],
@@ -80,6 +81,10 @@ pub(crate) fn html_dark_palette() -> Value {
 pub(crate) fn html_display_options(options:&Value) -> Value {
     let mut out=options.clone();
     if options["htmlTheme"].as_str()!=Some("dark"){return out;}
+    let preset = options["htmlLayout"].as_str().and_then(|layout| {
+        crate::export_profiles::catalog().iter().map(|profile| &profile["options"])
+            .find(|style| style["htmlLayout"].as_str() == Some(layout))
+    });
     for row in html_dark_palette().as_array().unwrap(){
         let keys=row[0].as_str().unwrap().split('.').collect::<Vec<_>>();
         let mut value=&mut out;
@@ -89,7 +94,11 @@ pub(crate) fn html_display_options(options:&Value) -> Value {
         }
         if !value.is_object(){*value=json!({});}
         let values=value.as_object_mut().unwrap();let key=keys[keys.len()-1];
-        if values.get(key).and_then(Value::as_str).is_none_or(|color|color.trim().eq_ignore_ascii_case(row[1].as_str().unwrap())){
+        let preset_color = preset.and_then(|style| keys.iter().try_fold(style, |node, key| node.get(*key))).and_then(Value::as_str);
+        if values.get(key).and_then(Value::as_str).is_none_or(|color| {
+            color.trim().eq_ignore_ascii_case(row[1].as_str().unwrap())
+                || preset_color.is_some_and(|default| color.trim().eq_ignore_ascii_case(default))
+        }){
             values.insert(key.into(),row[2].clone());
         }
     }
