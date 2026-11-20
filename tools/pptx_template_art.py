@@ -113,7 +113,7 @@ def replace_media(documents,style,fluid_frames=None,field_photos=None):
                     source=posixpath.normpath(posixpath.join('ppt/slides',original.getAttribute('Target')))
                     data=documents[source]
                     source_backgrounds[source]=hashlib.sha256(data).hexdigest()
-                    part='ppt/media/fluid-background'+Path(source).suffix.lower()
+                    part='ppt/media/fluid-background-'+source_backgrounds[source][:12]+Path(source).suffix.lower()
                 elif 'dtid' in ancestor.lower():
                     idx=frames['cover']%48;frames['cover']+=1;cover_objects+=1
                     part=f'ppt/media/fluid-cover-{idx:02}.png';data=(fluid_frames/f'cover-{idx:02}.png').read_bytes()
