@@ -1072,6 +1072,11 @@ function savePetSettings(selection) {
   petSettingsQueue=petSettingsQueue.then(save,save);
   return petSettingsQueue;
 }
+function petConfigurationMessage(code) {
+  return code === 'rust_runtime_health_failed'
+    ? petT('pet.runtime.stoppedHint')
+    : petT('pet.configFailed', { code });
+}
 async function applyPetSettings(config,version) {
     const {enabled}=config;
     const stateChanged = Boolean(activePetSettingsStatus && activePetSettingsStatus.enabled !== enabled);
@@ -1087,7 +1092,7 @@ async function applyPetSettings(config,version) {
     let result = await requestConfigurePet(config);
     if (!result || !result.ok) {
       const code = (result && result.code) || 'unknown';
-      if (typeof showToast === 'function') showToast(petT('pet.configFailed', { code }));
+      if (typeof showToast === 'function') showToast(petConfigurationMessage(code));
     } else if (stateChanged) {
       if (typeof showToast === 'function') showToast(enabled ? petT('pet.enabledToast') : petT('pet.disabledToast'));
     }

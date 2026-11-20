@@ -13,7 +13,7 @@ async function setup(page, overrides = {}, failConfigure = false) {
   });
   await page.route('**/api/pets/configure', async r => {
     const config = r.request().postDataJSON(); configs.push(config);
-    if (failConfigure) return r.fulfill({ json: { ok: false, code: 'test_runtime_failed' } });
+    if (failConfigure) return r.fulfill({ json: { ok: false, code: 'rust_runtime_health_failed' } });
     Object.assign(status, { enabled: config.enabled, in_app: config.in_app });
     status.adapter.running = config.enabled && !config.in_app;
     Object.assign(status.preferences, { renderer: config.renderer });
@@ -75,7 +75,9 @@ test('one character gallery searches, favorites and selects sprite and Live2D pe
 test('failed character configuration restores the saved selection', async ({ page }) => {
   const { gallery } = await setup(page, {}, true);
   await page.locator('#pet-roster [data-slug="custom-cat"]').click();
-  await expect(page.locator('#pet-choice-feedback')).toContainText('test_runtime_failed');
+  const hint = await page.evaluate(() => window.i18n.t('pet.runtime.stoppedHint'));
+  await expect(page.locator('#pet-choice-feedback')).toHaveText(hint);
+  await expect(page.locator('#toast')).toHaveText(hint);
   expect(gallery.active).toBe('');
   await expect(page.locator('#pet-roster [data-slug=""]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#pet-roster [data-slug="custom-cat"]')).toBeEnabled();

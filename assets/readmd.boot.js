@@ -28970,6 +28970,11 @@ function savePetSettings(selection) {
   petSettingsQueue=petSettingsQueue.then(save,save);
   return petSettingsQueue;
 }
+function petConfigurationMessage(code) {
+  return code === 'rust_runtime_health_failed'
+    ? petT('pet.runtime.stoppedHint')
+    : petT('pet.configFailed', { code });
+}
 async function applyPetSettings(config,version) {
     const {enabled}=config;
     const stateChanged = Boolean(activePetSettingsStatus && activePetSettingsStatus.enabled !== enabled);
@@ -28985,7 +28990,7 @@ async function applyPetSettings(config,version) {
     let result = await requestConfigurePet(config);
     if (!result || !result.ok) {
       const code = (result && result.code) || 'unknown';
-      if (typeof showToast === 'function') showToast(petT('pet.configFailed', { code }));
+      if (typeof showToast === 'function') showToast(petConfigurationMessage(code));
     } else if (stateChanged) {
       if (typeof showToast === 'function') showToast(enabled ? petT('pet.enabledToast') : petT('pet.disabledToast'));
     }
@@ -29699,7 +29704,7 @@ async function refreshPetGallery() {
       if (!result?.ok || result.superseded) throw new Error(result?.code || 'pet_config_failed');
     } catch (error) {
       if (changedGallery) await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true });
-      feedback.textContent = petT('pet.configFailed', { code: error.message });
+      feedback.textContent = petConfigurationMessage(error.message);
     } finally {
       await refreshPetGallery();
       choosing = false;

@@ -217,7 +217,7 @@
       if (!result?.ok || result.superseded) throw new Error(result?.code || 'pet_config_failed');
     } catch (error) {
       if (changedGallery) await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true });
-      feedback.textContent = petT('pet.configFailed', { code: error.message });
+      feedback.textContent = petConfigurationMessage(error.message);
     } finally {
       await refreshPetGallery();
       choosing = false;
