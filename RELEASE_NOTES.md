@@ -15,10 +15,10 @@
 
 - **发行收尾**：修复 Windows 旧进度回执读取时的新回执提交，保留重试中已完成的输出；SSE 流式聊天在接收端读取停滞时可取消所属写入与连接。Office 运行时按实际依赖闭包补齐并校验锁定版本的第三方许可通知。
 
-## 2026-11-20 图表阅读与 AI 修复（自动发布中）
+## 2026-11-20 图表阅读与 AI 修复（已自动发布）
 
 <!-- readmd-autopublish:start -->
-图表阅读界面与 AI 修复源码已公开：[`f6267fdf820135bcb2b2f2dd56313e0ee2160646`](https://github.com/Natsummerance/rust-ReadMD/tree/f6267fdf820135bcb2b2f2dd56313e0ee2160646)。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750315786) 与 [PET 三系统检查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750341039) 均通过后，GitHub 自动续作统一替换全部十份桌面／集成包和校验清单，再同步实际下载快照与官网；当前正式文件以 Release 资产与 SHA256SUMS 为准。
+本轮图表阅读界面与 AI 修复已自动发布。全部十份桌面／集成包来自同一完整源码 [`f6267fdf820135bcb2b2f2dd56313e0ee2160646`](https://github.com/Natsummerance/rust-ReadMD/tree/f6267fdf820135bcb2b2f2dd56313e0ee2160646)；[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750315786) 与 [PET 三系统检查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750341039) 均通过。应用保持 0.0.7，随包伴读组件为 1.0.2。
 <!-- readmd-autopublish:end -->
 
 本轮源码让阅读中的图表直接融入正文，源码与复制控件默认折叠。渲染失败时提供错误定位和本地修复预览；用户可主动把当前图表及诊断发给已配置 AI，生成可编辑候选，先预览再提出待审修改，最后明确保存。

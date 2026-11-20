@@ -52,7 +52,7 @@ ReadMD 將閱讀、編輯、格式轉換與出版放在同一個本機工作流�
 此前排版发布的全部 10 份桌面／整合資產由同一原始碼提交 [`43905601f2a0ae747f4000aad8e69a80e955ce7c`](https://github.com/Natsummerance/rust-ReadMD/tree/43905601f2a0ae747f4000aad8e69a80e955ce7c) 建置；[對應原始碼 ZIP](https://github.com/Natsummerance/rust-ReadMD/archive/43905601f2a0ae747f4000aad8e69a80e955ce7c.zip) · [本次發行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44669807015)。原 `V0.0.7` 標籤保留首次發行時的提交，本輪原始碼請使用這裡的固定連結。
 
 <!-- readmd-autopublish:start -->
-圖表閱讀介面與 AI 修復原始碼已公開：[`f6267fdf820135bcb2b2f2dd56313e0ee2160646`](https://github.com/Natsummerance/rust-ReadMD/tree/f6267fdf820135bcb2b2f2dd56313e0ee2160646)。[發行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750315786) 與 [PET 三系統檢查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750341039) 均通過後，GitHub 自動續作統一替換全部十份桌面／整合套件和校驗清單，再同步實際下載快照與官網；目前正式檔案以 Release 資產與 SHA256SUMS 為準。
+本輪圖表閱讀介面與 AI 修復已自動發行。全部十份桌面／整合套件來自同一完整原始碼 [`f6267fdf820135bcb2b2f2dd56313e0ee2160646`](https://github.com/Natsummerance/rust-ReadMD/tree/f6267fdf820135bcb2b2f2dd56313e0ee2160646)；[發行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750315786) 與 [PET 三系統檢查](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44750341039) 均通過。應用程式維持 0.0.7，隨包伴讀元件為 1.0.2。
 <!-- readmd-autopublish:end -->
 
 本輪原始碼讓閱讀中的圖表直接融入正文，原始碼與複製控制項預設摺疊。繪製失敗時提供錯誤定位和本機修復預覽；使用者可主動把目前圖表及診斷傳給已設定的 AI，產生可編輯候選，先預覽再提出待審修改，最後明確儲存。
