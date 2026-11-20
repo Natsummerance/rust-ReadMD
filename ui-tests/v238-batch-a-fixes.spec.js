@@ -154,6 +154,12 @@ test('long user message collapses into an expandable summary card', async ({ pag
 });
 
 test('offline diagram dispatcher renders Mermaid, WaveDrom, Bitfield and TikZ without network', async ({ page }) => {
+  const serverRenders = [];
+  page.on('request', request => {
+    if (request.method() !== 'POST' || !request.url().endsWith('/api/diagram/render')) return;
+    const { engine, action } = request.postDataJSON();
+    if (['vega', 'vega-lite'].includes(engine) && action !== 'prepare_spec') serverRenders.push(engine);
+  });
   await page.goto('/');
   await waitForPage(page, () => typeof renderAllDiagrams === 'function');
   const result = await page.evaluate(async () => {
@@ -162,6 +168,11 @@ test('offline diagram dispatcher renders Mermaid, WaveDrom, Bitfield and TikZ wi
       ['wavedrom', '{signal:[{name:"clk",wave:"p..."}]}'],
       ['bitfield', JSON.stringify([{bits: 8, name: 'FLAGS'}])],
       ['viz', 'digraph { A -> B; }'],
+      ['vega', JSON.stringify({
+        width: 30, height: 20, marks: [{ type: 'rect', encode: { enter: {
+          x: { value: 5 }, y: { value: 5 }, width: { value: 10 }, height: { value: 10 },
+        } } }],
+      })],
       ['vega-lite', JSON.stringify({
         data: { values: [{ label: 'A', value: 28 }, { label: 'B', value: 55 }] },
         mark: 'bar',
@@ -189,6 +200,7 @@ test('offline diagram dispatcher renders Mermaid, WaveDrom, Bitfield and TikZ wi
     }
     return outputs;
   });
+  expect(serverRenders, 'reading Vega diagrams must work without Node').toEqual([]);
   for (const item of result) expect(item.svg, `${item.engine} did not render: ${JSON.stringify(result)}`).toBeTruthy();
   for (const item of result) expect(item.fallback, `${item.engine} unexpectedly fell back`).toBeFalsy();
 });
