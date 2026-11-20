@@ -135,7 +135,12 @@ fn wrap(runs: &[Run], size: f64, width: f64) -> Result<Vec<Line>> {
             }
         }
         let move_word = whole_word <= limit && used + whole_word > limit;
-        if c == '\n' || (!line.is_empty() && (used + next > limit || move_word)) {
+        // Closing CJK punctuation may consume the font-substitution reserve,
+        // but never the physical text-box width. This avoids an orphaned stop
+        // when the complete sentence already fits its editable Office box.
+        let closing = !run.code && matches!(c, '，'|'。'|'、'|'；'|'：'|'！'|'？'|'）'|'］'|'｝'|'】'|'》'|'〉'|'」'|'』'|'〕'|'〗'|'〙'|'〛'|'”'|'’');
+        let within_box = closing && used + next <= width;
+        if c == '\n' || (!line.is_empty() && !within_box && (used + next > limit || move_word)) {
             if lines.len() >= 5000 { return Err(BUDGET.into()); }
             lines.push(std::mem::take(&mut line));
             used = 0.;

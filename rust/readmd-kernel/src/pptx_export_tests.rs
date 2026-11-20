@@ -113,6 +113,48 @@ fn launch_cover_preserves_words_and_cjk_lines() {
 }
 
 #[test]
+fn cjk_closing_punctuation_uses_only_the_available_box_reserve() {
+    let sentence = "从同一角度拍摄，记下时刻和相对高度。";
+    let lines = wrap(&text(sentence), 22., 399.).unwrap();
+    assert_eq!(lines.len(), 1, "a fitting stop must not become its own line");
+    assert_eq!(plain(&lines[0]), sentence);
+    for line in &lines {
+        assert!(line.iter().flat_map(|run|run.text.chars()).map(|c|advance(c,22.,false)).sum::<f64>() <= 399.);
+    }
+    // Ordinary text still keeps the substitution margin, and an undersized
+    // box never gains width merely because its last character is punctuation.
+    assert_eq!(wrap(&text(&sentence.replace('。',"文")),22.,399.).unwrap().len(),2);
+    for line in wrap(&text("中文中文。"),22.,100.).unwrap() {
+        assert!(line.iter().flat_map(|run|run.text.chars()).map(|c|advance(c,22.,false)).sum::<f64>() <= 100.);
+    }
+    let explicit = wrap(&text("中文\n。"),22.,399.).unwrap();
+    assert_eq!(explicit.iter().map(|line|plain(line)).collect::<Vec<_>>(),["中文","。"]);
+    let code = vec![Run{text:sentence.into(),code:true,..Run::default()}];
+    assert_eq!(wrap(&code,22.,399.).unwrap().len(),2);
+    let rich = vec![Run{text:sentence.trim_end_matches('。').into(),..Run::default()},Run{text:"。".into(),italic:true,..Run::default()}];
+    let rich = wrap(&rich,22.,399.).unwrap();
+    assert_eq!(rich.len(),1);
+    assert!(rich[0].last().unwrap().italic);
+}
+
+#[test]
+fn native_chrome_and_lightfield_lists_keep_the_fitting_sentence_stop() {
+    let sentence = "从同一角度拍摄，记下时刻和相对高度。";
+    let source = format!("# Cover\n\nSubtitle.\n\n## First\n\nParagraph.\n\n## Second\n\nParagraph.\n\n## Third\n\nParagraph.\n\n## Next\n\n- 选择固定的石阶作为参照点。\n- {sentence}\n- 把照片和当日的潮位记录并排核对。\n\n## End\n");
+    for template in ["pptx-chrome","pptx-lightfield"] {
+        let deck = build(&source,"","Deck",&json!({"pptxLayout":template})).unwrap();
+        assert_eq!(deck.slides.len(),6);
+        assert_bounds(&deck);
+        let (rect,lines,size) = deck.slides[4].shapes.iter().find_map(|shape|match shape {
+            Shape::Text{rect,lines,size,bullet:Some(_),..} if lines.iter().map(|line|plain(line)).collect::<String>()==sentence => Some((rect,lines,size)),
+            _=>None,
+        }).expect("authored bullet remains editable");
+        assert_eq!(lines.len(),1,"{template}: isolated sentence stop");
+        assert!(sentence.chars().map(|c|advance(c,*size,false)).sum::<f64>() <= rect[2]);
+    }
+}
+
+#[test]
 fn slide_ornaments_and_native_fade_preserve_editable_title_and_table() {
     let source = "# ReadMD release\n\nAn editable presentation.\n\n---\n\n## Results\n\n| Key | Value |\n|---|---|\n| A | 42 |\n";
     let opts = json!({"pptxLayout":"launch","transition":"fade","pptxTitleFade":true});
