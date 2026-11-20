@@ -5509,7 +5509,7 @@ body[data-theme="dark"] .diagram-card:is([data-diagram-engine="wavedrom"], [data
 .diagram-tools > .diagram-tools-toggle {
   position: absolute;
   inset-block-start: 0;
-  inset-inline-end: 0;
+  inset-inline-end: -32px;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -5742,6 +5742,8 @@ body[data-theme="dark"] .diagram-card:is([data-diagram-engine="wavedrom"], [data
 }
 
 @media (max-width: 640px) {
+  .diagram-tools > .diagram-tools-toggle { inset-inline-end: 0; }
+  .diagram-card > .diagram-preview { padding-block-start: 44px; }
   .diagram-diagnostic { padding-inline-end: 44px; }
 }
 
@@ -5757,7 +5759,7 @@ body[data-theme="dark"] .diagram-card:is([data-diagram-engine="wavedrom"], [data
     box-shadow: none !important;
     background: transparent !important;
   }
-  .diagram-preview { padding: 0; overflow: visible; background: transparent !important; }
+  .diagram-card > .diagram-preview { padding: 0; overflow: visible; background: transparent !important; }
   .diagram-card .diagram-preview > :is(svg, img) {
     filter: none !important;
     mix-blend-mode: normal !important;
