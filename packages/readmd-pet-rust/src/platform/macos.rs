@@ -1,13 +1,13 @@
 use super::{InteractionRegionSnapshot, PlatformBackend, Window};
 use crate::error::HostResult;
 use crate::protocol::SnapshotBounds;
-use objc2::MainThreadMarker;
 use objc2_app_kit::{
-    NSEvent, NSEventModifierFlags, NSEventType, NSFloatingWindowLevel, NSScreen, NSWindow,
+    NSEvent, NSEventModifierFlags, NSEventType, NSFloatingWindowLevel, NSWindow,
     NSWindowCollectionBehavior,
 };
 use objc2_foundation::NSProcessInfo;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 /// The real NSPanel and its WRY surface remain on the AppKit event-loop thread.
 #[derive(Default)]
@@ -15,6 +15,8 @@ pub struct MacOsBackend {
     click_through: bool,
     focusable: bool,
     regions: InteractionRegionSnapshot,
+    applied: Option<SnapshotBounds>,
+    last_screen_check: Option<Instant>,
 }
 
 static DRAGGING: AtomicBool = AtomicBool::new(false);
@@ -43,8 +45,24 @@ impl PlatformBackend for MacOsBackend {
         Ok(())
     }
     fn set_bounds(&mut self, window: &Window, bounds: SnapshotBounds) -> HostResult<()> {
-        window.set_bounds(bounds.clamp_host());
+        self.applied = Some(window.set_bounds(bounds.clamp_host()));
         Ok(())
+    }
+    fn applied_bounds(&self) -> Option<SnapshotBounds> {
+        self.applied
+    }
+    fn refresh_bounds(&mut self, window: &Window) -> HostResult<Option<SnapshotBounds>> {
+        if native_drag_active()
+            || self.last_screen_check.is_some_and(|last| last.elapsed() < Duration::from_secs(1))
+        {
+            return Ok(None);
+        }
+        self.last_screen_check = Some(Instant::now());
+        let recovered = window.recover_offscreen_bounds();
+        if let Some(bounds) = recovered {
+            self.applied = Some(bounds);
+        }
+        Ok(recovered)
     }
     fn set_visible(&mut self, window: &Window, visible: bool) -> HostResult<()> {
         window.set_visible(visible);
@@ -95,17 +113,8 @@ impl PlatformBackend for MacOsBackend {
         Ok(())
     }
     fn pointer_origin(&self, window: &Window) -> Option<(f64, f64)> {
-        let mtm = MainThreadMarker::new()?;
-        let raw = window.ns_window();
-        if raw.is_null() {
-            return None;
-        }
-        let screen = NSScreen::screens(mtm).firstObject()?;
-        let frame = unsafe { (&*(raw as *const NSWindow)).frame() };
-        Some((
-            frame.origin.x,
-            screen.frame().size.height - frame.origin.y - frame.size.height,
-        ))
+        let bounds = window.bounds();
+        Some((bounds.x, bounds.y))
     }
     fn drag_window(&self, window: &Window) -> HostResult<()> {
         let raw = window.ns_window();

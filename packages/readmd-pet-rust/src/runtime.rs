@@ -307,12 +307,19 @@ impl PetHost {
                         backend.as_mut(),
                         &mut webview,
                         &mut state,
+                        &publisher,
                         &update.snapshot,
                     ) {
                         write_health(&health, &state, "degraded", &format_error(&error));
                     } else {
                         let snapshot_value =
                             serde_json::to_value(&update.snapshot).unwrap_or(Value::Null);
+                        #[cfg(target_os = "macos")]
+                        let snapshot_value = {
+                            let mut value = snapshot_value;
+                            value["bounds"] = serde_json::json!(state.bounds);
+                            value
+                        };
                         state.last_snapshot = Some(snapshot_value.clone());
                         let _ = webview.send_state(&snapshot_value);
                         write_health(
@@ -372,6 +379,14 @@ impl PetHost {
                 Event::MainEventsCleared => {
                     if let Err(error) = maybe_recover_renderer(&mut webview, &mut state) {
                         write_health(&health, &state, "failed", &format_error(&error));
+                    }
+                    #[cfg(target_os = "macos")]
+                    match refresh_visible_bounds(
+                        &window, backend.as_mut(), &webview, &mut state, &publisher,
+                    ) {
+                        Ok(true) => sync_input_watcher(&input_watcher, backend.as_ref(), &window, &state),
+                        Ok(false) => {},
+                        Err(error) => write_health(&health, &state, "degraded", &format_error(&error)),
                     }
                     if health.consecutive_failures() >= HEALTH_FAILURE_WRITE_LIMIT {
                         // The app can no longer observe or control this host; it
@@ -557,6 +572,7 @@ fn apply_snapshot(
     backend: &mut dyn PlatformBackend,
     webview: &mut WebViewHost,
     state: &mut HostState,
+    _publisher: &DurableCommandPublisher,
     snapshot: &PetSnapshot,
 ) -> HostResult<()> {
     state.snapshot_generation = snapshot.generation;
@@ -574,6 +590,10 @@ fn apply_snapshot(
     if !crate::platform::native_drag_active() {
         backend.set_bounds(window, bounds)?;
         state.bounds = backend.applied_bounds().unwrap_or(bounds);
+        #[cfg(target_os = "macos")]
+        if (state.bounds.x - bounds.x).abs() > 0.5 || (state.bounds.y - bounds.y).abs() > 0.5 {
+            publish_recovered_position(state, _publisher)?;
+        }
     }
     state.lock_position = snapshot
         .info
@@ -592,6 +612,40 @@ fn apply_snapshot(
     state.visible = snapshot.visible && !snapshot.fullscreen;
     backend.set_visible(window, state.visible)?;
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn publish_recovered_position(
+    state: &mut HostState,
+    publisher: &DurableCommandPublisher,
+) -> HostResult<()> {
+    // The same acknowledgement guard used after a native drag prevents a
+    // queued pre-disconnect snapshot from moving the rescued panel back out.
+    state.pending_drag = Some((state.bounds, Instant::now()));
+    publish(publisher, serde_json::json!({"type":"bounds","bounds":state.bounds}))
+}
+
+#[cfg(target_os = "macos")]
+fn refresh_visible_bounds(
+    window: &crate::platform::Window,
+    backend: &mut dyn PlatformBackend,
+    webview: &WebViewHost,
+    state: &mut HostState,
+    publisher: &DurableCommandPublisher,
+) -> HostResult<bool> {
+    if !state.visible || crate::platform::native_drag_active() {
+        return Ok(false);
+    }
+    let Some(bounds) = backend.refresh_bounds(window)? else {
+        return Ok(false);
+    };
+    state.bounds = bounds;
+    publish_recovered_position(state, publisher)?;
+    if let Some(snapshot) = state.last_snapshot.as_mut() {
+        snapshot["bounds"] = serde_json::json!(bounds);
+        webview.send_state(snapshot)?;
+    }
+    Ok(true)
 }
 
 fn handle_renderer_message(

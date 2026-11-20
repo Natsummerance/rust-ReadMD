@@ -5,6 +5,8 @@ pub use tao::window::Window;
 use tao::window::WindowBuilder;
 #[cfg(target_os = "macos")]
 mod macos_panel;
+#[cfg(any(target_os = "macos", test))]
+mod macos_placement;
 #[cfg(target_os = "macos")]
 pub use macos_panel::Window;
 
@@ -35,6 +37,11 @@ pub trait PlatformBackend {
     /// `None` means the backend applied the request unchanged.
     fn applied_bounds(&self) -> Option<SnapshotBounds> {
         None
+    }
+    /// Reconcile a monitor change without rewriting a valid user placement.
+    /// Backends may throttle this event-loop hook and return only a recovery.
+    fn refresh_bounds(&mut self, _window: &Window) -> HostResult<Option<SnapshotBounds>> {
+        Ok(None)
     }
     fn set_always_on_top(&mut self, window: &Window, enabled: bool) -> HostResult<()> {
         window.set_always_on_top(enabled);

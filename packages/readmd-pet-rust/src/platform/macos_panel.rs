@@ -5,6 +5,7 @@ use crate::{
     error::{HostError, HostResult},
     protocol::SnapshotBounds,
 };
+use super::macos_placement::{recover_offscreen, ScreenArea};
 use objc2::{define_class, msg_send, rc::Retained, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSBackingStoreType, NSColor, NSFloatingWindowLevel, NSNormalWindowLevel, NSPanel, NSScreen,
@@ -41,6 +42,23 @@ pub struct Window {
     panel: Retained<ReadMDNativePetPanel>,
     view: Retained<NSView>,
 }
+
+fn logical_bounds(frame: NSRect, top: f64) -> SnapshotBounds {
+    SnapshotBounds {
+        x: frame.origin.x,
+        y: top - frame.origin.y - frame.size.height,
+        width: frame.size.width,
+        height: frame.size.height,
+    }
+}
+
+fn native_frame(bounds: SnapshotBounds, top: f64) -> NSRect {
+    NSRect::new(
+        NSPoint::new(bounds.x, top - bounds.y - bounds.height),
+        NSSize::new(bounds.width, bounds.height),
+    )
+}
+
 impl Window {
     pub(crate) fn new() -> HostResult<Self> {
         let main = MainThreadMarker::new()
@@ -72,28 +90,58 @@ impl Window {
     pub(crate) fn ns_window(&self) -> *mut c_void {
         Retained::as_ptr(&self.panel) as *mut c_void
     }
-    pub(crate) fn set_bounds(&self, bounds: SnapshotBounds) {
-        let height = self.primary_height();
-        let frame = NSRect::new(
-            NSPoint::new(bounds.x, height - bounds.y - bounds.height),
-            NSSize::new(bounds.width, bounds.height),
-        );
-        self.panel.setFrame_display(frame, true);
+    pub(crate) fn set_bounds(&self, bounds: SnapshotBounds) -> SnapshotBounds {
+        if super::native_drag_active() {
+            return self.bounds();
+        }
+        let (top, screens) = self.screen_layout();
+        let placed = recover_offscreen(bounds, &screens, false);
+        self.apply_bounds(placed, top)
     }
-    fn primary_height(&self) -> f64 {
-        NSScreen::screens(self.panel.mtm())
-            .firstObject()
-            .map_or(0.0, |screen| screen.frame().size.height)
+    fn apply_bounds(&self, bounds: SnapshotBounds, top: f64) -> SnapshotBounds {
+        self.panel.setFrame_display(native_frame(bounds, top), true);
+        self.bounds_with_top(top)
+    }
+    fn screen_layout(&self) -> (f64, Vec<ScreenArea>) {
+        let screens = NSScreen::screens(self.panel.mtm());
+        let top = screens.firstObject().map_or(0.0, |screen| {
+            let frame = screen.frame();
+            frame.origin.y + frame.size.height
+        });
+        let areas = screens.iter().map(|screen| ScreenArea {
+            frame: logical_bounds(screen.frame(), top),
+            visible: logical_bounds(screen.visibleFrame(), top),
+        }).collect();
+        (top, areas)
+    }
+    fn bounds_with_top(&self, top: f64) -> SnapshotBounds {
+        logical_bounds(self.panel.frame(), top)
+    }
+    pub(crate) fn bounds(&self) -> SnapshotBounds {
+        let top = NSScreen::screens(self.panel.mtm()).firstObject().map_or(0.0, |screen| {
+            let frame = screen.frame();
+            frame.origin.y + frame.size.height
+        });
+        self.bounds_with_top(top)
+    }
+    pub(crate) fn recover_offscreen_bounds(&self) -> Option<SnapshotBounds> {
+        if super::native_drag_active() {
+            return None;
+        }
+        let (top, screens) = self.screen_layout();
+        let current = self.bounds_with_top(top);
+        let placed = recover_offscreen(current, &screens, false);
+        (placed != current).then(|| self.apply_bounds(placed, top))
     }
     pub(crate) fn scale_factor(&self) -> f64 {
         self.panel.backingScaleFactor()
     }
     pub(crate) fn outer_position(&self) -> Result<PhysicalPosition<i32>, &'static str> {
-        let frame = self.panel.frame();
+        let bounds = self.bounds();
         let scale = self.scale_factor();
         Ok(PhysicalPosition::new(
-            (frame.origin.x * scale).round() as i32,
-            ((self.primary_height() - frame.origin.y - frame.size.height) * scale).round() as i32,
+            (bounds.x * scale).round() as i32,
+            (bounds.y * scale).round() as i32,
         ))
     }
     pub(crate) fn set_visible(&self, visible: bool) {
@@ -139,5 +187,28 @@ impl Drop for Window {
     fn drop(&mut self) {
         self.panel.orderOut(None);
         self.panel.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appkit_above_and_negative_monitors_use_the_shared_top_left_origin() {
+        let above = NSRect::new(NSPoint::new(0.0, 1920.0), NSSize::new(1920.0, 1080.0));
+        assert_eq!(logical_bounds(above, 1920.0), SnapshotBounds { x: 0.0, y: -1080.0, width: 1920.0, height: 1080.0 });
+        let left = NSRect::new(NSPoint::new(-1600.0, 920.0), NSSize::new(1600.0, 900.0));
+        assert_eq!(logical_bounds(left, 1920.0), SnapshotBounds { x: -1600.0, y: 100.0, width: 1600.0, height: 900.0 });
+    }
+
+    #[test]
+    fn appkit_window_round_trip_preserves_logical_points_and_fractional_positions() {
+        for bounds in [
+            SnapshotBounds { x: 880.0, y: 309.0, ..SnapshotBounds::default() },
+            SnapshotBounds { x: -1550.5, y: -800.25, ..SnapshotBounds::default() },
+        ] {
+            assert_eq!(logical_bounds(native_frame(bounds, 1920.0), 1920.0), bounds);
+        }
     }
 }
