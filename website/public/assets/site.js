@@ -54,14 +54,14 @@
       });
     });
 
-    // Detect user platform
-    const ua = navigator.userAgent.toLowerCase();
-    let detectedOS = 'windows';
-    if (ua.includes('mac') || ua.includes('darwin')) detectedOS = 'macos';
-    else if (ua.includes('linux') || ua.includes('x11') || ua.includes('kylin') || ua.includes('uos')) detectedOS = 'linux';
-
-    document.querySelectorAll(`[data-platform="${detectedOS}"]`).forEach((card) => {
-      card.classList.add('is-recommended');
+    // iPad can request the macOS desktop user agent; Android also reports Linux.
+    const ua = navigator.userAgent;
+    const mobile = /android|iphone|ipad|ipod/i.test(ua) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const platform = /windows/i.test(ua) ? 'windows' : /macintosh|darwin/i.test(ua) ? 'macos' :
+      /linux|x11/i.test(ua) ? 'linux' : '';
+    document.querySelectorAll('[data-platform]').forEach(card => {
+      card.classList.toggle('is-recommended', !mobile && card.dataset.platform === platform);
     });
 
     // Initialize links with data-mirror-url if present

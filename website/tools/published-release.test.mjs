@@ -209,3 +209,28 @@ for (const copy of featureLabels) test('online status update preserves interacti
   assert.equal(history.heading.textContent, 'V0.0.5 AI autocomplete');
   assert.equal(JSON.parse(history.metadata.textContent).softwareVersion, '0.0.4');
 });
+
+test('every localized download card exposes the published desktop formats in installation order', () => {
+  const expected = {
+    windows: ['ReadMDSetup-windows-x64.exe', 'ReadMD-windows-x64.zip'],
+    macos: ['ReadMD-macos-arm64.dmg', 'ReadMD-macos-x64.dmg', 'ReadMD-macos-arm64.zip', 'ReadMD-macos-x64.zip'],
+    linux: ['ReadMD-linux-x86_64.deb', 'ReadMD-linux-x86_64.tar.gz'],
+  };
+  for (const locale of ['', 'zh-cn/', 'zh-tw/', 'ja/']) {
+    const page = fs.readFileSync(new URL('../public/' + locale + 'download/index.html', import.meta.url), 'utf8');
+    const release = publishedRelease(snapshot);
+    const html = updateReleaseHtml(page, release, { download: true });
+    for (const [platform, names] of Object.entries(expected)) {
+      const marker = 'data-platform="' + platform + '"';
+      assert.ok(html.includes(marker), locale + platform);
+      const card = html.split(marker)[1].split('</article>')[0];
+      const links = [...card.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
+        .filter(([, href]) => href.startsWith(release.assetsBaseUrl));
+      assert.deepEqual(links.map(([, href]) => href.slice(release.assetsBaseUrl.length)), names, locale + platform);
+      for (const [, href, label] of links) {
+        const extension = href.endsWith('.tar.gz') ? '.tar.gz' : href.slice(href.lastIndexOf('.'));
+        assert.ok(label.includes(extension), locale + ' ' + href);
+      }
+    }
+  }
+});
